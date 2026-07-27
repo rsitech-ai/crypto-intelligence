@@ -1,7 +1,13 @@
-# Final implementation audit
+# Superseded implementation audit
 
-Date: 2026-07-27
+Original date: 2026-07-27
 Branch: `implementation/full-system-v3`
+
+> **Superseded:** This report counted planned path existence and token presence
+> as implementation evidence. A fresh independent audit on the same date
+> disproved its readiness claims. The candidate is not buildable or runnable
+> end to end and must not be merged. See
+> `docs/audits/2026-07-27-full-system-audit.md`.
 
 ## Scope
 
@@ -65,8 +71,10 @@ stapling, clean-install, interrupted-upgrade, rollback, sustained soak,
 connector certification, local-node fixtures, recovery/chaos drills, and
 sufficient live-shadow event requirements also remain mandatory.
 
-## Decision
+## Corrected decision
 
-The repository is ready for publication as an implementation and review branch.
-It is **not** represented as a stable production release until every unavailable
-or platform-specific gate produces immutable passing evidence.
+**REJECT / HOLD.** The repository is not ready for publication as an
+implementation branch. It is a scaffold with invalid Cargo/Xcode structures,
+placeholder runtime/UI modules, tautological tests, and false-success release
+automation. The only passing Swift evidence covers a narrow portable subset and
+does not validate the native application.

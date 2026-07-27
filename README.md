@@ -41,12 +41,16 @@ cannot create or alter probabilities.
 
 ## Repository status
 
-The source tree implements every Phase 00–08 path in the approved implementation
-plans. The portable Swift package is verified under Swift 6 complete concurrency
-checking with warnings denied. Rust, Buf, Xcode, Core AI, signing, notarization,
-long-running soak/recovery, connector certification, and sufficient live-shadow
-model evidence remain fail-closed release gates until run on their required
-platforms.
+The `implementation/full-system-v3` candidate is a path-complete scaffold, not
+a working Phase 00–08 implementation. A 2026-07-27 independent audit found an
+invalid Cargo workspace and Xcode project, placeholder services and native
+surfaces, tautological tests, non-executable CI workflows, and no-op release
+scripts. No daemon, native app, end-to-end forecast flow, or release artifact is
+currently runtime-proven.
+
+The portable Swift package compiles a narrow contract/model-host subset under
+Swift 6 strict concurrency. That result does not compile or test the native
+SwiftUI sources and must not be represented as native product readiness.
 
 See:
 
@@ -54,6 +58,7 @@ See:
 - `docs/superpowers/plans/2026-07-24-transition-intelligence-master-plan.md`
 - `docs/implementation/IMPLEMENTATION-GOAL.md`
 - `docs/implementation/FINAL-AUDIT.md`
+- `docs/audits/2026-07-27-full-system-audit.md`
 - `SECURITY.md`
 
 ## Available verification
@@ -66,8 +71,14 @@ swift test --package-path apps/macos \
   -Xswiftc -strict-concurrency=complete
 ```
 
-On a pinned Rust/macOS release machine, also run the commands documented in
-`docs/implementation/VERIFICATION-DEBT.md`.
+The hardened static audit is expected to fail until scaffold placeholders and
+invalid project structures are replaced with behavioral implementations. The
+security audit is only a secret-pattern and required-file-presence scan; it does
+not verify runtime security.
+
+Run the commands in `docs/implementation/VERIFICATION-DEBT.md` only after Cargo,
+Buf, and Xcode can load their projects. A passing placeholder or file-existence
+check is not release evidence.
 
 ## License
 
