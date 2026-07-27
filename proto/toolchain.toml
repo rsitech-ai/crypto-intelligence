@@ -1,0 +1,3 @@
+# Exact PATH tool outputs accepted by the protobuf workflow.
+buf = "1.72.0"
+protoc = "libprotoc 33.4"

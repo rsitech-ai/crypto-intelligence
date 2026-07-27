@@ -83,6 +83,24 @@ enum XtaskError {
         #[source]
         source: io::Error,
     },
+    #[error("could not read protobuf toolchain contract {path}: {source}")]
+    ProtoToolchainRead {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
+    #[error("could not parse protobuf toolchain contract {path}: {source}")]
+    ProtoToolchainParse {
+        path: PathBuf,
+        #[source]
+        source: toml::de::Error,
+    },
+    #[error("protobuf tool {tool} version mismatch: expected {expected:?}, got {actual:?}")]
+    ProtoToolVersionMismatch {
+        tool: &'static str,
+        expected: String,
+        actual: String,
+    },
     #[error("protobuf command {command} failed with {status}: {stderr}")]
     ProtoToolFailed {
         command: &'static str,
@@ -102,6 +120,11 @@ enum XtaskError {
         path: PathBuf,
         #[source]
         source: io::Error,
+    },
+    #[error("unexpected protobuf plugin inputs: expected {expected:?}, got {actual:?}")]
+    ProtoInputMismatch {
+        expected: BTreeSet<String>,
+        actual: BTreeSet<String>,
     },
     #[error("unexpected generated protobuf outputs: expected {expected:?}, got {actual:?}")]
     ProtoOutputMismatch {
@@ -144,6 +167,12 @@ struct CargoMetadata {
 struct MetadataPackage {
     id: String,
     manifest_path: PathBuf,
+}
+
+#[derive(Debug, Deserialize)]
+struct ProtoToolchainContract {
+    buf: String,
+    protoc: String,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -254,18 +283,26 @@ fn generate_proto_command(options: &[OsString]) -> Result<(), XtaskError> {
 }
 
 fn proto_check() -> Result<(), XtaskError> {
-    ensure_proto_tool("buf")?;
-    ensure_proto_tool("protoc")?;
+    let toolchain = read_proto_toolchain_contract()?;
+    ensure_proto_tool("buf", &toolchain.buf)?;
+    ensure_proto_tool("protoc", &toolchain.protoc)?;
     run_proto_tool("buf lint proto", "buf", &["lint", "proto"])?;
     run_proto_tool("buf build proto", "buf", &["build", "proto"])?;
-    generate_proto(true)?;
+    generate_proto_with_toolchain(true, &toolchain)?;
     println!("proto-check: ok");
     Ok(())
 }
 
 fn generate_proto(check: bool) -> Result<(), XtaskError> {
-    ensure_proto_tool("protoc")?;
+    let toolchain = read_proto_toolchain_contract()?;
+    ensure_proto_tool("protoc", &toolchain.protoc)?;
+    generate_proto_with_toolchain(check, &toolchain)
+}
 
+fn generate_proto_with_toolchain(
+    check: bool,
+    _toolchain: &ProtoToolchainContract,
+) -> Result<(), XtaskError> {
     if check {
         let first = tempfile::Builder::new()
             .prefix("cmti-proto-first-")
@@ -301,8 +338,35 @@ fn generate_proto(check: bool) -> Result<(), XtaskError> {
     Ok(())
 }
 
-fn ensure_proto_tool(tool: &'static str) -> Result<(), XtaskError> {
-    run_proto_tool(tool, tool, &["--version"]).map(|_| ())
+fn read_proto_toolchain_contract() -> Result<ProtoToolchainContract, XtaskError> {
+    let path = workspace_root().join("proto/toolchain.toml");
+    let source = fs::read_to_string(&path).map_err(|source| XtaskError::ProtoToolchainRead {
+        path: path.clone(),
+        source,
+    })?;
+    toml::from_str(&source).map_err(|source| XtaskError::ProtoToolchainParse { path, source })
+}
+
+fn ensure_proto_tool(tool: &'static str, expected: &str) -> Result<(), XtaskError> {
+    let output = run_proto_tool(tool, tool, &["--version"])?;
+    validate_proto_tool_version(tool, expected, &output.stdout)
+}
+
+fn validate_proto_tool_version(
+    tool: &'static str,
+    expected: &str,
+    stdout: &[u8],
+) -> Result<(), XtaskError> {
+    let actual = String::from_utf8_lossy(stdout).trim().to_owned();
+    if actual == expected {
+        Ok(())
+    } else {
+        Err(XtaskError::ProtoToolVersionMismatch {
+            tool,
+            expected: expected.to_owned(),
+            actual,
+        })
+    }
 }
 
 fn run_proto_tool(
@@ -405,12 +469,15 @@ fn compare_generated_outputs(first: &Path, second: &Path) -> Result<(), XtaskErr
 }
 
 fn protoc_gen_local_api() -> Result<(), XtaskError> {
+    let toolchain = read_proto_toolchain_contract()?;
+    ensure_proto_tool("buf", &toolchain.buf)?;
     let mut encoded_request = Vec::new();
     io::stdin()
         .read_to_end(&mut encoded_request)
         .map_err(|source| XtaskError::ProtoPluginRead { source })?;
     let request = CodeGeneratorRequest::decode(encoded_request.as_slice())
         .map_err(|source| XtaskError::ProtoPluginDecode { source })?;
+    validate_plugin_inputs(&request)?;
     let files_to_generate = request
         .file_to_generate
         .into_iter()
@@ -461,6 +528,7 @@ fn protoc_gen_local_api() -> Result<(), XtaskError> {
         supported_features: None,
         file: files,
     };
+    validate_plugin_outputs(&response)?;
     let mut encoded_response = Vec::new();
     response
         .encode(&mut encoded_response)
@@ -468,6 +536,51 @@ fn protoc_gen_local_api() -> Result<(), XtaskError> {
     io::stdout()
         .write_all(&encoded_response)
         .map_err(|source| XtaskError::ProtoPluginWrite { source })
+}
+
+fn validate_plugin_inputs(request: &CodeGeneratorRequest) -> Result<(), XtaskError> {
+    let expected = PROTO_FILES
+        .into_iter()
+        .map(str::to_owned)
+        .collect::<BTreeSet<_>>();
+    let actual = request
+        .file_to_generate
+        .iter()
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    let described_inputs = request
+        .proto_file
+        .iter()
+        .filter_map(|descriptor| descriptor.name.as_ref())
+        .filter(|name| expected.contains(*name))
+        .cloned()
+        .collect::<BTreeSet<_>>();
+
+    if request.file_to_generate.len() == expected.len()
+        && actual == expected
+        && described_inputs == expected
+    {
+        Ok(())
+    } else {
+        Err(XtaskError::ProtoInputMismatch { expected, actual })
+    }
+}
+
+fn validate_plugin_outputs(response: &CodeGeneratorResponse) -> Result<(), XtaskError> {
+    let expected = GENERATED_PROTO_FILES
+        .into_iter()
+        .map(str::to_owned)
+        .collect::<BTreeSet<_>>();
+    let actual = response
+        .file
+        .iter()
+        .filter_map(|file| file.name.clone())
+        .collect::<BTreeSet<_>>();
+    if response.file.len() == expected.len() && actual == expected {
+        Ok(())
+    } else {
+        Err(XtaskError::ProtoOutputMismatch { expected, actual })
+    }
 }
 
 fn read_metadata() -> Result<CargoMetadata, XtaskError> {
@@ -533,6 +646,7 @@ fn manifest_lint_policy(manifest: &toml::Value) -> ManifestLintPolicy {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use prost_types::FileDescriptorProto;
 
     fn manifest(source: &str) -> toml::Value {
         toml::from_str(source).expect("test manifest must parse")
@@ -568,5 +682,91 @@ mod tests {
             manifest_lint_policy(&manifest("[lints]\nworkspace = 'true'")),
             ManifestLintPolicy::MalformedWorkspaceLints
         );
+    }
+
+    fn plugin_request(files: &[&str]) -> CodeGeneratorRequest {
+        CodeGeneratorRequest {
+            file_to_generate: files.iter().map(|file| (*file).to_owned()).collect(),
+            proto_file: PROTO_FILES
+                .iter()
+                .map(|file| FileDescriptorProto {
+                    name: Some((*file).to_owned()),
+                    package: Some(format!(
+                        "cmti.{}.v1",
+                        file.split('/').next().expect("fixture path has a package")
+                    )),
+                    ..FileDescriptorProto::default()
+                })
+                .collect(),
+            ..CodeGeneratorRequest::default()
+        }
+    }
+
+    fn plugin_response(files: &[&str]) -> CodeGeneratorResponse {
+        CodeGeneratorResponse {
+            file: files
+                .iter()
+                .map(|file| code_generator_response::File {
+                    name: Some((*file).to_owned()),
+                    ..code_generator_response::File::default()
+                })
+                .collect(),
+            ..CodeGeneratorResponse::default()
+        }
+    }
+
+    #[test]
+    fn plugin_requires_the_exact_three_input_paths() {
+        assert!(validate_plugin_inputs(&plugin_request(&PROTO_FILES)).is_ok());
+
+        let missing = &PROTO_FILES[..2];
+        assert!(matches!(
+            validate_plugin_inputs(&plugin_request(missing)),
+            Err(XtaskError::ProtoInputMismatch { .. })
+        ));
+
+        let mut extra = PROTO_FILES.to_vec();
+        extra.push("admin/v1/admin.proto");
+        assert!(matches!(
+            validate_plugin_inputs(&plugin_request(&extra)),
+            Err(XtaskError::ProtoInputMismatch { .. })
+        ));
+    }
+
+    #[test]
+    fn plugin_requires_the_exact_three_output_filenames() {
+        assert!(validate_plugin_outputs(&plugin_response(&GENERATED_PROTO_FILES)).is_ok());
+
+        assert!(matches!(
+            validate_plugin_outputs(&plugin_response(&GENERATED_PROTO_FILES[..2])),
+            Err(XtaskError::ProtoOutputMismatch { .. })
+        ));
+
+        let mut extra = GENERATED_PROTO_FILES.to_vec();
+        extra.push("cmti.admin.v1.rs");
+        assert!(matches!(
+            validate_plugin_outputs(&plugin_response(&extra)),
+            Err(XtaskError::ProtoOutputMismatch { .. })
+        ));
+    }
+
+    #[test]
+    fn checked_in_tool_versions_accept_exact_output_and_reject_drift() {
+        let contract =
+            read_proto_toolchain_contract().expect("checked-in toolchain contract must parse");
+        assert_eq!(contract.buf, "1.72.0");
+        assert_eq!(contract.protoc, "libprotoc 33.4");
+        assert!(validate_proto_tool_version("buf", &contract.buf, b"1.72.0\n").is_ok());
+        assert!(
+            validate_proto_tool_version("protoc", &contract.protoc, b"libprotoc 33.4\n").is_ok()
+        );
+        assert!(matches!(
+            validate_proto_tool_version("buf", &contract.buf, b"1.71.0\n"),
+            Err(XtaskError::ProtoToolVersionMismatch { .. })
+        ));
+        assert!(matches!(
+            validate_proto_tool_version("protoc", &contract.protoc, b"libprotoc 33.3\n"),
+            Err(XtaskError::ProtoToolVersionMismatch { .. })
+        ));
     }
 }
