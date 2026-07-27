@@ -1,6 +1,7 @@
 use std::{
     fs::{self, File, OpenOptions},
     io::{self, Cursor},
+    os::unix::fs::PermissionsExt,
     path::Path,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -27,7 +28,9 @@ use runtime::{
     INGESTION_QUEUE_CAPACITY, IngestionEngine, RuntimeError, RuntimeHealth, RuntimeOptions,
     WalSink, ingestion_channel, start_fixture_runtime,
 };
-use startup::{StartupError, issue_session_descriptor, read_session_secret};
+use startup::{
+    StartupError, issue_session_descriptor, open_log_file, open_wal_file, read_session_secret,
+};
 
 const FIXTURE: &str = include_str!("../../../fixtures/binance/btcusdt-book-v1.jsonl");
 const SECRET_BYTES: [u8; 32] = [0x5a; 32];
@@ -164,6 +167,87 @@ async fn restart_recovers_exact_fixture_without_appending_duplicates() {
         .expect("recovered runtime must stop");
 }
 
+#[tokio::test]
+async fn blank_fixture_records_are_persisted_before_the_runtime_rejects_them() {
+    let fixture_lines = FIXTURE.split_terminator('\n').collect::<Vec<_>>();
+    for (case, records, expected_prefix) in [
+        (
+            "leading",
+            vec!["", fixture_lines[0], fixture_lines[1], fixture_lines[2]],
+            vec![b"".as_slice()],
+        ),
+        (
+            "internal",
+            vec![fixture_lines[0], "", fixture_lines[1], fixture_lines[2]],
+            vec![fixture_lines[0].as_bytes(), b"".as_slice()],
+        ),
+        (
+            "repeated",
+            vec![fixture_lines[0], "", "", fixture_lines[1], fixture_lines[2]],
+            vec![fixture_lines[0].as_bytes(), b"".as_slice()],
+        ),
+    ] {
+        let directory = tempfile::tempdir().expect("temporary runtime root must exist");
+        let fixture = records.join("\n");
+        let error = match start_with_fixture(directory.path(), descriptor(), &fixture).await {
+            Ok(_) => panic!("blank records must degrade and reject startup"),
+            Err(error) => error,
+        };
+        assert!(
+            matches!(error, RuntimeError::Parse(_)),
+            "{case} blank must reach the parser after persistence"
+        );
+
+        let mut segment = raw_wal::segment::Segment::open(&directory.path().join("market.wal"))
+            .expect("persisted WAL must reopen");
+        let recovery = segment.recover().expect("persisted prefix must recover");
+        assert_eq!(
+            recovery.records(),
+            expected_prefix,
+            "{case} blank must remain in the WAL"
+        );
+    }
+}
+
+#[test]
+fn existing_wal_and_log_reject_hardlinks_and_special_files() {
+    let hardlink_root = runtime_root();
+    let effective = effective_config(hardlink_root.path());
+    let wal_path = hardlink_root.path().join("data/market.wal");
+    fs::write(&wal_path, []).expect("WAL placeholder must write");
+    fs::set_permissions(&wal_path, fs::Permissions::from_mode(0o600))
+        .expect("WAL permissions must set");
+    fs::hard_link(&wal_path, hardlink_root.path().join("wal-alias"))
+        .expect("WAL hardlink must create");
+    assert!(
+        open_wal_file(&effective.paths.data_root).is_err(),
+        "hardlinked WAL must fail closed"
+    );
+
+    let log_path = hardlink_root.path().join("logs/cmti.jsonl");
+    fs::write(&log_path, []).expect("log placeholder must write");
+    fs::set_permissions(&log_path, fs::Permissions::from_mode(0o600))
+        .expect("log permissions must set");
+    fs::hard_link(&log_path, hardlink_root.path().join("log-alias"))
+        .expect("log hardlink must create");
+    assert!(
+        open_log_file(&effective.paths.log_root).is_err(),
+        "hardlinked log must fail closed"
+    );
+
+    let special_root = runtime_root();
+    let effective = effective_config(special_root.path());
+    let fifo_status = std::process::Command::new("mkfifo")
+        .arg(special_root.path().join("data/market.wal"))
+        .status()
+        .expect("mkfifo test helper must run");
+    assert!(fifo_status.success(), "test FIFO must create");
+    assert!(
+        open_wal_file(&effective.paths.data_root).is_err(),
+        "special WAL file must fail closed"
+    );
+}
+
 #[test]
 fn persistence_failure_happens_before_parse_or_publication() {
     let metrics = Metrics::default();
@@ -288,9 +372,17 @@ async fn start(
     root: &Path,
     descriptor: SessionDescriptor,
 ) -> Result<runtime::RunningDaemon, RuntimeError> {
+    start_with_fixture(root, descriptor, FIXTURE).await
+}
+
+async fn start_with_fixture(
+    root: &Path,
+    descriptor: SessionDescriptor,
+    fixture_contents: &str,
+) -> Result<runtime::RunningDaemon, RuntimeError> {
     fs::create_dir_all(root.join("logs")).expect("log root must exist");
     let fixture_path = root.join("fixture.jsonl");
-    fs::write(&fixture_path, FIXTURE).expect("fixture copy must write");
+    fs::write(&fixture_path, fixture_contents).expect("fixture copy must write");
     let fixture = File::open(fixture_path).expect("fixture copy must open");
     let wal = OpenOptions::new()
         .create(true)
@@ -312,6 +404,29 @@ async fn start(
         descriptor,
     })
     .await
+}
+
+fn runtime_root() -> tempfile::TempDir {
+    let root = tempfile::tempdir().expect("temporary runtime root must exist");
+    fs::create_dir(root.path().join("data")).expect("data root must exist");
+    fs::create_dir(root.path().join("logs")).expect("log root must exist");
+    fs::write(root.path().join("fixture.jsonl"), FIXTURE).expect("fixture must exist");
+    root
+}
+
+fn effective_config(root: &Path) -> config::EffectiveConfig {
+    let defaults = include_str!("../../../configs/default.toml").replace(
+        "./fixtures/exchanges/binance/manifest.toml",
+        "fixture.jsonl",
+    );
+    config::load(
+        &defaults,
+        "test-default",
+        None,
+        config::Overrides::default(),
+        root,
+    )
+    .expect("test configuration must load")
 }
 
 fn descriptor() -> SessionDescriptor {

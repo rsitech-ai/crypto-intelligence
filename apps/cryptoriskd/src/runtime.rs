@@ -32,7 +32,6 @@ use tokio::{
 
 pub const INGESTION_QUEUE_CAPACITY: usize = 1_024;
 const MAX_FIXTURE_BYTES: usize = 1024 * 1024;
-const EXPECTED_FIXTURE_RECORDS: usize = 3;
 const EXPECTED_FINAL_SEQUENCE: u64 = 102;
 const EXPECTED_BEST_BID: &str = "60000.1";
 const EXPECTED_BEST_ASK: &str = "60000.2";
@@ -366,13 +365,12 @@ fn read_fixture_records(mut fixture: File) -> Result<Vec<Vec<u8>>, RuntimeError>
     if contents.len() > MAX_FIXTURE_BYTES {
         return Err(RuntimeError::FixtureTooLarge);
     }
-    let records = contents
+    let mut records = contents
         .split(|byte| *byte == b'\n')
-        .filter(|record| !record.is_empty())
         .map(<[u8]>::to_vec)
         .collect::<Vec<_>>();
-    if records.len() != EXPECTED_FIXTURE_RECORDS {
-        return Err(RuntimeError::FixtureShape);
+    if records.last().is_some_and(Vec::is_empty) {
+        records.pop();
     }
     Ok(records)
 }
@@ -434,8 +432,6 @@ pub enum RuntimeError {
     FixtureIo(#[from] io::Error),
     #[error("fixture exceeds the bounded input size")]
     FixtureTooLarge,
-    #[error("fixture must contain exactly three nonempty records")]
-    FixtureShape,
     #[error("normalized market event is missing an instrument")]
     MissingInstrument,
     #[error("normalized market event is missing an event timestamp")]
