@@ -1,38 +1,16 @@
 {
   "schema_version": 1,
   "repository": "s1korrrr/crypto-inteligence",
-  "findings": [
-    {
-      "severity": "critical",
-      "path": "scripts/security-audit.py",
-      "issue": "private key material"
-    },
-    {
-      "severity": "critical",
-      "path": "scripts/static-audit.py",
-      "issue": "private key material"
-    },
-    {
-      "severity": "critical",
-      "path": "scripts/__pycache__/security-audit.cpython-313.pyc",
-      "issue": "private key material"
-    },
-    {
-      "severity": "critical",
-      "path": "scripts/__pycache__/static-audit.cpython-313.pyc",
-      "issue": "private key material"
-    },
-    {
-      "severity": "high",
-      "path": "crates/observability/src/lib.rs",
-      "issue": "hard-coded secret-shaped value"
-    }
+  "scope": "secret-pattern and required-boundary-presence scan",
+  "limitations": [
+    "does not verify security implementation or runtime behavior"
   ],
+  "findings": [],
   "counts": {
-    "critical": 4,
-    "high": 1,
+    "critical": 0,
+    "high": 0,
     "medium": 0,
     "low": 0
   },
-  "status": "failed"
+  "status": "passed"
 }

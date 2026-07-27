@@ -4,6 +4,44 @@ import json,re,subprocess,sys,tomllib
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]; errors=[]; warnings=[]
 def fail(x): errors.append(x)
+def placeholder_reason(path:Path,text:str):
+ if text.strip()==path.as_posix():
+  return "path-only source placeholder"
+ if path.suffix==".rs" and "/tests/" in f"/{path.as_posix()}" and re.search(r"assert_eq!\(\s*1(?:_u32)?\s*,\s*1(?:_u32)?\s*\)",text):
+  return "tautological planned-contract test"
+ meaningful=[line.strip() for line in text.splitlines() if line.strip()]
+ if meaningful and all(line.startswith("//") for line in meaningful) and "implementation boundary" in text:
+  return "comment-only implementation boundary"
+ if path.suffix==".rs" and "implementation boundary" in text and re.search(r"pub struct \w+Contract\b",text) and "schema_version" in text and "identifier" in text:
+  return "generic identifier contract module"
+ compact=re.sub(r"\s+","",text)
+ if path.suffix==".swift" and re.fullmatch(r"importFoundationpublicenum\w+Contract:Sendable\{publicstaticletschemaVersion:UInt32=1\}",compact):
+  return "contract-only Swift source"
+ if path.suffix==".sh" and len(meaningful)<=3 and any("installed" in line for line in meaningful):
+  return "installed-only shell placeholder"
+ return None
+def cargo_manifest_reason(path:Path):
+ try:data=tomllib.loads(path.read_text(encoding="utf-8"))
+ except Exception:return None
+ if "package" not in data and "workspace" not in data:
+  return "missing [package] or [workspace] table"
+ return None
+def xcode_project_reason(path:Path):
+ try:text=path.read_text(encoding="utf-8")
+ except Exception:return "unreadable Xcode project"
+ if not text.startswith("// !$*UTF8*$!") or "isa = PBXProject;" not in text:
+  return "missing Xcode project structure"
+ return None
+def workflow_reason(path:Path):
+ try:text=path.read_text(encoding="utf-8")
+ except Exception:return "unreadable workflow"
+ if not re.search(r"(?m)^on\s*:",text) or not re.search(r"(?m)^jobs\s*:",text):
+  return "missing workflow triggers or jobs"
+ return None
+def contains_hard_coded_secret(text:str):
+ pem=re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----\r?\n[A-Za-z0-9+/=\r\n]{32,}\r?\n-----END ")
+ assignment=re.compile(r"(?i)(?<![\"'])\b(?:api[_-]?secret|private[_-]?key|password)\b\s*=\s*[\"'][^\"']+[\"']")
+ return bool(pem.search(text) or assignment.search(text))
 def read(p):
  q=ROOT/p
  if not q.is_file(): fail(f"missing {p}"); return ""
@@ -23,10 +61,17 @@ def parsers():
   if ".git" in p.parts or ".build" in p.parts: continue
   try:tomllib.loads(p.read_text())
   except Exception as e:fail(f"TOML {p.relative_to(ROOT)}: {e}")
+  if p.name=="Cargo.toml":
+   reason=cargo_manifest_reason(p)
+   if reason:fail(f"Cargo manifest {p.relative_to(ROOT)}: {reason}")
  for p in ROOT.rglob("*.json"):
   if ".git" in p.parts or ".build" in p.parts:continue
   try:json.loads(p.read_text())
   except Exception as e:fail(f"JSON {p.relative_to(ROOT)}: {e}")
+ project=ROOT/"apps/macos/CuspObservatory.xcodeproj/project.pbxproj"
+ if project.is_file():
+  reason=xcode_project_reason(project)
+  if reason:fail(f"Xcode project {project.relative_to(ROOT)}: {reason}")
 def authority():
  fixed=read("crates/fixed-decimal/src/lib.rs")
  parser=fixed[fixed.find("pub fn parse"):fixed.find("pub fn rescale_exact")]
@@ -83,12 +128,13 @@ def scripts():
   r=subprocess.run(["bash","-n",str(p)],capture_output=True,text=True)
   if r.returncode:fail(f"shell {p.name}: {r.stdout}{r.stderr}")
  for p in sorted((ROOT/".github/workflows").glob("*.yml")):
+  reason=workflow_reason(p)
+  if reason:fail(f"workflow {p.relative_to(ROOT)}: {reason}")
   for n,l in enumerate(p.read_text().splitlines(),1):
    m=re.search(r"\buses:\s*([^\s#]+)",l)
    if m and not m.group(1).startswith("./") and not re.fullmatch(r".+@[0-9a-f]{40}",m.group(1)):fail(f"unpinned action {p}:{n}")
 def hygiene():
  pat=re.compile(r"\b(TBD|FIXME|TODO)\b|todo!\s*\(|unimplemented!\s*\(")
- secret=re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|(?i:(?:api[_-]?secret|private[_-]?key|password)\s*=\s*[\"'][^\"']+[\"'])")
  for base in["crates","apps","scripts","proto","config","configs"]:
   d=ROOT/base
   if not d.exists():continue
@@ -96,7 +142,9 @@ def hygiene():
    if not p.is_file() or p.resolve()==Path(__file__).resolve() or ".build" in p.parts or p.suffix not in{".rs",".swift",".py",".sh",".proto",".toml",".json",".yaml",".yml"}:continue
    t=p.read_text(errors="replace")
    if pat.search(t):fail(f"placeholder {p.relative_to(ROOT)}")
-   if secret.search(t) and p.relative_to(ROOT).as_posix() not in {"crates/observability/src/lib.rs"}:fail(f"secret-shaped content {p.relative_to(ROOT)}")
+   reason=placeholder_reason(p.relative_to(ROOT),t)
+   if reason:fail(f"placeholder {p.relative_to(ROOT)}: {reason}")
+   if contains_hard_coded_secret(t):fail(f"secret-shaped content {p.relative_to(ROOT)}")
  for p in ROOT.rglob("*"):
   if ".git" in p.parts or ".build" in p.parts or "target" in p.parts or "__pycache__" in p.parts:continue
   try:

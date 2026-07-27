@@ -2,6 +2,8 @@
 .build/
 .swiftpm/
 target/
+__pycache__/
+*.py[cod]
 DerivedData/
 xcuserdata/
 *.xcuserstate
