@@ -4,7 +4,7 @@ use std::{
 };
 
 use raw_wal::{
-    frame::{HEADER_LENGTH, MAGIC, MAX_PAYLOAD_LENGTH, SCHEMA_VERSION, encode},
+    frame::{CHECKSUM_LENGTH, HEADER_LENGTH, MAGIC, MAX_PAYLOAD_LENGTH, SCHEMA_VERSION, encode},
     recovery::RecoveryError,
     segment::Segment,
 };
@@ -205,7 +205,62 @@ fn inflated_length_before_valid_frame_fails_without_truncation() {
 }
 
 #[test]
-fn recovery_truncates_a_checksum_corrupt_final_frame_only() {
+fn length_claim_consuming_a_later_valid_frame_fails_without_truncation() {
+    let directory = tempfile::tempdir().expect("temporary directory must exist");
+    let path = directory.path().join("market.wal");
+    let first_frame_length;
+    {
+        let mut segment = Segment::open(&path).expect("segment must open");
+        first_frame_length = segment
+            .append_synced(b"first")
+            .expect("first frame must persist");
+        segment
+            .append_synced(b"second")
+            .expect("second frame must persist");
+        segment
+            .append_synced(b"third")
+            .expect("third frame must persist");
+    }
+    let original_length = fs::metadata(&path)
+        .expect("segment metadata must exist")
+        .len();
+    let claimed_payload_length = usize::try_from(original_length - first_frame_length)
+        .expect("test file length must fit usize")
+        - HEADER_LENGTH
+        - CHECKSUM_LENGTH;
+    let mut file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(&path)
+        .expect("segment must reopen for length mutation");
+    file.seek(SeekFrom::Start(
+        first_frame_length + MAGIC.len() as u64 + size_of::<u16>() as u64,
+    ))
+    .expect("test mutation must seek");
+    file.write_all(
+        &u32::try_from(claimed_payload_length)
+            .expect("combined frame extent must fit the frame field")
+            .to_be_bytes(),
+    )
+    .expect("exact-extent length must write");
+    file.sync_data().expect("test mutation must sync");
+    drop(file);
+    let original = fs::read(&path).expect("mutated segment bytes must read");
+
+    let mut segment = Segment::open(&path).expect("segment must reopen");
+    assert!(matches!(
+        segment.recover(),
+        Err(RecoveryError::Corruption { offset }) if offset == first_frame_length
+    ));
+    assert_eq!(
+        fs::read(&path).expect("failed recovery must preserve bytes"),
+        original,
+        "an unprotected length that consumes a later frame must not authorize truncation"
+    );
+}
+
+#[test]
+fn checksum_corrupt_final_frame_fails_without_truncation() {
     let directory = tempfile::tempdir().expect("temporary directory must exist");
     let path = directory.path().join("market.wal");
     let first_frame_length;
@@ -222,16 +277,17 @@ fn recovery_truncates_a_checksum_corrupt_final_frame_only() {
         .expect("segment metadata must exist")
         .len();
     flip_byte(&path, original_length - 1);
+    let original = fs::read(&path).expect("corrupt segment bytes must read");
 
     let mut segment = Segment::open(&path).expect("segment must reopen");
-    let report = segment
-        .recover()
-        .expect("corrupt final frame must be recoverable");
-
-    assert_eq!(report.records(), [b"first".as_slice()]);
+    assert!(matches!(
+        segment.recover(),
+        Err(RecoveryError::Corruption { offset }) if offset == first_frame_length
+    ));
     assert_eq!(
-        report.truncated_bytes(),
-        original_length - first_frame_length
+        fs::read(&path).expect("failed recovery must preserve bytes"),
+        original,
+        "a checksum failure cannot prove a final frame boundary"
     );
 }
 
