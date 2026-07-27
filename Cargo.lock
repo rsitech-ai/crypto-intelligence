@@ -76,6 +76,7 @@ name = "config"
 version = "0.1.0"
 dependencies = [
  "blake3",
+ "rustix",
  "schemars",
  "serde",
  "serde_json",
@@ -139,6 +140,7 @@ dependencies = [
  "fixed-decimal",
  "hex",
  "serde",
+ "serde_json",
  "thiserror",
 ]
 

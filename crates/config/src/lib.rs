@@ -2,16 +2,21 @@
 
 pub mod schema;
 
+use rustix::fs::{self as rustix_fs, AtFlags, FileType, Mode, OFlags};
 use schemars::{
     JsonSchema,
     schema::{InstanceType, Schema, SchemaObject, StringValidation},
 };
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error as _};
 use std::{
-    fs::{self, File, OpenOptions},
+    ffi::{OsStr, OsString},
+    fmt,
+    fs::{self, File},
     io,
-    net::{SocketAddr, SocketAddrV4},
+    net::{Ipv4Addr, SocketAddr, SocketAddrV4},
+    os::fd::{AsFd, BorrowedFd},
     path::{Component, Path, PathBuf},
+    sync::Arc,
 };
 use thiserror::Error;
 
@@ -71,9 +76,10 @@ impl<'de> Deserialize<'de> for KeychainReference {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
-pub struct AppConfig {
+#[schemars(rename = "AppConfig")]
+pub(crate) struct RawAppConfig {
     #[schemars(range(min = 1, max = 1))]
     pub schema_version: u32,
     pub data_root: PathBuf,
@@ -102,6 +108,29 @@ pub struct AppConfig {
     pub credential_ref: Option<KeychainReference>,
 }
 
+/// A configuration whose complete local-only contract has been validated.
+///
+/// Its fields are intentionally private: callers can only obtain this type
+/// through [`load`], so invalid values cannot cross the runtime boundary.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct AppConfig {
+    schema_version: u32,
+    data_root: PathBuf,
+    log_root: PathBuf,
+    fixture_input: PathBuf,
+    bind_address: SocketAddrV4,
+    session_secret_fd: u32,
+    ingestion_queue_capacity: usize,
+    maximum_request_bytes: usize,
+    maximum_concurrent_requests: usize,
+    request_timeout_seconds: u64,
+    shutdown_grace_seconds: u64,
+    remote_export: bool,
+    remote_telemetry: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    credential_ref: Option<KeychainReference>,
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct Overrides {
     pub data_root: Option<PathBuf>,
@@ -114,7 +143,7 @@ pub struct Overrides {
 }
 
 impl Overrides {
-    fn apply(self, config: &mut AppConfig) -> bool {
+    fn apply(self, config: &mut RawAppConfig) -> bool {
         let mut changed = false;
         apply_override(&mut config.data_root, self.data_root, &mut changed);
         apply_override(&mut config.log_root, self.log_root, &mut changed);
@@ -139,20 +168,75 @@ impl Overrides {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ResolvedPaths {
-    pub approved_root: PathBuf,
-    pub data_root: PathBuf,
-    pub log_root: PathBuf,
-    pub fixture_input: PathBuf,
+#[derive(Clone, Debug)]
+pub struct ValidatedDirectory {
+    path: PathBuf,
+    handle: Arc<File>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+impl ValidatedDirectory {
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    pub fn as_fd(&self) -> BorrowedFd<'_> {
+        self.handle.as_fd()
+    }
+
+    /// Creates a new direct child without resolving the configured pathname.
+    pub fn create_new_file(&self, name: impl AsRef<OsStr>) -> io::Result<File> {
+        let name = name.as_ref();
+        if !is_single_normal_component(Path::new(name)) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "file name must be one normal path component",
+            ));
+        }
+        let owned = rustix_fs::openat(
+            self.handle.as_fd(),
+            name,
+            OFlags::WRONLY | OFlags::CREATE | OFlags::EXCL | OFlags::CLOEXEC | OFlags::NOFOLLOW,
+            Mode::RUSR | Mode::WUSR,
+        )
+        .map_err(io::Error::from)?;
+        Ok(File::from(owned))
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct ValidatedFile {
+    path: PathBuf,
+    handle: Arc<File>,
+}
+
+impl ValidatedFile {
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    pub fn as_fd(&self) -> BorrowedFd<'_> {
+        self.handle.as_fd()
+    }
+
+    pub fn try_clone(&self) -> io::Result<File> {
+        self.handle.try_clone()
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct ValidatedPaths {
+    pub approved_root: ValidatedDirectory,
+    pub data_root: ValidatedDirectory,
+    pub log_root: ValidatedDirectory,
+    pub fixture_input: ValidatedFile,
+}
+
+#[derive(Clone, Debug)]
 pub struct EffectiveConfig {
     pub config: AppConfig,
     pub fingerprint: String,
     pub sources: Vec<String>,
-    pub paths: ResolvedPaths,
+    pub paths: ValidatedPaths,
 }
 
 #[derive(Debug, Error)]
@@ -212,12 +296,12 @@ pub fn load(
     }
 
     let serialized = toml::to_string(&merged).map_err(parse_error)?;
-    let mut config = toml::from_str::<AppConfig>(&serialized).map_err(parse_error)?;
-    if overrides.apply(&mut config) {
+    let mut raw = toml::from_str::<RawAppConfig>(&serialized).map_err(parse_error)?;
+    if overrides.apply(&mut raw) {
         sources.push("overrides".to_owned());
     }
 
-    let paths = config.validate(approved_root)?;
+    let (config, paths) = AppConfig::validate(raw, approved_root)?;
     let canonical = serde_json::to_vec(&config)?;
     let fingerprint = blake3::hash(&canonical).to_hex().to_string();
     Ok(EffectiveConfig {
@@ -229,76 +313,110 @@ pub fn load(
 }
 
 impl AppConfig {
-    pub fn validate(&self, approved_root: &Path) -> Result<ResolvedPaths, ConfigError> {
-        if self.schema_version != 1 {
-            return Err(ConfigError::UnsupportedSchema(self.schema_version));
+    fn validate(
+        raw: RawAppConfig,
+        approved_root: &Path,
+    ) -> Result<(Self, ValidatedPaths), ConfigError> {
+        if raw.schema_version != 1 {
+            return Err(ConfigError::UnsupportedSchema(raw.schema_version));
         }
 
-        validate_bind_address(&self.bind_address)?;
-        validate_range("session_secret_fd", self.session_secret_fd, 3, u32::MAX)?;
+        let bind_address = validate_bind_address(&raw.bind_address)?;
+        validate_range("session_secret_fd", raw.session_secret_fd, 3, u32::MAX)?;
         validate_range(
             "ingestion_queue_capacity",
-            self.ingestion_queue_capacity,
+            raw.ingestion_queue_capacity,
             1,
             MAX_INGESTION_QUEUE_CAPACITY,
         )?;
         validate_range(
             "maximum_request_bytes",
-            self.maximum_request_bytes,
+            raw.maximum_request_bytes,
             1,
             MAX_REQUEST_BYTES,
         )?;
         validate_range(
             "maximum_concurrent_requests",
-            self.maximum_concurrent_requests,
+            raw.maximum_concurrent_requests,
             1,
             MAX_CONCURRENT_REQUESTS,
         )?;
         validate_range(
             "request_timeout_seconds",
-            self.request_timeout_seconds,
+            raw.request_timeout_seconds,
             1,
             MAX_REQUEST_TIMEOUT_SECONDS,
         )?;
         validate_range(
             "shutdown_grace_seconds",
-            self.shutdown_grace_seconds,
+            raw.shutdown_grace_seconds,
             1,
             MAX_SHUTDOWN_GRACE_SECONDS,
         )?;
 
-        if self.remote_export || self.remote_telemetry {
+        if raw.remote_export || raw.remote_telemetry {
             return Err(ConfigError::RemoteCapabilityEnabled);
         }
 
-        let approved_root =
-            fs::canonicalize(approved_root).map_err(|source| ConfigError::Filesystem {
-                field: "approved_root",
-                path: approved_root.to_path_buf(),
-                source,
-            })?;
-        let metadata = fs::metadata(&approved_root).map_err(|source| ConfigError::Filesystem {
-            field: "approved_root",
-            path: approved_root.clone(),
-            source,
-        })?;
-        if !metadata.is_dir() {
-            return Err(ConfigError::PathEscape {
-                field: "approved_root",
-            });
-        }
-
-        let fixture_input =
-            resolve_readable_file(&approved_root, &self.fixture_input, "fixture_input")?;
-        let data_root = resolve_writable_root(&approved_root, &self.data_root, "data_root")?;
-        let log_root = resolve_writable_root(&approved_root, &self.log_root, "log_root")?;
-
-        Ok(ResolvedPaths {
-            approved_root,
+        let approved = open_approved_root(approved_root)?;
+        let fixture_input = open_readable_file(&approved, &raw.fixture_input, "fixture_input")?;
+        let data_root = open_writable_root(&approved, &raw.data_root, "data_root")?;
+        let log_root = open_writable_root(&approved, &raw.log_root, "log_root")?;
+        let paths = ValidatedPaths {
+            approved_root: approved,
             data_root,
             log_root,
             fixture_input,
-        })
+        };
+        let config = Self {
+            schema_version: raw.schema_version,
+            data_root: raw.data_root,
+            log_root: raw.log_root,
+            fixture_input: raw.fixture_input,
+            bind_address,
+            session_secret_fd: raw.session_secret_fd,
+            ingestion_queue_capacity: raw.ingestion_queue_capacity,
+            maximum_request_bytes: raw.maximum_request_bytes,
+            maximum_concurrent_requests: raw.maximum_concurrent_requests,
+            request_timeout_seconds: raw.request_timeout_seconds,
+            shutdown_grace_seconds: raw.shutdown_grace_seconds,
+            remote_export: false,
+            remote_telemetry: false,
+            credential_ref: raw.credential_ref,
+        };
+        Ok((config, paths))
+    }
+
+    pub fn bind_address(&self) -> SocketAddrV4 {
+        self.bind_address
+    }
+
+    pub fn session_secret_fd(&self) -> u32 {
+        self.session_secret_fd
+    }
+
+    pub fn ingestion_queue_capacity(&self) -> usize {
+        self.ingestion_queue_capacity
+    }
+
+    pub fn maximum_request_bytes(&self) -> usize {
+        self.maximum_request_bytes
+    }
+
+    pub fn maximum_concurrent_requests(&self) -> usize {
+        self.maximum_concurrent_requests
+    }
+
+    pub fn request_timeout_seconds(&self) -> u64 {
+        self.request_timeout_seconds
+    }
+
+    pub fn shutdown_grace_seconds(&self) -> u64 {
+        self.shutdown_grace_seconds
+    }
+
+    pub fn credential_ref(&self) -> Option<&KeychainReference> {
+        self.credential_ref.as_ref()
     }
 }
 
@@ -397,7 +515,9 @@ fn validate_bind_address(value: &str) -> Result<SocketAddrV4, ConfigError> {
         .parse::<SocketAddr>()
         .map_err(|_| ConfigError::NonLoopbackBind)?;
     match address {
-        SocketAddr::V4(address) if address.ip().is_loopback() && address.port() == 0 => Ok(address),
+        SocketAddr::V4(address) if *address.ip() == Ipv4Addr::LOCALHOST && address.port() == 0 => {
+            Ok(address)
+        }
         _ => Err(ConfigError::NonLoopbackBind),
     }
 }
@@ -423,133 +543,169 @@ where
     }
 }
 
-fn resolve_readable_file(
-    approved_root: &Path,
-    configured: &Path,
-    field: &'static str,
-) -> Result<PathBuf, ConfigError> {
-    reject_parent_components(configured, field)?;
-    let candidate = configured_path(approved_root, configured);
-    let resolved = fs::canonicalize(&candidate).map_err(|_| ConfigError::FixtureUnreadable {
-        field,
-        path: candidate.clone(),
+fn open_approved_root(path: &Path) -> Result<ValidatedDirectory, ConfigError> {
+    let owned = rustix_fs::open(
+        path,
+        OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC | OFlags::NOFOLLOW,
+        Mode::empty(),
+    )
+    .map_err(|source| ConfigError::Filesystem {
+        field: "approved_root",
+        path: path.to_path_buf(),
+        source: source.into(),
     })?;
-    ensure_contained(approved_root, &resolved, field)?;
-    let metadata = fs::metadata(&resolved).map_err(|_| ConfigError::FixtureUnreadable {
-        field,
-        path: resolved.clone(),
-    })?;
-    if !metadata.is_file() || File::open(&resolved).is_err() {
-        return Err(ConfigError::FixtureUnreadable {
-            field,
-            path: resolved,
-        });
-    }
-    Ok(resolved)
-}
-
-fn resolve_writable_root(
-    approved_root: &Path,
-    configured: &Path,
-    field: &'static str,
-) -> Result<PathBuf, ConfigError> {
-    reject_parent_components(configured, field)?;
-    let candidate = configured_path(approved_root, configured);
-    let (existing_ancestor, missing_components) = existing_ancestor(&candidate, field)?;
-    let resolved_ancestor =
-        fs::canonicalize(&existing_ancestor).map_err(|source| ConfigError::Filesystem {
-            field,
-            path: existing_ancestor.clone(),
-            source,
-        })?;
-    ensure_contained(approved_root, &resolved_ancestor, field)?;
-
-    let metadata = fs::metadata(&resolved_ancestor).map_err(|source| ConfigError::Filesystem {
-        field,
-        path: resolved_ancestor.clone(),
+    let canonical = fs::canonicalize(path).map_err(|source| ConfigError::Filesystem {
+        field: "approved_root",
+        path: path.to_path_buf(),
         source,
     })?;
-    if !metadata.is_dir() {
-        return Err(ConfigError::Filesystem {
-            field,
-            path: resolved_ancestor,
-            source: io::Error::new(io::ErrorKind::NotADirectory, "ancestor is not a directory"),
-        });
-    }
-    prove_writable(&resolved_ancestor, field)?;
-
-    Ok(missing_components
-        .iter()
-        .rev()
-        .fold(resolved_ancestor, |path, component| path.join(component)))
-}
-
-fn existing_ancestor(
-    candidate: &Path,
-    field: &'static str,
-) -> Result<(PathBuf, Vec<PathBuf>), ConfigError> {
-    let mut current = candidate.to_path_buf();
-    let mut missing = Vec::new();
-    while fs::symlink_metadata(&current).is_err() {
-        let name = current
-            .file_name()
-            .ok_or(ConfigError::PathEscape { field })?;
-        missing.push(PathBuf::from(name));
-        current = current
-            .parent()
-            .ok_or(ConfigError::PathEscape { field })?
-            .to_path_buf();
-    }
-    Ok((current, missing))
-}
-
-fn prove_writable(directory: &Path, field: &'static str) -> Result<(), ConfigError> {
-    let probe = directory.join(format!(".cmti-write-probe-{}-{field}", std::process::id()));
-    let result = OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(&probe)
-        .and_then(|file| {
-            drop(file);
-            fs::remove_file(&probe)
-        });
-    result.map_err(|source| ConfigError::Filesystem {
-        field,
-        path: directory.to_path_buf(),
-        source,
+    Ok(ValidatedDirectory {
+        path: canonical,
+        handle: Arc::new(File::from(owned)),
     })
 }
 
-fn reject_parent_components(path: &Path, field: &'static str) -> Result<(), ConfigError> {
-    if path.as_os_str().is_empty()
-        || path
-            .components()
-            .any(|component| matches!(component, Component::ParentDir))
-    {
-        Err(ConfigError::PathEscape { field })
-    } else {
-        Ok(())
-    }
-}
-
-fn configured_path(approved_root: &Path, configured: &Path) -> PathBuf {
-    if configured.is_absolute() {
-        configured.to_path_buf()
-    } else {
-        approved_root.join(configured)
-    }
-}
-
-fn ensure_contained(
-    approved_root: &Path,
-    resolved: &Path,
+fn open_readable_file(
+    approved_root: &ValidatedDirectory,
+    configured: &Path,
     field: &'static str,
-) -> Result<(), ConfigError> {
-    if resolved.starts_with(approved_root) {
-        Ok(())
-    } else {
-        Err(ConfigError::PathEscape { field })
+) -> Result<ValidatedFile, ConfigError> {
+    let components = relative_components(configured, field)?;
+    let (file_name, directories) = components
+        .split_last()
+        .ok_or(ConfigError::PathEscape { field })?;
+    let parent = open_directory_chain(approved_root, directories, configured, field)?;
+    let owned = rustix_fs::openat(
+        parent.as_fd(),
+        file_name,
+        OFlags::RDONLY | OFlags::CLOEXEC | OFlags::NOFOLLOW,
+        Mode::empty(),
+    )
+    .map_err(|_| ConfigError::FixtureUnreadable {
+        field,
+        path: approved_root.path.join(configured),
+    })?;
+    let stat = rustix_fs::fstat(&owned).map_err(|_| ConfigError::FixtureUnreadable {
+        field,
+        path: approved_root.path.join(configured),
+    })?;
+    if !FileType::from_raw_mode(stat.st_mode).is_file() {
+        return Err(ConfigError::FixtureUnreadable {
+            field,
+            path: approved_root.path.join(configured),
+        });
     }
+    Ok(ValidatedFile {
+        path: approved_root.path.join(configured),
+        handle: Arc::new(File::from(owned)),
+    })
+}
+
+fn open_writable_root(
+    approved_root: &ValidatedDirectory,
+    configured: &Path,
+    field: &'static str,
+) -> Result<ValidatedDirectory, ConfigError> {
+    let components = relative_components(configured, field)?;
+    let directory = open_directory_chain(approved_root, &components, configured, field)?;
+    prove_writable(&directory, field)?;
+    Ok(directory)
+}
+
+fn open_directory_chain(
+    approved_root: &ValidatedDirectory,
+    components: &[OsString],
+    configured: &Path,
+    field: &'static str,
+) -> Result<ValidatedDirectory, ConfigError> {
+    let mut current =
+        approved_root
+            .handle
+            .try_clone()
+            .map_err(|source| ConfigError::Filesystem {
+                field,
+                path: approved_root.path.clone(),
+                source,
+            })?;
+    let mut display = approved_root.path.clone();
+    for component in components {
+        let owned = rustix_fs::openat(
+            current.as_fd(),
+            component,
+            OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC | OFlags::NOFOLLOW,
+            Mode::empty(),
+        )
+        .map_err(|source| map_directory_open_error(source, field, configured))?;
+        current = File::from(owned);
+        display.push(component);
+    }
+    Ok(ValidatedDirectory {
+        path: display,
+        handle: Arc::new(current),
+    })
+}
+
+fn map_directory_open_error(
+    source: rustix::io::Errno,
+    field: &'static str,
+    configured: &Path,
+) -> ConfigError {
+    if matches!(source, rustix::io::Errno::LOOP | rustix::io::Errno::NOTDIR) {
+        ConfigError::PathEscape { field }
+    } else {
+        ConfigError::Filesystem {
+            field,
+            path: configured.to_path_buf(),
+            source: source.into(),
+        }
+    }
+}
+
+fn prove_writable(directory: &ValidatedDirectory, field: &'static str) -> Result<(), ConfigError> {
+    let name = format!(".cmti-write-probe-{}-{field}", std::process::id());
+    let owned = rustix_fs::openat(
+        directory.handle.as_fd(),
+        name.as_str(),
+        OFlags::WRONLY | OFlags::CREATE | OFlags::EXCL | OFlags::CLOEXEC | OFlags::NOFOLLOW,
+        Mode::RUSR | Mode::WUSR,
+    )
+    .map_err(|source| ConfigError::Filesystem {
+        field,
+        path: directory.path.clone(),
+        source: source.into(),
+    })?;
+    drop(owned);
+    rustix_fs::unlinkat(directory.handle.as_fd(), name.as_str(), AtFlags::empty()).map_err(
+        |source| ConfigError::Filesystem {
+            field,
+            path: directory.path.clone(),
+            source: source.into(),
+        },
+    )
+}
+
+fn relative_components(path: &Path, field: &'static str) -> Result<Vec<OsString>, ConfigError> {
+    if path.as_os_str().is_empty() {
+        return Err(ConfigError::PathEscape { field });
+    }
+    let mut normal = Vec::new();
+    for component in path.components() {
+        match component {
+            Component::Normal(value) => normal.push(value.to_os_string()),
+            Component::CurDir => {}
+            Component::ParentDir | Component::RootDir | Component::Prefix(_) => {
+                return Err(ConfigError::PathEscape { field });
+            }
+        }
+    }
+    (!normal.is_empty())
+        .then_some(normal)
+        .ok_or(ConfigError::PathEscape { field })
+}
+
+fn is_single_normal_component(path: &Path) -> bool {
+    let mut components = path.components();
+    matches!(components.next(), Some(Component::Normal(_))) && components.next().is_none()
 }
 
 fn valid_keychain_component(value: &str) -> bool {
@@ -598,5 +754,3 @@ fn optional_keychain_reference_schema(_: &mut schemars::r#gen::SchemaGenerator) 
     };
     Schema::Object(schema)
 }
-
-use std::fmt;
