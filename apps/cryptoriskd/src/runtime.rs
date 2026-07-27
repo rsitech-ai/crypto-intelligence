@@ -26,7 +26,7 @@ use serde::Serialize;
 use serde_json::json;
 use thiserror::Error;
 use tokio::{
-    sync::mpsc,
+    sync::{mpsc, watch},
     task::{JoinError, JoinHandle},
 };
 
@@ -42,6 +42,7 @@ pub struct RuntimeOptions {
     pub log: File,
     pub secret: SessionSecret,
     pub descriptor: SessionDescriptor,
+    pub cancellation: watch::Receiver<bool>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -259,11 +260,20 @@ pub async fn start_fixture_runtime(options: RuntimeOptions) -> Result<RunningDae
         log,
         secret,
         descriptor,
+        mut cancellation,
     } = options;
     let log = LocalJsonLog::from_file(log);
     let fixture_records = read_fixture_records(fixture)?;
     let mut segment = Segment::from_file(wal);
+    if is_cancelled(&cancellation) {
+        cancel_startup(SegmentSink { segment }, log)?;
+        return Err(RuntimeError::Cancelled);
+    }
     let recovery = segment.recover()?;
+    if is_cancelled(&cancellation) {
+        cancel_startup(SegmentSink { segment }, log)?;
+        return Err(RuntimeError::Cancelled);
+    }
     if recovery.records().len() > fixture_records.len()
         || !recovery
             .records()
@@ -279,17 +289,37 @@ pub async fn start_fixture_runtime(options: RuntimeOptions) -> Result<RunningDae
     for record in recovery.records() {
         engine.process_persisted(record)?;
     }
+    if is_cancelled(&cancellation) {
+        cancel_startup(engine.into_wal(), log)?;
+        return Err(RuntimeError::Cancelled);
+    }
 
     let remaining = fixture_records
         .into_iter()
         .skip(recovery.records().len())
         .collect::<Vec<_>>();
     let (sender, mut receiver) = ingestion_channel();
-    let producer = spawn_fixture_producer(sender, remaining);
-    while let Some(record) = receiver.recv().await {
-        engine.process_new(&record)?;
+    let producer = spawn_fixture_producer(sender, remaining, cancellation.clone());
+    let mut cancelled = false;
+    loop {
+        tokio::select! {
+            biased;
+            changed = cancellation.changed(), if !cancelled => {
+                let _ = changed;
+                cancelled = true;
+                receiver.close();
+            }
+            record = receiver.recv() => match record {
+                Some(record) => engine.process_new(&record)?,
+                None => break,
+            }
+        }
     }
     producer.await??;
+    if cancelled || is_cancelled(&cancellation) {
+        cancel_startup(engine.into_wal(), log)?;
+        return Err(RuntimeError::Cancelled);
+    }
 
     let published = engine
         .published()
@@ -344,16 +374,39 @@ pub fn ingestion_channel() -> (mpsc::Sender<Vec<u8>>, mpsc::Receiver<Vec<u8>>) {
 fn spawn_fixture_producer(
     sender: mpsc::Sender<Vec<u8>>,
     records: Vec<Vec<u8>>,
+    mut cancellation: watch::Receiver<bool>,
 ) -> JoinHandle<Result<(), RuntimeError>> {
     tokio::spawn(async move {
         for record in records {
-            sender
-                .send(record)
-                .await
-                .map_err(|_| RuntimeError::QueueClosed)?;
+            tokio::select! {
+                biased;
+                changed = cancellation.changed() => {
+                    let _ = changed;
+                    return Ok(());
+                }
+                result = sender.send(record) => {
+                    if result.is_err() && !is_cancelled(&cancellation) {
+                        return Err(RuntimeError::QueueClosed);
+                    }
+                }
+            }
         }
         Ok(())
     })
+}
+
+fn is_cancelled(cancellation: &watch::Receiver<bool>) -> bool {
+    *cancellation.borrow()
+}
+
+fn cancel_startup(mut wal: SegmentSink, log: LocalJsonLog) -> Result<(), RuntimeError> {
+    wal.sync().map_err(RuntimeError::Persistence)?;
+    log.write_event(&json!({
+        "level": "info",
+        "event": "fixture_runtime_cancelled"
+    }))?;
+    log.shutdown()?;
+    Ok(())
 }
 
 fn read_fixture_records(mut fixture: File) -> Result<Vec<Vec<u8>>, RuntimeError> {
@@ -444,6 +497,8 @@ pub enum RuntimeError {
     UnexpectedFinalSnapshot,
     #[error("fixture ingestion queue closed before all records were accepted")]
     QueueClosed,
+    #[error("fixture runtime startup was cancelled")]
+    Cancelled,
     #[error("fixture producer task failed")]
     ProducerJoin(#[from] JoinError),
     #[error("observability failed")]
