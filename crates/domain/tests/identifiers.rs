@@ -1,1 +1,4 @@
-#[test] fn identifiers_planned_contract(){assert_eq!(1_u32,1_u32);}
+#[test]
+fn identifiers_planned_contract() {
+    assert_eq!(1_u32, 1_u32);
+}
