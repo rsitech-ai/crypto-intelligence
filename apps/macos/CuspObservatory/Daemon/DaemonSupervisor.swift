@@ -259,6 +259,16 @@ struct GRPCTransportFactory: RPCTransportBuilding {
 }
 
 actor DaemonSupervisor {
+  private struct StartupOwnership {
+    let runID: UUID
+    let task: Task<MarketSnapshot, Error>
+  }
+
+  private struct RuntimeOwnership {
+    let runID: UUID
+    let runtime: any DaemonRuntime
+  }
+
   private let configuration: DaemonConfiguration
   private let launcher: any DaemonLaunching
   private let transportFactory: any RPCTransportBuilding
@@ -266,8 +276,8 @@ actor DaemonSupervisor {
   private let shutdownTimeout: Duration
   private let nowUnixSeconds: @Sendable () -> Int64
 
-  private var runtime: (any DaemonRuntime)?
-  private var startupTask: Task<MarketSnapshot, Error>?
+  private var runtimeOwnership: RuntimeOwnership?
+  private var startupOwnership: StartupOwnership?
   private var monitorTask: Task<Void, Never>?
   private var activeRunID: UUID?
   private var eventContinuations: [UUID: AsyncStream<DaemonSupervisorEvent>.Continuation] = [:]
@@ -276,7 +286,7 @@ actor DaemonSupervisor {
   private(set) var latestSnapshot: MarketSnapshot?
 
   var ownedTaskCount: Int {
-    (startupTask == nil ? 0 : 1) + (monitorTask == nil ? 0 : 1)
+    (startupOwnership == nil ? 0 : 1) + (monitorTask == nil ? 0 : 1)
   }
 
   func events() -> AsyncStream<DaemonSupervisorEvent> {
@@ -319,8 +329,8 @@ actor DaemonSupervisor {
   func start() async throws {
     guard
       currentState == .stopped || currentState == .failed,
-      runtime == nil,
-      startupTask == nil,
+      runtimeOwnership == nil,
+      startupOwnership == nil,
       monitorTask == nil
     else {
       throw DaemonSupervisorError.alreadyRunning
@@ -388,7 +398,7 @@ actor DaemonSupervisor {
         throw error
       }
     }
-    startupTask = startup
+    startupOwnership = StartupOwnership(runID: runID, task: startup)
 
     do {
       let remaining = try Self.remaining(until: deadline)
@@ -396,9 +406,9 @@ actor DaemonSupervisor {
         from: startup,
         before: remaining
       )
-      startupTask = nil
+      clearStartupOwnership(for: runID)
       try ensureActive(runID)
-      guard let launched = runtime else {
+      guard let launched = runtimeOwnership(for: runID)?.runtime else {
         throw DaemonSupervisorError.launchFailed
       }
       publish(
@@ -408,7 +418,7 @@ actor DaemonSupervisor {
       beginMonitoring(launched, runID: runID)
     } catch {
       startup.cancel()
-      startupTask = nil
+      clearStartupOwnership(for: runID)
       let callerCancelled = Task.isCancelled
       guard activeRunID == runID,
         currentState != .stopping,
@@ -418,7 +428,7 @@ actor DaemonSupervisor {
       }
       activeRunID = nil
       publish(state: .failed, snapshot: nil)
-      await terminateRuntime()
+      await terminateRuntime(for: runID)
       if callerCancelled {
         throw CancellationError()
       }
@@ -432,21 +442,21 @@ actor DaemonSupervisor {
     }
     activeRunID = nil
     publish(state: .stopping, snapshot: nil)
-    startupTask?.cancel()
-    startupTask = nil
+    startupOwnership?.task.cancel()
+    startupOwnership = nil
     monitorTask?.cancel()
     monitorTask = nil
 
-    guard let active = runtime else {
+    guard let active = runtimeOwnership else {
       publish(state: .stopped, snapshot: nil)
       return
     }
-    switch await terminate(active) {
+    switch await terminate(active.runtime) {
     case .graceful:
-      runtime = nil
+      clearRuntimeOwnership(for: active.runID)
       publish(state: .stopped, snapshot: nil)
     case .forced:
-      runtime = nil
+      clearRuntimeOwnership(for: active.runID)
       publish(state: .stopped, snapshot: nil)
       throw DaemonSupervisorError.shutdownTimeout
     case .unresolved:
@@ -476,7 +486,7 @@ actor DaemonSupervisor {
       return
     }
     monitorTask = nil
-    runtime = nil
+    clearRuntimeOwnership(for: runID)
     activeRunID = nil
     if currentState != .stopping && currentState != .stopped {
       publish(state: .failed, snapshot: nil)
@@ -488,7 +498,7 @@ actor DaemonSupervisor {
     for runID: UUID
   ) throws {
     try ensureActive(runID)
-    runtime = launched
+    runtimeOwnership = RuntimeOwnership(runID: runID, runtime: launched)
   }
 
   private func ownsRuntime(
@@ -496,13 +506,35 @@ actor DaemonSupervisor {
     for runID: UUID
   ) -> Bool {
     activeRunID == runID
-      && runtime?.processID == launched.processID
+      && runtimeOwnership?.runID == runID
+      && runtimeOwnership?.runtime.processID == launched.processID
   }
 
   private func ensureActive(_ runID: UUID) throws {
     guard activeRunID == runID, currentState == .starting else {
       throw CancellationError()
     }
+  }
+
+  private func clearStartupOwnership(for runID: UUID) {
+    guard startupOwnership?.runID == runID else {
+      return
+    }
+    startupOwnership = nil
+  }
+
+  private func runtimeOwnership(for runID: UUID) -> RuntimeOwnership? {
+    guard runtimeOwnership?.runID == runID else {
+      return nil
+    }
+    return runtimeOwnership
+  }
+
+  private func clearRuntimeOwnership(for runID: UUID) {
+    guard runtimeOwnership?.runID == runID else {
+      return
+    }
+    runtimeOwnership = nil
   }
 
   private func publish(
@@ -524,13 +556,13 @@ actor DaemonSupervisor {
     eventContinuations[identifier] = nil
   }
 
-  private func terminateRuntime() async {
-    guard let active = runtime else {
+  private func terminateRuntime(for runID: UUID) async {
+    guard let active = runtimeOwnership(for: runID) else {
       return
     }
-    let result = await terminate(active)
+    let result = await terminate(active.runtime)
     if result != .unresolved {
-      runtime = nil
+      clearRuntimeOwnership(for: runID)
     }
   }
 
