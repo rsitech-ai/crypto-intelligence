@@ -74,7 +74,10 @@ pub fn recover(file: &mut File) -> Result<RecoveryReport, RecoveryError> {
 }
 
 fn is_unambiguous_eof_tail(bytes: &[u8]) -> bool {
-    if bytes.len() < HEADER_LENGTH || bytes[..MAGIC.len()] != MAGIC {
+    if bytes.len() < HEADER_LENGTH {
+        return is_valid_partial_header_prefix(bytes);
+    }
+    if bytes[..MAGIC.len()] != MAGIC {
         return false;
     }
     let version = u16::from_be_bytes(
@@ -100,5 +103,21 @@ fn is_unambiguous_eof_tail(bytes: &[u8]) -> bool {
         return false;
     };
 
-    bytes.len() <= encoded_length
+    bytes.len() == encoded_length
+}
+
+fn is_valid_partial_header_prefix(bytes: &[u8]) -> bool {
+    let fixed_header = [MAGIC.as_slice(), SCHEMA_VERSION.to_be_bytes().as_slice()].concat();
+    let fixed_prefix_length = bytes.len().min(fixed_header.len());
+    if bytes[..fixed_prefix_length] != fixed_header[..fixed_prefix_length] {
+        return false;
+    }
+    if bytes.len() <= fixed_header.len() {
+        return true;
+    }
+
+    let length_prefix = &bytes[fixed_header.len()..];
+    let mut minimum_declared_length = [0_u8; size_of::<u32>()];
+    minimum_declared_length[..length_prefix.len()].copy_from_slice(length_prefix);
+    u32::from_be_bytes(minimum_declared_length) as usize <= MAX_PAYLOAD_LENGTH
 }
