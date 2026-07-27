@@ -1,2 +1,746 @@
 // !$*UTF8*$!
-{ archiveVersion = 1; classes = {}; objectVersion = 77; objects = {}; rootObject = 000000000000000000000000; }
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		05008DC3F85351FBC944C90C /* DesignTokens.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC231682FB917A14CD580A4C /* DesignTokens.swift */; };
+		12D692F31071763EC349B5F1 /* DaemonState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23F224DD80D0FD1811F1110B /* DaemonState.swift */; };
+		12FA999D9D8B5250526244D9 /* MarketOverviewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 595AE75697BA844F589EC614 /* MarketOverviewModel.swift */; };
+		313E4242354D8E73194C7409 /* DataHealthView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66DE6761774A952F4DB651A9 /* DataHealthView.swift */; };
+		4267A74F9EB512F86B9F3806 /* btcusdt-book-v1.jsonl in Resources */ = {isa = PBXBuildFile; fileRef = DF0ABF5CECB896B29B6BAA73 /* btcusdt-book-v1.jsonl */; };
+		51509B6EAF642D16196BD17E /* TransitionClient in Frameworks */ = {isa = PBXBuildFile; productRef = FE08F99A46E72B81AB2F6AA3 /* TransitionClient */; };
+		54353AE912A675A1354F5F82 /* AppModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C503D1C0792917C0F83D953 /* AppModelTests.swift */; };
+		5EB39D69DEC423F873516D97 /* MarketOverviewUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C3A36297E6598E2CBE9D928 /* MarketOverviewUITests.swift */; };
+		6AD565BD0E1674A891249B3F /* cryptoriskd in CopyFiles */ = {isa = PBXBuildFile; fileRef = B48B4E1101FC29FC6519A51B /* cryptoriskd */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
+		79807C6B060597859B6DE5AD /* DaemonSupervisor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F277C09B4BC7B45D073AB4A /* DaemonSupervisor.swift */; };
+		7E883B2DD9CBB9504FB385EA /* DaemonSupervisorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86FF305D6964285D13B5FA27 /* DaemonSupervisorTests.swift */; };
+		886A8BCCFD75CD33201A6A91 /* FailureStateUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 92587276237A317F29A3DFD6 /* FailureStateUITests.swift */; };
+		96D191C89B6740EDEDD8571A /* TransitionClient in Frameworks */ = {isa = PBXBuildFile; productRef = BF81FBEB94CAA1702A828431 /* TransitionClient */; };
+		9998D396BBC5EC9D5E61B3B0 /* SessionBootstrap.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA8B5CDBEF8AA121126E0185 /* SessionBootstrap.swift */; };
+		BEA4CFD8BD138995D8A14C08 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE5F67F951D17709133B630A /* AppModel.swift */; };
+		E2E8B3DFB0D319ABCD21D531 /* CuspObservatoryApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD83A4BBC48D7DE4524DAC86 /* CuspObservatoryApp.swift */; };
+		F221C2D230C62CA428E9EDF8 /* AppEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AD259A0BB7CBC8161ACE53A /* AppEnvironment.swift */; };
+		F2BC52249EF536899CCD21B9 /* MarketOverviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17C79F9D78F04B8B3465839C /* MarketOverviewView.swift */; };
+		FA9860154DC9FA9CB776B457 /* MarketOverviewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 836DE8CFB534D0018782F765 /* MarketOverviewModelTests.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		169253E698CF73769F4CF5CC /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 5AF66295BAB292363C1BD50E /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 8450CC8A9264C93A7E20A60D;
+			remoteInfo = CuspObservatory;
+		};
+		24AFD9FB34A4D543A8748F0E /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 5AF66295BAB292363C1BD50E /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 8450CC8A9264C93A7E20A60D;
+			remoteInfo = CuspObservatory;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		7FF023ECCB4E67434F18E327 /* CopyFiles */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 6;
+			files = (
+				6AD565BD0E1674A891249B3F /* cryptoriskd in CopyFiles */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		0C3A36297E6598E2CBE9D928 /* MarketOverviewUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketOverviewUITests.swift; sourceTree = "<group>"; };
+		17C79F9D78F04B8B3465839C /* MarketOverviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketOverviewView.swift; sourceTree = "<group>"; };
+		1C503D1C0792917C0F83D953 /* AppModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModelTests.swift; sourceTree = "<group>"; };
+		22AAEE669A744070111F4171 /* TransitionClient */ = {isa = PBXFileReference; lastKnownFileType = folder; name = TransitionClient; path = Packages/TransitionClient; sourceTree = SOURCE_ROOT; };
+		23F224DD80D0FD1811F1110B /* DaemonState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DaemonState.swift; sourceTree = "<group>"; };
+		3AD259A0BB7CBC8161ACE53A /* AppEnvironment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppEnvironment.swift; sourceTree = "<group>"; };
+		3F277C09B4BC7B45D073AB4A /* DaemonSupervisor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DaemonSupervisor.swift; sourceTree = "<group>"; };
+		595AE75697BA844F589EC614 /* MarketOverviewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketOverviewModel.swift; sourceTree = "<group>"; };
+		5A53AC5049A2357724B78882 /* CuspObservatoryTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = CuspObservatoryTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		5FD569D58F4248A3F2D52611 /* CuspObservatory.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = CuspObservatory.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		66DE6761774A952F4DB651A9 /* DataHealthView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataHealthView.swift; sourceTree = "<group>"; };
+		836DE8CFB534D0018782F765 /* MarketOverviewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketOverviewModelTests.swift; sourceTree = "<group>"; };
+		86FF305D6964285D13B5FA27 /* DaemonSupervisorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DaemonSupervisorTests.swift; sourceTree = "<group>"; };
+		92587276237A317F29A3DFD6 /* FailureStateUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FailureStateUITests.swift; sourceTree = "<group>"; };
+		AC231682FB917A14CD580A4C /* DesignTokens.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignTokens.swift; sourceTree = "<group>"; };
+		AE5F67F951D17709133B630A /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
+		B48B4E1101FC29FC6519A51B /* cryptoriskd */ = {isa = PBXFileReference; path = cryptoriskd; sourceTree = "<group>"; };
+		C093AC4A2ED5FB3F61F495F2 /* CuspObservatoryUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = CuspObservatoryUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		CD83A4BBC48D7DE4524DAC86 /* CuspObservatoryApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CuspObservatoryApp.swift; sourceTree = "<group>"; };
+		DF0ABF5CECB896B29B6BAA73 /* btcusdt-book-v1.jsonl */ = {isa = PBXFileReference; path = "btcusdt-book-v1.jsonl"; sourceTree = "<group>"; };
+		EA8B5CDBEF8AA121126E0185 /* SessionBootstrap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionBootstrap.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		8FD9C3476679B031C93F92F0 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				51509B6EAF642D16196BD17E /* TransitionClient in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		E336B3D0065F56C89995854F /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				96D191C89B6740EDEDD8571A /* TransitionClient in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		02F48CBF006C439A06269689 /* CuspObservatoryTests */ = {
+			isa = PBXGroup;
+			children = (
+				1C503D1C0792917C0F83D953 /* AppModelTests.swift */,
+				86FF305D6964285D13B5FA27 /* DaemonSupervisorTests.swift */,
+				836DE8CFB534D0018782F765 /* MarketOverviewModelTests.swift */,
+			);
+			path = CuspObservatoryTests;
+			sourceTree = "<group>";
+		};
+		194210E61A495920D6807B6D /* fixtures */ = {
+			isa = PBXGroup;
+			children = (
+				5DE33B74141F1AD61D7E4202 /* binance */,
+			);
+			path = fixtures;
+			sourceTree = "<group>";
+		};
+		245C29749FC823EE6AD4EAA3 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				5FD569D58F4248A3F2D52611 /* CuspObservatory.app */,
+				5A53AC5049A2357724B78882 /* CuspObservatoryTests.xctest */,
+				C093AC4A2ED5FB3F61F495F2 /* CuspObservatoryUITests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		2F25CC2ADAA63E3F3A4F2AE1 /* CuspObservatory */ = {
+			isa = PBXGroup;
+			children = (
+				649227FAB22BBD43059D0376 /* App */,
+				7360971664447142F4878255 /* Daemon */,
+				B209BA9728B608BA5B10BB1D /* Design */,
+				6DE513E8782D5E38C5FFCF8D /* Features */,
+			);
+			path = CuspObservatory;
+			sourceTree = "<group>";
+		};
+		49915E6D882C590CB710B6DC /* Overview */ = {
+			isa = PBXGroup;
+			children = (
+				595AE75697BA844F589EC614 /* MarketOverviewModel.swift */,
+				17C79F9D78F04B8B3465839C /* MarketOverviewView.swift */,
+			);
+			path = Overview;
+			sourceTree = "<group>";
+		};
+		501502D83183FD0B9F332969 /* target */ = {
+			isa = PBXGroup;
+			children = (
+				AB1FC42E069526998195924D /* debug */,
+			);
+			path = target;
+			sourceTree = "<group>";
+		};
+		5DE33B74141F1AD61D7E4202 /* binance */ = {
+			isa = PBXGroup;
+			children = (
+				DF0ABF5CECB896B29B6BAA73 /* btcusdt-book-v1.jsonl */,
+			);
+			path = binance;
+			sourceTree = "<group>";
+		};
+		649227FAB22BBD43059D0376 /* App */ = {
+			isa = PBXGroup;
+			children = (
+				3AD259A0BB7CBC8161ACE53A /* AppEnvironment.swift */,
+				AE5F67F951D17709133B630A /* AppModel.swift */,
+				CD83A4BBC48D7DE4524DAC86 /* CuspObservatoryApp.swift */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		6DE513E8782D5E38C5FFCF8D /* Features */ = {
+			isa = PBXGroup;
+			children = (
+				D177A66462D21A31C265C874 /* Health */,
+				49915E6D882C590CB710B6DC /* Overview */,
+			);
+			path = Features;
+			sourceTree = "<group>";
+		};
+		7360971664447142F4878255 /* Daemon */ = {
+			isa = PBXGroup;
+			children = (
+				23F224DD80D0FD1811F1110B /* DaemonState.swift */,
+				3F277C09B4BC7B45D073AB4A /* DaemonSupervisor.swift */,
+				EA8B5CDBEF8AA121126E0185 /* SessionBootstrap.swift */,
+			);
+			path = Daemon;
+			sourceTree = "<group>";
+		};
+		8274B7E4926D51ADDFEF101B /* CuspObservatoryUITests */ = {
+			isa = PBXGroup;
+			children = (
+				92587276237A317F29A3DFD6 /* FailureStateUITests.swift */,
+				0C3A36297E6598E2CBE9D928 /* MarketOverviewUITests.swift */,
+			);
+			path = CuspObservatoryUITests;
+			sourceTree = "<group>";
+		};
+		AB1FC42E069526998195924D /* debug */ = {
+			isa = PBXGroup;
+			children = (
+				B48B4E1101FC29FC6519A51B /* cryptoriskd */,
+			);
+			path = debug;
+			sourceTree = "<group>";
+		};
+		B209BA9728B608BA5B10BB1D /* Design */ = {
+			isa = PBXGroup;
+			children = (
+				AC231682FB917A14CD580A4C /* DesignTokens.swift */,
+			);
+			path = Design;
+			sourceTree = "<group>";
+		};
+		C46A6EC53E68FF83F2E3C568 = {
+			isa = PBXGroup;
+			children = (
+				2F25CC2ADAA63E3F3A4F2AE1 /* CuspObservatory */,
+				02F48CBF006C439A06269689 /* CuspObservatoryTests */,
+				8274B7E4926D51ADDFEF101B /* CuspObservatoryUITests */,
+				FB80F9881C8F2F21DB34E292 /* foundation-runtime */,
+				F5FC7A0EC3AA83B3E3F6E210 /* Packages */,
+				245C29749FC823EE6AD4EAA3 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		D177A66462D21A31C265C874 /* Health */ = {
+			isa = PBXGroup;
+			children = (
+				66DE6761774A952F4DB651A9 /* DataHealthView.swift */,
+			);
+			path = Health;
+			sourceTree = "<group>";
+		};
+		F5FC7A0EC3AA83B3E3F6E210 /* Packages */ = {
+			isa = PBXGroup;
+			children = (
+				22AAEE669A744070111F4171 /* TransitionClient */,
+			);
+			path = Packages;
+			sourceTree = "<group>";
+		};
+		FB80F9881C8F2F21DB34E292 /* foundation-runtime */ = {
+			isa = PBXGroup;
+			children = (
+				194210E61A495920D6807B6D /* fixtures */,
+				501502D83183FD0B9F332969 /* target */,
+			);
+			name = "foundation-runtime";
+			path = ../..;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		3AA072238C0FA75E82460C56 /* CuspObservatoryUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 5E45146BAA4188CE8F529D98 /* Build configuration list for PBXNativeTarget "CuspObservatoryUITests" */;
+			buildPhases = (
+				52E3CB2EC6115453001FC075 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				CFBABAA6943AFE9852D66233 /* PBXTargetDependency */,
+			);
+			name = CuspObservatoryUITests;
+			packageProductDependencies = (
+			);
+			productName = CuspObservatoryUITests;
+			productReference = C093AC4A2ED5FB3F61F495F2 /* CuspObservatoryUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+		8450CC8A9264C93A7E20A60D /* CuspObservatory */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = FA209270D5BF00986FB20601 /* Build configuration list for PBXNativeTarget "CuspObservatory" */;
+			buildPhases = (
+				09755B447D54C68459BE1D21 /* Sources */,
+				B80F29BF887F01A74B6D08C0 /* Resources */,
+				7FF023ECCB4E67434F18E327 /* CopyFiles */,
+				8FD9C3476679B031C93F92F0 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = CuspObservatory;
+			packageProductDependencies = (
+				FE08F99A46E72B81AB2F6AA3 /* TransitionClient */,
+			);
+			productName = CuspObservatory;
+			productReference = 5FD569D58F4248A3F2D52611 /* CuspObservatory.app */;
+			productType = "com.apple.product-type.application";
+		};
+		96DCF19ABF377C0F01D5B4FE /* CuspObservatoryTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = EE05C4383884A26A588B9360 /* Build configuration list for PBXNativeTarget "CuspObservatoryTests" */;
+			buildPhases = (
+				DE1E39F97C4DCAE53C76BA77 /* Sources */,
+				E336B3D0065F56C89995854F /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				D354851BB207549E1AABBC91 /* PBXTargetDependency */,
+			);
+			name = CuspObservatoryTests;
+			packageProductDependencies = (
+				BF81FBEB94CAA1702A828431 /* TransitionClient */,
+			);
+			productName = CuspObservatoryTests;
+			productReference = 5A53AC5049A2357724B78882 /* CuspObservatoryTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		5AF66295BAB292363C1BD50E /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					3AA072238C0FA75E82460C56 = {
+						ProvisioningStyle = Manual;
+						TestTargetID = 8450CC8A9264C93A7E20A60D;
+					};
+					8450CC8A9264C93A7E20A60D = {
+						ProvisioningStyle = Manual;
+					};
+					96DCF19ABF377C0F01D5B4FE = {
+						ProvisioningStyle = Manual;
+					};
+				};
+			};
+			buildConfigurationList = 21A5A5D15E14CADB2C2E1AD0 /* Build configuration list for PBXProject "CuspObservatory" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = C46A6EC53E68FF83F2E3C568;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				056D06D736F6D678EF5B004F /* XCLocalSwiftPackageReference "Packages/TransitionClient" */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 245C29749FC823EE6AD4EAA3 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				8450CC8A9264C93A7E20A60D /* CuspObservatory */,
+				96DCF19ABF377C0F01D5B4FE /* CuspObservatoryTests */,
+				3AA072238C0FA75E82460C56 /* CuspObservatoryUITests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		B80F29BF887F01A74B6D08C0 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				4267A74F9EB512F86B9F3806 /* btcusdt-book-v1.jsonl in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		09755B447D54C68459BE1D21 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F221C2D230C62CA428E9EDF8 /* AppEnvironment.swift in Sources */,
+				BEA4CFD8BD138995D8A14C08 /* AppModel.swift in Sources */,
+				E2E8B3DFB0D319ABCD21D531 /* CuspObservatoryApp.swift in Sources */,
+				12D692F31071763EC349B5F1 /* DaemonState.swift in Sources */,
+				79807C6B060597859B6DE5AD /* DaemonSupervisor.swift in Sources */,
+				313E4242354D8E73194C7409 /* DataHealthView.swift in Sources */,
+				05008DC3F85351FBC944C90C /* DesignTokens.swift in Sources */,
+				12FA999D9D8B5250526244D9 /* MarketOverviewModel.swift in Sources */,
+				F2BC52249EF536899CCD21B9 /* MarketOverviewView.swift in Sources */,
+				9998D396BBC5EC9D5E61B3B0 /* SessionBootstrap.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		52E3CB2EC6115453001FC075 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				886A8BCCFD75CD33201A6A91 /* FailureStateUITests.swift in Sources */,
+				5EB39D69DEC423F873516D97 /* MarketOverviewUITests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		DE1E39F97C4DCAE53C76BA77 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				54353AE912A675A1354F5F82 /* AppModelTests.swift in Sources */,
+				7E883B2DD9CBB9504FB385EA /* DaemonSupervisorTests.swift in Sources */,
+				FA9860154DC9FA9CB776B457 /* MarketOverviewModelTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		CFBABAA6943AFE9852D66233 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 8450CC8A9264C93A7E20A60D /* CuspObservatory */;
+			targetProxy = 169253E698CF73769F4CF5CC /* PBXContainerItemProxy */;
+		};
+		D354851BB207549E1AABBC91 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 8450CC8A9264C93A7E20A60D /* CuspObservatory */;
+			targetProxy = 24AFD9FB34A4D543A8748F0E /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		02ACAE59BD47694D5DF8FB9D /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = CuspObservatory/CuspObservatory.entitlements;
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				COMBINE_HIDPI_IMAGES = YES;
+				INFOPLIST_FILE = CuspObservatory/GeneratedInfo.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				PRODUCT_BUNDLE_IDENTIFIER = ai.rsitech.CuspObservatory;
+				PRODUCT_NAME = CuspObservatory;
+				SDKROOT = macosx;
+			};
+			name = Debug;
+		};
+		8E7C2B37826F7620E172E9E3 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ARCHS = arm64;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_TREAT_WARNINGS_AS_ERRORS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SUPPORTED_PLATFORMS = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_ENABLE_EXPLICIT_MODULES = NO;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_TREAT_WARNINGS_AS_ERRORS = YES;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		A387DABCA09949B1E9010BD8 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				PRODUCT_BUNDLE_IDENTIFIER = ai.rsitech.CuspObservatoryTests;
+				SDKROOT = macosx;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/CuspObservatory.app/Contents/MacOS/CuspObservatory";
+			};
+			name = Debug;
+		};
+		C5380EF2C1BAD337D479B398 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				PRODUCT_BUNDLE_IDENTIFIER = ai.rsitech.CuspObservatoryUITests;
+				SDKROOT = macosx;
+				TEST_TARGET_NAME = CuspObservatory;
+			};
+			name = Release;
+		};
+		C6FC4ECC9903F579C0131914 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				PRODUCT_BUNDLE_IDENTIFIER = ai.rsitech.CuspObservatoryTests;
+				SDKROOT = macosx;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/CuspObservatory.app/Contents/MacOS/CuspObservatory";
+			};
+			name = Release;
+		};
+		CF21C2A53CB1E7AEBD785D45 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = CuspObservatory/CuspObservatory.entitlements;
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				COMBINE_HIDPI_IMAGES = YES;
+				INFOPLIST_FILE = CuspObservatory/GeneratedInfo.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				PRODUCT_BUNDLE_IDENTIFIER = ai.rsitech.CuspObservatory;
+				PRODUCT_NAME = CuspObservatory;
+				SDKROOT = macosx;
+			};
+			name = Release;
+		};
+		E2FA5D66477442658E7B909E /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ARCHS = arm64;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_TREAT_WARNINGS_AS_ERRORS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SUPPORTED_PLATFORMS = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_ENABLE_EXPLICIT_MODULES = NO;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_TREAT_WARNINGS_AS_ERRORS = YES;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
+		FCBDD760FE3A96E4653BBA69 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				PRODUCT_BUNDLE_IDENTIFIER = ai.rsitech.CuspObservatoryUITests;
+				SDKROOT = macosx;
+				TEST_TARGET_NAME = CuspObservatory;
+			};
+			name = Debug;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		21A5A5D15E14CADB2C2E1AD0 /* Build configuration list for PBXProject "CuspObservatory" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				8E7C2B37826F7620E172E9E3 /* Debug */,
+				E2FA5D66477442658E7B909E /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		5E45146BAA4188CE8F529D98 /* Build configuration list for PBXNativeTarget "CuspObservatoryUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				FCBDD760FE3A96E4653BBA69 /* Debug */,
+				C5380EF2C1BAD337D479B398 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		EE05C4383884A26A588B9360 /* Build configuration list for PBXNativeTarget "CuspObservatoryTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A387DABCA09949B1E9010BD8 /* Debug */,
+				C6FC4ECC9903F579C0131914 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		FA209270D5BF00986FB20601 /* Build configuration list for PBXNativeTarget "CuspObservatory" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				02ACAE59BD47694D5DF8FB9D /* Debug */,
+				CF21C2A53CB1E7AEBD785D45 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		056D06D736F6D678EF5B004F /* XCLocalSwiftPackageReference "Packages/TransitionClient" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/TransitionClient;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		BF81FBEB94CAA1702A828431 /* TransitionClient */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = TransitionClient;
+		};
+		FE08F99A46E72B81AB2F6AA3 /* TransitionClient */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = TransitionClient;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = 5AF66295BAB292363C1BD50E /* Project object */;
+}

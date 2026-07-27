@@ -1,0 +1,128 @@
+name: CuspObservatory
+
+options:
+  createIntermediateGroups: true
+  deploymentTarget:
+    macOS: "26.0"
+  groupSortPosition: top
+  minimumXcodeGenVersion: "2.45.4"
+
+configs:
+  Debug: debug
+  Release: release
+
+settings:
+  base:
+    ARCHS: arm64
+    CLANG_ENABLE_MODULES: true
+    ENABLE_USER_SCRIPT_SANDBOXING: true
+    GCC_TREAT_WARNINGS_AS_ERRORS: true
+    MACOSX_DEPLOYMENT_TARGET: "26.0"
+    ONLY_ACTIVE_ARCH: true
+    SUPPORTED_PLATFORMS: macosx
+    SWIFT_STRICT_CONCURRENCY: complete
+    SWIFT_TREAT_WARNINGS_AS_ERRORS: true
+    SWIFT_ENABLE_EXPLICIT_MODULES: false
+    SWIFT_VERSION: "6.0"
+
+packages:
+  TransitionClient:
+    path: Packages/TransitionClient
+
+targets:
+  CuspObservatory:
+    type: application
+    platform: macOS
+    deploymentTarget: "26.0"
+    sources:
+      - path: CuspObservatory/App/CuspObservatoryApp.swift
+      - path: CuspObservatory/App/AppEnvironment.swift
+      - path: CuspObservatory/App/AppModel.swift
+      - path: CuspObservatory/Daemon/DaemonState.swift
+      - path: CuspObservatory/Daemon/SessionBootstrap.swift
+      - path: CuspObservatory/Daemon/DaemonSupervisor.swift
+      - path: CuspObservatory/Features/Overview/MarketOverviewModel.swift
+      - path: CuspObservatory/Features/Overview/MarketOverviewView.swift
+      - path: CuspObservatory/Features/Health/DataHealthView.swift
+      - path: CuspObservatory/Design/DesignTokens.swift
+      - path: ../../fixtures/binance/btcusdt-book-v1.jsonl
+        buildPhase: resources
+      - path: ../../target/debug/cryptoriskd
+        attributes:
+          - CodeSignOnCopy
+        buildPhase:
+          copyFiles:
+            destination: executables
+    dependencies:
+      - package: TransitionClient
+    entitlements:
+      path: CuspObservatory/CuspObservatory.entitlements
+    info:
+      path: CuspObservatory/GeneratedInfo.plist
+      properties:
+        CFBundleDisplayName: Cusp Observatory
+        CFBundleName: CuspObservatory
+        CFBundleShortVersionString: "0.1.0"
+        CFBundleVersion: "1"
+        LSMinimumSystemVersion: "26.0"
+        NSHumanReadableCopyright: ""
+        NSPrincipalClass: NSApplication
+    settings:
+      base:
+        CODE_SIGN_IDENTITY: "-"
+        CODE_SIGN_STYLE: Manual
+        PRODUCT_BUNDLE_IDENTIFIER: ai.rsitech.CuspObservatory
+        PRODUCT_NAME: CuspObservatory
+
+  CuspObservatoryTests:
+    type: bundle.unit-test
+    platform: macOS
+    deploymentTarget: "26.0"
+    sources:
+      - path: CuspObservatoryTests/DaemonSupervisorTests.swift
+      - path: CuspObservatoryTests/AppModelTests.swift
+      - path: CuspObservatoryTests/MarketOverviewModelTests.swift
+    dependencies:
+      - target: CuspObservatory
+      - package: TransitionClient
+    settings:
+      base:
+        CODE_SIGN_IDENTITY: "-"
+        CODE_SIGN_STYLE: Manual
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: ai.rsitech.CuspObservatoryTests
+
+  CuspObservatoryUITests:
+    type: bundle.ui-testing
+    platform: macOS
+    deploymentTarget: "26.0"
+    sources:
+      - path: CuspObservatoryUITests/MarketOverviewUITests.swift
+      - path: CuspObservatoryUITests/FailureStateUITests.swift
+    dependencies:
+      - target: CuspObservatory
+    settings:
+      base:
+        CODE_SIGN_IDENTITY: "-"
+        CODE_SIGN_STYLE: Manual
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: ai.rsitech.CuspObservatoryUITests
+        TEST_TARGET_NAME: CuspObservatory
+
+schemes:
+  CuspObservatory:
+    build:
+      targets:
+        CuspObservatory: all
+        CuspObservatoryTests: [test]
+        CuspObservatoryUITests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      gatherCoverageData: false
+      targets:
+        - name: CuspObservatoryTests
+          parallelizable: false
+        - name: CuspObservatoryUITests
+          parallelizable: false
