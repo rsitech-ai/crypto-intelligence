@@ -170,13 +170,22 @@ fn open_or_create_state_file(
         match rustix::fs::openat(root.as_fd(), name, create_flags, Mode::RUSR | Mode::WUSR) {
             Ok(owned) => (owned, true),
             Err(rustix::io::Errno::EXIST) => (
-                rustix::fs::openat(root.as_fd(), name, access_flags, Mode::empty())?,
+                rustix::fs::openat(
+                    root.as_fd(),
+                    name,
+                    access_flags | OFlags::NONBLOCK,
+                    Mode::empty(),
+                )?,
                 false,
             ),
             Err(error) => return Err(error.into()),
         };
     let file = File::from(owned);
     validate_state_file(&file)?;
+    if !created {
+        let flags = fcntl_getfl(&file).map_err(io::Error::from)?;
+        fcntl_setfl(&file, flags & !OFlags::NONBLOCK).map_err(io::Error::from)?;
+    }
     if created {
         rustix::fs::fsync(root.as_fd()).map_err(io::Error::from)?;
     }

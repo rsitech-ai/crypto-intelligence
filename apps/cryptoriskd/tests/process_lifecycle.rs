@@ -200,6 +200,36 @@ fn signal_after_runtime_sync_before_readiness_suppresses_stdout() {
     writer.stop();
 }
 
+#[test]
+fn existing_log_fifo_fails_promptly_without_blocking_startup() {
+    let root = runtime_root();
+    let secret_path = root.path().join("session-secret.bin");
+    fs::write(&secret_path, SECRET_BYTES).expect("session secret source must write");
+    let log_fifo = root.path().join("logs/cmti.jsonl");
+    let status = Command::new("mkfifo")
+        .arg(&log_fifo)
+        .status()
+        .expect("mkfifo helper must run");
+    assert!(status.success(), "log FIFO must create");
+
+    let mut daemon = DaemonProcess::spawn(root.path(), &secret_path, SecretOpenMode::ReadOnly);
+    let status = daemon.wait_for_exit(Duration::from_secs(1));
+    assert!(
+        !status.success(),
+        "nonregular existing log must fail startup"
+    );
+    let output = daemon.capture();
+    assert!(
+        output.stdout.lines().next().is_none(),
+        "log FIFO failure must happen before readiness"
+    );
+    assert!(
+        output.stderr.contains("local JSON log open failed"),
+        "failure must identify the log boundary without blocking"
+    );
+    assert_no_secret_material(&output);
+}
+
 async fn assert_authenticated_snapshot(readiness: &Readiness) {
     assert_eq!(
         readiness.expiry_unix_seconds - readiness.issued_unix_seconds,
@@ -406,9 +436,7 @@ impl DaemonProcess {
             let mut reader = BufReader::new(stdout);
             let mut output = String::new();
             let _ = reader.read_line(&mut output);
-            readiness_sender
-                .send(output.clone())
-                .expect("readiness observer must remain");
+            let _ = readiness_sender.send(output.clone());
             reader
                 .read_to_string(&mut output)
                 .expect("stdout remainder must read");
