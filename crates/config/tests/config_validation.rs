@@ -127,12 +127,16 @@ fn binding_and_resource_limits_fail_closed() {
 #[test]
 fn runtime_binding_matches_the_exact_schema_rule() {
     let root = fixture_root();
-    let other_loopback = valid_config().replace("127.0.0.1:0", "127.0.0.2:0");
-
-    assert!(matches!(
-        load_valid(&other_loopback, root.path()),
-        Err(ConfigError::NonLoopbackBind)
-    ));
+    for invalid_address in ["127.0.0.2:0", "127.0.0.1:00", "127.0.0.1:00000"] {
+        let invalid = valid_config().replace("127.0.0.1:0", invalid_address);
+        assert!(
+            matches!(
+                load_valid(&invalid, root.path()),
+                Err(ConfigError::NonLoopbackBind)
+            ),
+            "{invalid_address} must not cross the schema/runtime boundary"
+        );
+    }
 }
 
 #[test]
