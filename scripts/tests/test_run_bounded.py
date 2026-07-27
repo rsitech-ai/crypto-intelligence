@@ -26,6 +26,52 @@ def load_helper_module():
 
 
 class RunBoundedTests(unittest.TestCase):
+    def test_permission_denied_group_probe_is_treated_as_still_existing(self) -> None:
+        helper_module = load_helper_module()
+        with mock.patch.object(
+            helper_module.os,
+            "killpg",
+            side_effect=PermissionError(1, "operation not permitted"),
+        ):
+            self.assertTrue(helper_module.group_exists(4242))
+
+    def test_sigkill_reap_uses_a_timeout_when_the_leader_never_reports_exit(self) -> None:
+        helper_module = load_helper_module()
+        process = mock.Mock(pid=4242)
+        process.poll.return_value = None
+        process.wait.side_effect = [
+            subprocess.TimeoutExpired(["resistant-child"], 2),
+            subprocess.TimeoutExpired(["resistant-child"], 2),
+        ]
+        with (
+            mock.patch.object(
+                helper_module, "wait_for_group_exit", side_effect=[False, False]
+            ),
+            mock.patch.object(helper_module, "signal_group"),
+        ):
+            self.assertFalse(helper_module.terminate_group(process))
+
+        self.assertEqual(
+            process.wait.call_args_list,
+            [mock.call(timeout=2), mock.call(timeout=2)],
+        )
+
+    def test_verifier_has_no_unbounded_wait_immediately_after_sigkill(self) -> None:
+        verifier = (ROOT / "scripts" / "verify-foundation-runtime.sh").read_text()
+        lines = verifier.splitlines()
+        violations = []
+        for index, line in enumerate(lines):
+            if "kill -KILL" not in line:
+                continue
+            following = lines[index + 1 : index + 7]
+            if any(candidate.lstrip().startswith("wait ") for candidate in following):
+                violations.append(index + 1)
+        self.assertEqual(
+            violations,
+            [],
+            f"unbounded wait follows SIGKILL near lines {violations}",
+        )
+
     def test_cleanup_failure_overrides_a_nominal_command_success(self) -> None:
         helper_module = load_helper_module()
         process = mock.Mock(pid=4242)

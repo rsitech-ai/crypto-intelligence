@@ -5,16 +5,18 @@ builds and exercises the Rust daemon and native macOS application, but it does
 not connect to an exchange, place orders, use live credentials, qualify a
 model, or establish release/App Store readiness.
 
-The single entry point is:
+The single-run diagnostic entry point is:
 
 ```sh
 scripts/verify-foundation-runtime.sh
 ```
 
-It is deliberately fail-closed. Run it from the repository root at an exact
-clean commit with no existing `cryptoriskd`, `CuspObservatory`, or
-`cmti-daemon` process. It refuses a dirty tree or stale process state instead
-of modifying either condition.
+It is deliberately fail-closed and can only emit one invocation. It never
+accepts earlier evidence and therefore always retains the
+`two-clean-full-gate-runs-not-observed` blocker when every subgate passes. Run
+it from the repository root at an exact clean commit with no existing
+`cryptoriskd`, `CuspObservatory`, or `cmti-daemon` process. It refuses a dirty
+tree or stale process state instead of modifying either condition.
 
 ## What the verifier proves
 
@@ -43,9 +45,12 @@ nonzero if cleanup cannot be proved.
 
 The behavioral no-execution test inventories the production dependency
 closure, active Cargo features, protobuf RPCs, daemon CLI options,
-configuration fields, outbound connection declarations, and production Rust
-identifiers. A new execution-capable surface fails the gate for explicit
-review.
+configuration fields, positively owned network capabilities, and production
+Rust identifiers. The only approved production network capability is the
+exact loopback `TcpListener::bind(bind)` in `crates/local-api`, backed by the
+exact loopback-only default and runtime guard. UDP sends, DNS resolution,
+client connects, raw sockets/endpoints, network command tools, and unsafe
+network FFI fail the gate for explicit review.
 
 ## Prerequisites
 
@@ -75,46 +80,41 @@ All four outputs must be empty.
 
 ## Required two-invocation sequence
 
-The final `runtime-proven foundation slice` label requires two complete,
-otherwise-green invocations from the same clean commit. Preserve the first
-result outside the worktree so the second invocation can still begin clean:
+The final `runtime-proven foundation slice` label requires the parent wrapper:
 
 ```sh
-first_evidence="$(mktemp -t foundation-runtime-first)"
-scripts/verify-foundation-runtime.sh \
-  --evidence-output "${first_evidence}"
-
-git status --short
-
-scripts/verify-foundation-runtime.sh \
-  --prior-evidence "${first_evidence}" \
+scripts/verify-foundation-runtime-twice.py \
   --evidence-output release/evidence/foundation-runtime-verification.json
 ```
 
-The second invocation validates the first evidence file rather than trusting
-it. It requires the same commit, a clean recorded tree, every command exit
-zero, both direct-daemon runs, all three native-app lifecycle records,
-identical snapshot/WAL recovery invariants, zero current static/security audit
-findings, and no blocker other than the first invocation's expected
-`two-clean-full-gate-runs-not-observed` marker.
+The wrapper creates a mode-`0700` private directory, launches the exact
+single-run verifier, validates the exact evidence schema and detailed records,
+and writes an exclusive mode-`0600` SHA-256 anchor before it starts the second
+invocation. It rechecks that anchor, validates the second evidence
+independently, and emits a promotion receipt only when both otherwise-green
+runs name the same commit. There is no option for user-supplied prior
+evidence.
 
-Do not start the second invocation when the first reports any repository,
-runtime, toolchain, or external blocker. Preserve that first evidence as the
-current honest result and resolve or explicitly defer the blocker.
+Validation requires the exact command inventory, successful command output
+hashes and artifact inventory, two detailed direct-daemon records, the
+deliberate unauthenticated response record, all three native-app lifecycle
+records, identical snapshot/WAL recovery details, an exact 35-of-35 native
+unit summary, a successful non-empty UI summary, zero current
+static/security findings, and empty tree-mutation checks. Summary booleans
+are recomputed from their detailed records.
 
-When the first invocation is blocked, copy that exact external result into the
-tracked evidence location for the evidence-only commit:
-
-```sh
-cp -- "${first_evidence}" \
-  release/evidence/foundation-runtime-verification.json
-```
+If either invocation has any repository, runtime, toolchain, or external
+blocker, the wrapper does not start or complete promotion and preserves the
+latest blocked single-run evidence at the requested output.
 
 ## Evidence and readiness labels
 
 `release/evidence/foundation-runtime-verification.json` records:
 
 - exact commit, clean-tree checks, start/end times, and invocation count;
+- for promoted evidence, a two-run receipt containing private-input digests,
+  per-command output hashes, artifact hashes, runtime/WAL digests, and native
+  test totals for both invocations;
 - tool versions, exact commands, exit codes, durations, and output hashes;
 - executable/product hashes and native test summaries;
 - authenticated snapshot values/digests and deliberate authentication failure;
