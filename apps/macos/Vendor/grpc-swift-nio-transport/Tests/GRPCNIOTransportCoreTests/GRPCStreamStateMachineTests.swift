@@ -1,0 +1,3686 @@
+/*
+ * Copyright 2024, gRPC Authors All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+import GRPCCore
+import NIOCore
+import NIOEmbedded
+import NIOHPACK
+import NIOHTTP2
+import XCTest
+
+@testable import GRPCNIOTransportCore
+
+private enum TargetStateMachineState: CaseIterable {
+  case clientIdleServerIdle
+  case clientOpenServerIdle
+  case clientOpenServerOpen
+  case clientOpenServerClosed
+  case clientClosedServerIdle
+  case clientClosedServerOpen
+  case clientClosedServerClosed
+  case poisoned
+}
+
+extension HPACKHeaders {
+  // Client
+  fileprivate static let clientInitialMetadata: Self = [
+    GRPCHTTP2Keys.path.rawValue: "/test/test",
+    GRPCHTTP2Keys.scheme.rawValue: "http",
+    GRPCHTTP2Keys.method.rawValue: "POST",
+    GRPCHTTP2Keys.contentType.rawValue: "application/grpc",
+    GRPCHTTP2Keys.te.rawValue: "trailers",
+  ]
+  fileprivate static let clientInitialMetadataWithDeflateCompression: Self = [
+    GRPCHTTP2Keys.path.rawValue: "/test/test",
+    GRPCHTTP2Keys.contentType.rawValue: "application/grpc",
+    GRPCHTTP2Keys.method.rawValue: "POST",
+    GRPCHTTP2Keys.scheme.rawValue: "https",
+    GRPCHTTP2Keys.te.rawValue: "trailers",
+    GRPCHTTP2Keys.acceptEncoding.rawValue: "deflate",
+    GRPCHTTP2Keys.encoding.rawValue: "deflate",
+  ]
+  fileprivate static let clientInitialMetadataWithGzipCompression: Self = [
+    GRPCHTTP2Keys.path.rawValue: "/test/test",
+    GRPCHTTP2Keys.contentType.rawValue: "application/grpc",
+    GRPCHTTP2Keys.method.rawValue: "POST",
+    GRPCHTTP2Keys.scheme.rawValue: "https",
+    GRPCHTTP2Keys.te.rawValue: "trailers",
+    GRPCHTTP2Keys.acceptEncoding.rawValue: "gzip",
+    GRPCHTTP2Keys.encoding.rawValue: "gzip",
+  ]
+  fileprivate static let receivedWithoutContentType: Self = [
+    GRPCHTTP2Keys.path.rawValue: "/test/test"
+  ]
+  fileprivate static let receivedWithInvalidContentType: Self = [
+    GRPCHTTP2Keys.path.rawValue: "/test/test",
+    GRPCHTTP2Keys.contentType.rawValue: "invalid/invalid",
+  ]
+  fileprivate static let receivedWithInvalidPath: Self = [
+    GRPCHTTP2Keys.path.rawValue: "someinvalidpath",
+    GRPCHTTP2Keys.scheme.rawValue: "http",
+    GRPCHTTP2Keys.method.rawValue: "POST",
+    GRPCHTTP2Keys.contentType.rawValue: "application/grpc",
+  ]
+  fileprivate static let receivedWithoutEndpoint: Self = [
+    GRPCHTTP2Keys.contentType.rawValue: "application/grpc"
+  ]
+  fileprivate static let receivedWithoutTE: Self = [
+    GRPCHTTP2Keys.path.rawValue: "/test/test",
+    GRPCHTTP2Keys.scheme.rawValue: "http",
+    GRPCHTTP2Keys.method.rawValue: "POST",
+    GRPCHTTP2Keys.contentType.rawValue: "application/grpc",
+  ]
+  fileprivate static let receivedWithInvalidTE: Self = [
+    GRPCHTTP2Keys.path.rawValue: "/test/test",
+    GRPCHTTP2Keys.scheme.rawValue: "http",
+    GRPCHTTP2Keys.method.rawValue: "POST",
+    GRPCHTTP2Keys.contentType.rawValue: "application/grpc",
+    GRPCHTTP2Keys.te.rawValue: "invalidte",
+  ]
+  fileprivate static let receivedWithoutMethod: Self = [
+    GRPCHTTP2Keys.path.rawValue: "/test/test",
+    GRPCHTTP2Keys.scheme.rawValue: "http",
+    GRPCHTTP2Keys.contentType.rawValue: "application/grpc",
+    GRPCHTTP2Keys.te.rawValue: "trailers",
+  ]
+  fileprivate static let receivedWithInvalidMethod: Self = [
+    GRPCHTTP2Keys.path.rawValue: "/test/test",
+    GRPCHTTP2Keys.scheme.rawValue: "http",
+    GRPCHTTP2Keys.method.rawValue: "GET",
+    GRPCHTTP2Keys.contentType.rawValue: "application/grpc",
+    GRPCHTTP2Keys.te.rawValue: "trailers",
+  ]
+  fileprivate static let receivedWithoutScheme: Self = [
+    GRPCHTTP2Keys.path.rawValue: "/test/test",
+    GRPCHTTP2Keys.method.rawValue: "POST",
+    GRPCHTTP2Keys.contentType.rawValue: "application/grpc",
+    GRPCHTTP2Keys.te.rawValue: "trailers",
+  ]
+  fileprivate static let receivedWithInvalidScheme: Self = [
+    GRPCHTTP2Keys.path.rawValue: "/test/test",
+    GRPCHTTP2Keys.scheme.rawValue: "invalidscheme",
+    GRPCHTTP2Keys.method.rawValue: "POST",
+    GRPCHTTP2Keys.contentType.rawValue: "application/grpc",
+    GRPCHTTP2Keys.te.rawValue: "trailers",
+  ]
+
+  // Server
+  fileprivate static let serverInitialMetadata: Self = [
+    GRPCHTTP2Keys.status.rawValue: "200",
+    GRPCHTTP2Keys.contentType.rawValue: ContentType.grpc.canonicalValue,
+  ]
+  fileprivate static let serverInitialMetadataWithDeflateCompression: Self = [
+    GRPCHTTP2Keys.status.rawValue: "200",
+    GRPCHTTP2Keys.contentType.rawValue: ContentType.grpc.canonicalValue,
+    GRPCHTTP2Keys.encoding.rawValue: "deflate",
+  ]
+  fileprivate static let serverInitialMetadataWithGZIPCompression: Self = [
+    GRPCHTTP2Keys.status.rawValue: "200",
+    GRPCHTTP2Keys.contentType.rawValue: ContentType.grpc.canonicalValue,
+    GRPCHTTP2Keys.encoding.rawValue: "gzip",
+  ]
+  fileprivate static let serverTrailers: Self = [
+    GRPCHTTP2Keys.status.rawValue: "200",
+    GRPCHTTP2Keys.contentType.rawValue: ContentType.grpc.canonicalValue,
+    GRPCHTTP2Keys.grpcStatus.rawValue: "0",
+  ]
+}
+
+@available(gRPCSwiftNIOTransport 2.0, *)
+final class GRPCStreamClientStateMachineTests: XCTestCase {
+  private func makeClientStateMachine(
+    targetState: TargetStateMachineState,
+    compressionEnabled: Bool = false
+  ) -> GRPCStreamStateMachine {
+    self.makeClientStateMachine(
+      targetState: targetState,
+      methodDescriptor: .testTest,
+      compressionEnabled: compressionEnabled
+    )
+  }
+
+  private func makeClientStateMachine(
+    targetState: TargetStateMachineState,
+    rpcType: MethodDescriptor.RPCType,
+    compressionEnabled: Bool = false
+  ) -> GRPCStreamStateMachine {
+    self.makeClientStateMachine(
+      targetState: targetState,
+      methodDescriptor: MethodDescriptor(
+        fullyQualifiedService: "test",
+        method: "test",
+        type: rpcType
+      ),
+      compressionEnabled: compressionEnabled
+    )
+  }
+
+  private func makeClientStateMachine(
+    targetState: TargetStateMachineState,
+    methodDescriptor: MethodDescriptor,
+    compressionEnabled: Bool = false
+  ) -> GRPCStreamStateMachine {
+    var stateMachine = GRPCStreamStateMachine(
+      configuration: .client(
+        .init(
+          methodDescriptor: methodDescriptor,
+          scheme: .http,
+          authority: nil,
+          outboundEncoding: compressionEnabled ? .deflate : .none,
+          acceptedEncodings: [.deflate]
+        )
+      ),
+      maxPayloadSize: 100,
+      skipAssertions: true
+    )
+
+    let serverMetadata: HPACKHeaders =
+      compressionEnabled ? .serverInitialMetadataWithDeflateCompression : .serverInitialMetadata
+    switch targetState {
+    case .clientIdleServerIdle:
+      break
+    case .clientOpenServerIdle:
+      // Open client
+      XCTAssertNoThrow(try stateMachine.send(metadata: []))
+    case .clientOpenServerOpen:
+      // Open client
+      XCTAssertNoThrow(try stateMachine.send(metadata: []))
+      // Open server
+      XCTAssertNoThrow(try stateMachine.receive(headers: serverMetadata, endStream: false))
+    case .clientOpenServerClosed:
+      // Open client
+      XCTAssertNoThrow(try stateMachine.send(metadata: []))
+      // Open server
+      XCTAssertNoThrow(try stateMachine.receive(headers: serverMetadata, endStream: false))
+      // Close server
+      XCTAssertNoThrow(try stateMachine.receive(headers: .serverTrailers, endStream: true))
+    case .clientClosedServerIdle:
+      // Open client
+      XCTAssertNoThrow(try stateMachine.send(metadata: []))
+      // Close client
+      XCTAssertNoThrow(try stateMachine.closeOutbound())
+    case .clientClosedServerOpen:
+      // Open client
+      XCTAssertNoThrow(try stateMachine.send(metadata: []))
+      // Open server
+      XCTAssertNoThrow(try stateMachine.receive(headers: serverMetadata, endStream: false))
+      // Close client
+      XCTAssertNoThrow(try stateMachine.closeOutbound())
+    case .clientClosedServerClosed:
+      // Open client
+      XCTAssertNoThrow(try stateMachine.send(metadata: []))
+      // Open server
+      XCTAssertNoThrow(try stateMachine.receive(headers: serverMetadata, endStream: false))
+      // Close client
+      XCTAssertNoThrow(try stateMachine.closeOutbound())
+      // Close server
+      XCTAssertNoThrow(try stateMachine.receive(headers: .serverTrailers, endStream: true))
+    case .poisoned:
+      // Enter poisoned state via an unreachable transition.
+      XCTAssertThrowsError(
+        ofType: GRPCStreamStateMachine.UnreachableTransition.self,
+        try stateMachine.send(message: ByteBuffer(), promise: nil)
+      ) { _ in }
+    }
+
+    return stateMachine
+  }
+
+  // - MARK: Send Metadata
+
+  func testSendMetadataWhenClientIdleAndServerIdle() throws {
+    var stateMachine = self.makeClientStateMachine(targetState: .clientIdleServerIdle)
+    XCTAssertNoThrow(try stateMachine.send(metadata: []))
+  }
+
+  func testSendMetadataWhenClientAlreadyOpen() throws {
+    for targetState in [
+      TargetStateMachineState.clientOpenServerIdle, .clientOpenServerOpen, .clientOpenServerClosed,
+    ] {
+      var stateMachine = self.makeClientStateMachine(targetState: targetState)
+
+      // Try sending metadata again: should throw
+      XCTAssertThrowsError(
+        ofType: GRPCStreamStateMachine.UnreachableTransition.self,
+        try stateMachine.send(metadata: .init())
+      ) {
+        error in
+        XCTAssertEqual(error.message, "Client is already open: shouldn't be sending metadata.")
+      }
+    }
+  }
+
+  func testSendMetadataWhenClientAlreadyClosed() throws {
+    for targetState in [
+      TargetStateMachineState.clientClosedServerIdle, .clientClosedServerOpen,
+      .clientClosedServerClosed,
+    ] {
+      var stateMachine = self.makeClientStateMachine(targetState: targetState)
+
+      // Try sending metadata again: should throw
+      XCTAssertThrowsError(
+        ofType: GRPCStreamStateMachine.UnreachableTransition.self,
+        try stateMachine.send(metadata: .init())
+      ) {
+        error in
+        XCTAssertEqual(error.message, "Client is closed: can't send metadata.")
+      }
+    }
+  }
+
+  // - MARK: Send Message
+
+  func testSendMessageWhenClientIdleAndServerIdle() {
+    var stateMachine = self.makeClientStateMachine(targetState: .clientIdleServerIdle)
+
+    // Try to send a message without opening (i.e. without sending initial metadata)
+    XCTAssertThrowsError(
+      ofType: GRPCStreamStateMachine.UnreachableTransition.self,
+      try stateMachine.send(message: ByteBuffer(), promise: nil)
+    ) { error in
+      XCTAssertEqual(error.message, "Client not yet open.")
+    }
+  }
+
+  func testSendMessageWhenClientOpen() {
+    for targetState in [
+      TargetStateMachineState.clientOpenServerIdle, .clientOpenServerOpen, .clientOpenServerClosed,
+    ] {
+      var stateMachine = self.makeClientStateMachine(targetState: targetState)
+
+      // Now send a message
+      XCTAssertNoThrow(try stateMachine.send(message: ByteBuffer(), promise: nil))
+    }
+  }
+
+  func testSendMessageWhenClientClosed() {
+    for targetState in [
+      TargetStateMachineState.clientClosedServerIdle, .clientClosedServerOpen,
+      .clientClosedServerClosed,
+    ] {
+      var stateMachine = self.makeClientStateMachine(targetState: targetState)
+
+      // Try sending another message: it should fail
+      XCTAssertThrowsError(
+        ofType: GRPCStreamStateMachine.UnreachableTransition.self,
+        try stateMachine.send(message: ByteBuffer(), promise: nil)
+      ) { error in
+        XCTAssertEqual(error.message, "Client is closed, cannot send a message.")
+      }
+    }
+  }
+
+  // - MARK: Send Status and Trailers
+
+  func testSendStatusAndTrailers() {
+    for targetState in TargetStateMachineState.allCases {
+      var stateMachine = self.makeClientStateMachine(targetState: targetState)
+
+      // This operation is never allowed on the client.
+      XCTAssertThrowsError(
+        ofType: GRPCStreamStateMachine.UnreachableTransition.self,
+        try stateMachine.send(
+          status: Status(code: .ok, message: ""),
+          metadata: .init()
+        )
+      ) { error in
+        XCTAssertEqual(error.message, "Client cannot send status and trailer.")
+      }
+    }
+  }
+
+  // - MARK: Receive initial metadata
+
+  func testReceiveInitialMetadataWhenClientIdleAndServerIdle() throws {
+    var stateMachine = self.makeClientStateMachine(targetState: .clientIdleServerIdle)
+    // Receiving server headers before the client has opened is an HTTP/2 protocol violation.
+    // The state machine handles it defensively: poison and forward a status.
+    let action = try stateMachine.receive(headers: .init(), endStream: false)
+    XCTAssertEqual(
+      action,
+      .receivedStatusAndMetadata_clientOnly(
+        status: .init(
+          code: .internalError,
+          message: "Received headers from server before writing client headers."
+        ),
+        metadata: [:],
+        close: true
+      )
+    )
+  }
+
+  func testReceiveInvalidInitialMetadataWhenServerIdle() throws {
+    for targetState in [
+      TargetStateMachineState.clientOpenServerIdle, .clientClosedServerIdle,
+    ] {
+      var stateMachine = self.makeClientStateMachine(targetState: targetState)
+
+      // Receive metadata with unexpected non-200 status code
+      let action = try stateMachine.receive(
+        headers: [GRPCHTTP2Keys.status.rawValue: "300"],
+        endStream: false
+      )
+
+      XCTAssertEqual(
+        action,
+        .receivedStatusAndMetadata_clientOnly(
+          status: Status(
+            code: .unknown,
+            message: "Unexpected non-200 HTTP Status Code (300 Multiple Choices)."
+          ),
+          metadata: [":status": "300"],
+          close: true
+        )
+      )
+
+      // Further attempts from the server to send messages to the client will simply be dropped.
+      XCTAssertEqual(
+        stateMachine.receive(buffer: .init(), endStream: false),
+        .doNothing
+      )
+    }
+  }
+
+  func testReceiveInvalidInitialMetadataWithEndStreamPoisons() throws {
+    // Invalid headers with END_STREAM should also poison and signal close.
+    for targetState in [
+      TargetStateMachineState.clientOpenServerIdle, .clientClosedServerIdle,
+    ] {
+      var stateMachine = self.makeClientStateMachine(targetState: targetState)
+
+      let action = try stateMachine.receive(headers: [":status": "429"], endStream: true)
+
+      XCTAssertEqual(
+        action,
+        .receivedStatusAndMetadata_clientOnly(
+          status: Status(
+            code: .unavailable,
+            message: "Unexpected non-200 HTTP Status Code (429 Too Many Requests)."
+          ),
+          metadata: [":status": "429"],
+          close: true
+        )
+      )
+
+      // State is poisoned so further inbound data is dropped.
+      XCTAssertEqual(
+        stateMachine.receive(buffer: .init(), endStream: false),
+        .doNothing
+      )
+    }
+  }
+
+  func testReceiveInitialMetadataWhenServerIdle_ClientUnsupportedEncoding() throws {
+    // Create client with deflate compression enabled
+    var stateMachine = self.makeClientStateMachine(
+      targetState: .clientOpenServerIdle,
+      compressionEnabled: true
+    )
+
+    // Try opening server with gzip compression, which client does not support.
+    let action = try stateMachine.receive(
+      headers: .serverInitialMetadataWithGZIPCompression,
+      endStream: false
+    )
+
+    XCTAssertEqual(
+      action,
+      .receivedStatusAndMetadata_clientOnly(
+        status: Status(
+          code: .internalError,
+          message:
+            "The server picked a compression algorithm ('gzip') the client does not know about."
+        ),
+        metadata: [
+          ":status": "200",
+          "content-type": "application/grpc",
+          "grpc-encoding": "gzip",
+        ],
+        close: true
+      )
+    )
+  }
+
+  func testReceiveMessage_ClientCompressionEnabled() throws {
+    // Enable deflate compression on client
+    var stateMachine = self.makeClientStateMachine(
+      targetState: .clientOpenServerOpen,
+      compressionEnabled: true
+    )
+
+    let originalMessage = ByteBuffer(bytes: [42, 42, 43, 43])
+
+    // Receiving uncompressed message should still work.
+    let receivedUncompressedBytes = try self.frameMessage(originalMessage, compression: .none)
+    XCTAssertNoThrow(stateMachine.receive(buffer: receivedUncompressedBytes, endStream: false))
+    var receivedAction = stateMachine.nextInboundMessage()
+    switch receivedAction {
+    case .noMoreMessages, .awaitMoreMessages:
+      XCTFail("Should have received message")
+    case .receiveMessage(let receivedMessaged):
+      XCTAssertEqual(originalMessage, receivedMessaged)
+    }
+
+    // Receiving compressed message with deflate should work
+    let receivedDeflateCompressedBytes = try self.frameMessage(
+      originalMessage,
+      compression: .deflate
+    )
+    XCTAssertNoThrow(
+      stateMachine.receive(buffer: receivedDeflateCompressedBytes, endStream: false)
+    )
+    receivedAction = stateMachine.nextInboundMessage()
+    switch receivedAction {
+    case .noMoreMessages, .awaitMoreMessages:
+      XCTFail("Should have received message")
+    case .receiveMessage(let receivedMessaged):
+      XCTAssertEqual(originalMessage, receivedMessaged)
+    }
+
+    // Receiving compressed message with gzip (unsupported) should return an error status.
+    let receivedGZIPCompressedBytes = try self.frameMessage(originalMessage, compression: .gzip)
+    let action = stateMachine.receive(buffer: receivedGZIPCompressedBytes, endStream: false)
+    XCTAssertEqual(
+      action,
+      .endRPCAndForwardErrorStatus_clientOnly(
+        Status(code: .internalError, message: "Failed to decode message")
+      )
+    )
+
+    // After a decode failure the state machine must be poisoned: subsequent reads
+    // return noMoreMessages and sends fail the promise.
+    receivedAction = stateMachine.nextInboundMessage()
+    switch receivedAction {
+    case .noMoreMessages:
+      ()
+    case .awaitMoreMessages:
+      XCTFail("Should be poisoned: expected noMoreMessages")
+    case .receiveMessage:
+      XCTFail("Should not have received message")
+    }
+    let sendAction = try stateMachine.send(message: ByteBuffer(), promise: nil)
+    try sendAction.assertFailPromise()
+  }
+
+  func testReceiveInitialMetadataWhenServerIdle() throws {
+    for targetState in [
+      TargetStateMachineState.clientOpenServerIdle, .clientClosedServerIdle,
+    ] {
+      var stateMachine = self.makeClientStateMachine(targetState: targetState)
+
+      // Receive metadata = open server
+      let action = try stateMachine.receive(
+        headers: [
+          GRPCHTTP2Keys.status.rawValue: "200",
+          GRPCHTTP2Keys.contentType.rawValue: ContentType.grpc.canonicalValue,
+          GRPCHTTP2Keys.encoding.rawValue: "deflate",
+          "custom": "123",
+          "custom-bin": Base64.encode(bytes: [42, 43, 44]),
+        ],
+        endStream: false
+      )
+
+      var expectedMetadata: Metadata = [
+        ":status": "200",
+        "content-type": "application/grpc",
+        "grpc-encoding": "deflate",
+        "custom": "123",
+      ]
+      expectedMetadata.addBinary([42, 43, 44], forKey: "custom-bin")
+      XCTAssertEqual(action, .receivedMetadata(expectedMetadata, nil))
+    }
+  }
+
+  func testReceiveInitialMetadataWhenServerOpen() throws {
+    for targetState in [
+      TargetStateMachineState.clientOpenServerOpen, .clientClosedServerOpen,
+    ] {
+      var stateMachine = self.makeClientStateMachine(targetState: targetState)
+
+      let action1 = try stateMachine.receive(
+        headers: [
+          GRPCHTTP2Keys.status.rawValue: "200",
+          GRPCHTTP2Keys.contentType.rawValue: ContentType.grpc.canonicalValue,
+          GRPCHTTP2Keys.encoding.rawValue: "deflate",
+          "custom": "123",
+          "custom-bin": Base64.encode(bytes: [42, 43, 44]),
+        ],
+        endStream: false
+      )
+
+      let expectedStatus = Status(code: .unknown, message: "No 'grpc-status' value in trailers")
+      let expectedMetadata: Metadata = [
+        ":status": "200",
+        "content-type": "application/grpc",
+        "grpc-encoding": "deflate",
+        "custom": "123",
+        "custom-bin": .binary([42, 43, 44]),
+      ]
+
+      XCTAssertEqual(
+        action1,
+        .receivedStatusAndMetadata_clientOnly(
+          status: expectedStatus,
+          metadata: expectedMetadata,
+          close: false
+        )
+      )
+
+      // Now make sure everything works well if we include grpc-status
+      let action2 = try stateMachine.receive(
+        headers: [
+          GRPCHTTP2Keys.status.rawValue: "200",
+          GRPCHTTP2Keys.grpcStatus.rawValue: String(Status.Code.ok.rawValue),
+          GRPCHTTP2Keys.contentType.rawValue: ContentType.grpc.canonicalValue,
+          GRPCHTTP2Keys.encoding.rawValue: "deflate",
+          "custom": "123",
+          "custom-bin": Base64.encode(bytes: [42, 43, 44]),
+        ],
+        endStream: false
+      )
+
+      XCTAssertEqual(
+        action2,
+        .receivedStatusAndMetadata_clientOnly(
+          status: Status(code: .ok, message: ""),
+          metadata: expectedMetadata,
+          close: false
+        )
+      )
+    }
+  }
+
+  func testReceiveInitialMetadataWhenServerClosed() {
+    for targetState in [TargetStateMachineState.clientOpenServerClosed, .clientClosedServerClosed] {
+      var stateMachine = self.makeClientStateMachine(targetState: targetState)
+
+      // We should not throw if the server sends metadata after it's been transitioned to close:
+      // we should just drop these packages.
+      XCTAssertNoThrow(try stateMachine.receive(headers: .init(), endStream: false))
+    }
+  }
+
+  // - MARK: Receive end trailers
+
+  func testReceiveEndTrailerWhenClientIdleAndServerIdle() throws {
+    var stateMachine = self.makeClientStateMachine(targetState: .clientIdleServerIdle)
+    // Receiving server headers (end-stream) before the client has opened is an HTTP/2 protocol
+    // violation. The state machine handles it defensively: poison + forward a status.
+    let action = try stateMachine.receive(headers: .init(), endStream: true)
+    XCTAssertEqual(
+      action,
+      .receivedStatusAndMetadata_clientOnly(
+        status: .init(
+          code: .internalError,
+          message: "Received headers from server before writing client headers."
+        ),
+        metadata: [:],
+        close: true
+      )
+    )
+  }
+
+  func testReceiveEndTrailerWhenClientOpenAndServerIdle() throws {
+    var stateMachine = self.makeClientStateMachine(targetState: .clientOpenServerIdle)
+
+    // Receive a trailers-only response
+    let trailersOnlyResponse: HPACKHeaders = [
+      GRPCHTTP2Keys.status.rawValue: "200",
+      GRPCHTTP2Keys.contentType.rawValue: ContentType.grpc.canonicalValue,
+      GRPCHTTP2Keys.grpcStatus.rawValue: String(Status.Code.internalError.rawValue),
+      GRPCHTTP2Keys.grpcStatusMessage.rawValue: GRPCStatusMessageMarshaller.marshall(
+        "Some, status, message"
+      )!,
+      "custom-key": "custom-value",
+    ]
+    let trailers = try stateMachine.receive(headers: trailersOnlyResponse, endStream: true)
+    switch trailers {
+    case .receivedStatusAndMetadata_clientOnly(let status, let metadata, _):
+      XCTAssertEqual(status, Status(code: .internalError, message: "Some, status, message"))
+      XCTAssertEqual(
+        metadata,
+        [
+          ":status": "200",
+          "content-type": "application/grpc",
+          "custom-key": "custom-value",
+        ]
+      )
+    case .receivedMetadata, .doNothing, .rejectRPC_serverOnly, .protocolViolation_serverOnly:
+      XCTFail("Expected .receivedStatusAndMetadata")
+    }
+  }
+
+  func testReceiveEndTrailerWhenServerOpen() throws {
+    for targetState in [TargetStateMachineState.clientOpenServerOpen, .clientClosedServerOpen] {
+      var stateMachine = self.makeClientStateMachine(targetState: targetState)
+
+      // Receive an end trailer
+      let action = try stateMachine.receive(
+        headers: [
+          GRPCHTTP2Keys.status.rawValue: "200",
+          GRPCHTTP2Keys.grpcStatus.rawValue: String(Status.Code.ok.rawValue),
+          GRPCHTTP2Keys.contentType.rawValue: ContentType.grpc.canonicalValue,
+          GRPCHTTP2Keys.encoding.rawValue: "deflate",
+          "custom": "123",
+        ],
+        endStream: true
+      )
+
+      let expectedMetadata: Metadata = [
+        ":status": "200",
+        "content-type": "application/grpc",
+        "grpc-encoding": "deflate",
+        "custom": "123",
+      ]
+      XCTAssertEqual(
+        action,
+        .receivedStatusAndMetadata_clientOnly(
+          status: .init(code: .ok, message: ""),
+          metadata: expectedMetadata,
+          close: false
+        )
+      )
+    }
+  }
+
+  func testReceiveEndTrailerWhenClientOpenAndServerClosed() {
+    var stateMachine = self.makeClientStateMachine(targetState: .clientOpenServerClosed)
+
+    // We should not throw if the server sends trailers after it's been transitioned to close:
+    // we should just drop these packages.
+    XCTAssertNoThrow(try stateMachine.receive(headers: .init(), endStream: true))
+  }
+
+  func testReceiveEndTrailerWhenClientClosedAndServerIdle() throws {
+    var stateMachine = self.makeClientStateMachine(targetState: .clientClosedServerIdle)
+
+    // Server sends a trailers-only response
+    let trailersOnlyResponse: HPACKHeaders = [
+      GRPCHTTP2Keys.status.rawValue: "200",
+      GRPCHTTP2Keys.contentType.rawValue: ContentType.grpc.canonicalValue,
+      GRPCHTTP2Keys.grpcStatus.rawValue: String(Status.Code.internalError.rawValue),
+      GRPCHTTP2Keys.grpcStatusMessage.rawValue: GRPCStatusMessageMarshaller.marshall(
+        "Some status message"
+      )!,
+      "custom-key": "custom-value",
+    ]
+    let trailers = try stateMachine.receive(headers: trailersOnlyResponse, endStream: true)
+    switch trailers {
+    case .receivedStatusAndMetadata_clientOnly(let status, let metadata, _):
+      XCTAssertEqual(status, Status(code: .internalError, message: "Some status message"))
+      XCTAssertEqual(
+        metadata,
+        [
+          ":status": "200",
+          "content-type": "application/grpc",
+          "custom-key": "custom-value",
+        ]
+      )
+    case .receivedMetadata, .doNothing, .rejectRPC_serverOnly, .protocolViolation_serverOnly:
+      XCTFail("Expected .receivedStatusAndMetadata")
+    }
+  }
+
+  func testReceiveEndTrailerWhenClientClosedAndServerClosed() {
+    var stateMachine = self.makeClientStateMachine(targetState: .clientClosedServerClosed)
+
+    // Close server again (endStream = true) and assert we don't throw.
+    // This can happen if the previous close was caused by a grpc-status header
+    // and then the server sends an empty frame with EOS set.
+    XCTAssertEqual(try stateMachine.receive(headers: .init(), endStream: true), .doNothing)
+  }
+
+  // - MARK: Receive message
+
+  func testReceiveMessageWhenClientIdleAndServerIdle() {
+    var stateMachine = self.makeClientStateMachine(targetState: .clientIdleServerIdle)
+    // Receiving server DATA before the client has opened is an HTTP/2 protocol violation.
+    // The state machine handles it defensively: poison + doNothing.
+    let action = stateMachine.receive(buffer: .init(), endStream: false)
+    XCTAssertEqual(action, .doNothing)
+  }
+
+  func testReceiveMessageWhenServerIdle() {
+    for targetState in [TargetStateMachineState.clientOpenServerIdle, .clientClosedServerIdle] {
+      var stateMachine = self.makeClientStateMachine(targetState: targetState)
+      // Server DATA before server HEADERS is an HTTP/2 protocol violation. The state machine
+      // handles it defensively: poison + endRPCAndForwardErrorStatus.
+      let action = stateMachine.receive(buffer: .init(), endStream: false)
+      XCTAssertEqual(
+        action,
+        .endRPCAndForwardErrorStatus_clientOnly(
+          Status(
+            code: .internalError,
+            message: "Server sent a DATA frame before sending initial metadata."
+          )
+        )
+      )
+    }
+  }
+
+  func testReceiveMessageWhenServerOpen() throws {
+    for targetState in [TargetStateMachineState.clientOpenServerOpen, .clientClosedServerOpen] {
+      var stateMachine = self.makeClientStateMachine(targetState: targetState)
+
+      XCTAssertEqual(
+        stateMachine.receive(buffer: .init(), endStream: false),
+        .readInbound
+      )
+      XCTAssertEqual(
+        stateMachine.receive(buffer: .init(), endStream: true),
+        .endRPCAndForwardErrorStatus_clientOnly(
+          Status(
+            code: .internalError,
+            message: """
+              Server sent EOS alongside a data frame, but server is only allowed \
+              to close by sending status and trailers.
+              """
+          )
+        )
+      )
+    }
+  }
+
+  func testReceiveMessageWhenServerClosed() throws {
+    for targetState in [TargetStateMachineState.clientOpenServerClosed, .clientClosedServerClosed] {
+      var stateMachine = self.makeClientStateMachine(targetState: targetState)
+
+      // We should drop the messages if we receive anything once the server's closed.
+      XCTAssertEqual(
+        stateMachine.receive(buffer: .init(), endStream: false),
+        .doNothing
+      )
+    }
+  }
+
+  // - MARK: Next outbound message
+
+  func testNextOutboundMessageWhenClientIdleAndServerIdle() throws {
+    var stateMachine = self.makeClientStateMachine(targetState: .clientIdleServerIdle)
+
+    // Nothing has been buffered yet; nextOutboundFrame should return
+    // awaitMoreMessages rather than asserting. This can happen when
+    // channelWritabilityChanged fires before the stream has opened.
+    XCTAssertEqual(try stateMachine.nextOutboundFrame(), .awaitMoreMessages)
+  }
+
+  func testNextOutboundMessageWhenClientOpenAndServerOpenOrIdle() throws {
+    for targetState in [TargetStateMachineState.clientOpenServerIdle, .clientOpenServerOpen] {
+      var stateMachine = self.makeClientStateMachine(targetState: targetState)
+
+      XCTAssertEqual(try stateMachine.nextOutboundFrame(), .awaitMoreMessages)
+
+      XCTAssertNoThrow(try stateMachine.send(message: ByteBuffer(bytes: [42, 42]), promise: nil))
+
+      let expectedBytes: [UInt8] = [
+        0,  // compression flag: unset
+        0, 0, 0, 2,  // message length: 2 bytes
+        42, 42,  // original message
+      ]
+      XCTAssertEqual(
+        try stateMachine.nextOutboundFrame(),
+        .sendFrame(frame: ByteBuffer(bytes: expectedBytes), endStream: false, promise: nil)
+      )
+
+      // And then make sure that nothing else is returned anymore
+      XCTAssertEqual(try stateMachine.nextOutboundFrame(), .awaitMoreMessages)
+    }
+  }
+
+  func testNextOutboundMessageWhenClientOpenAndServerIdle_WithCompression() throws {
+    var stateMachine = self.makeClientStateMachine(
+      targetState: .clientOpenServerIdle,
+      compressionEnabled: true
+    )
+
+    XCTAssertEqual(try stateMachine.nextOutboundFrame(), .awaitMoreMessages)
+
+    let originalMessage = ByteBuffer(bytes: [42, 42, 43, 43])
+    XCTAssertNoThrow(try stateMachine.send(message: originalMessage, promise: nil))
+
+    let request = try stateMachine.nextOutboundFrame()
+    let framedMessage = try self.frameMessage(originalMessage, compression: .deflate)
+    XCTAssertEqual(request, .sendFrame(frame: framedMessage, endStream: false, promise: nil))
+  }
+
+  func testNextOutboundMessageWhenClientOpenAndServerOpen_WithCompression() throws {
+    var stateMachine = self.makeClientStateMachine(
+      targetState: .clientOpenServerOpen,
+      compressionEnabled: true
+    )
+
+    XCTAssertEqual(try stateMachine.nextOutboundFrame(), .awaitMoreMessages)
+
+    let originalMessage = ByteBuffer(bytes: [42, 42, 43, 43])
+    XCTAssertNoThrow(try stateMachine.send(message: originalMessage, promise: nil))
+
+    let request = try stateMachine.nextOutboundFrame()
+    let framedMessage = try self.frameMessage(originalMessage, compression: .deflate)
+    XCTAssertEqual(request, .sendFrame(frame: framedMessage, endStream: false, promise: nil))
+  }
+
+  func testNextOutboundMessageWhenClientOpenAndServerClosed() throws {
+    var stateMachine = self.makeClientStateMachine(targetState: .clientOpenServerClosed)
+
+    // No more messages to send
+    XCTAssertEqual(try stateMachine.nextOutboundFrame(), .noMoreMessages)
+
+    // Queue a message, but assert the action is .noMoreMessages nevertheless,
+    // because the server is closed.
+    XCTAssertNoThrow(try stateMachine.send(message: ByteBuffer(bytes: [42, 42]), promise: nil))
+    XCTAssertEqual(try stateMachine.nextOutboundFrame(), .noMoreMessages)
+  }
+
+  func testNextOutboundMessageWhenClientClosedAndServerIdle() throws {
+    var stateMachine = self.makeClientStateMachine(targetState: .clientOpenServerIdle)
+
+    // Send a message and close client
+    XCTAssertNoThrow(try stateMachine.send(message: ByteBuffer(bytes: [42, 42]), promise: nil))
+    XCTAssertNoThrow(try stateMachine.closeOutbound())
+
+    // Make sure that getting the next outbound message _does_ return the message
+    // we have enqueued.
+    let request = try stateMachine.nextOutboundFrame()
+    let expectedBytes: [UInt8] = [
+      0,  // compression flag: unset
+      0, 0, 0, 2,  // message length: 2 bytes
+      42, 42,  // original message
+    ]
+    XCTAssertEqual(
+      request,
+      .sendFrame(frame: ByteBuffer(bytes: expectedBytes), endStream: true, promise: nil)
+    )
+
+    // And then make sure that nothing else is returned anymore
+    XCTAssertEqual(try stateMachine.nextOutboundFrame(), .noMoreMessages)
+  }
+
+  func testNextOutboundMessageWhenClientClosedAndServerOpen() throws {
+    var stateMachine = self.makeClientStateMachine(targetState: .clientOpenServerOpen)
+
+    // Send a message and close client
+    XCTAssertNoThrow(try stateMachine.send(message: ByteBuffer(bytes: [42, 42]), promise: nil))
+    XCTAssertNoThrow(try stateMachine.closeOutbound())
+
+    // Make sure that getting the next outbound message _does_ return the message
+    // we have enqueued.
+    let request = try stateMachine.nextOutboundFrame()
+    let expectedBytes: [UInt8] = [
+      0,  // compression flag: unset
+      0, 0, 0, 2,  // message length: 2 bytes
+      42, 42,  // original message
+    ]
+    XCTAssertEqual(
+      request,
+      .sendFrame(frame: ByteBuffer(bytes: expectedBytes), endStream: true, promise: nil)
+    )
+
+    // And then make sure that nothing else is returned anymore
+    XCTAssertEqual(try stateMachine.nextOutboundFrame(), .noMoreMessages)
+  }
+
+  func testNextOutboundMessageWhenClientClosedAndServerClosed() throws {
+    var stateMachine = self.makeClientStateMachine(targetState: .clientOpenServerOpen)
+    // Send a message
+    XCTAssertNoThrow(try stateMachine.send(message: ByteBuffer(bytes: [42, 42]), promise: nil))
+
+    // Close server
+    XCTAssertNoThrow(try stateMachine.receive(headers: .serverTrailers, endStream: true))
+
+    // Close client
+    XCTAssertNoThrow(try stateMachine.closeOutbound())
+
+    // Even though we have enqueued a message, don't send it, because the server
+    // is closed. But we still need to send END_STREAM.
+    XCTAssertEqual(
+      try stateMachine.nextOutboundFrame(),
+      .sendFrame(frame: ByteBuffer(), endStream: true, promise: nil)
+    )
+    XCTAssertEqual(try stateMachine.nextOutboundFrame(), .noMoreMessages)
+  }
+
+  // - MARK: Next inbound message
+
+  func testNextInboundMessageWhenServerIdle() {
+    for targetState in [
+      TargetStateMachineState.clientIdleServerIdle, .clientOpenServerIdle, .clientClosedServerIdle,
+    ] {
+      var stateMachine = self.makeClientStateMachine(targetState: targetState)
+      XCTAssertEqual(stateMachine.nextInboundMessage(), .awaitMoreMessages)
+    }
+  }
+
+  func testNextInboundMessageWhenClientOpenAndServerOpen() throws {
+    var stateMachine = self.makeClientStateMachine(targetState: .clientOpenServerOpen)
+
+    let receivedBytes = ByteBuffer(bytes: [
+      0,  // compression flag: unset
+      0, 0, 0, 2,  // message length: 2 bytes
+      42, 42,  // original message
+    ])
+    XCTAssertEqual(
+      stateMachine.receive(buffer: receivedBytes, endStream: false),
+      .readInbound
+    )
+
+    XCTAssertEqual(stateMachine.nextInboundMessage(), .receiveMessage(ByteBuffer(bytes: [42, 42])))
+    XCTAssertEqual(stateMachine.nextInboundMessage(), .awaitMoreMessages)
+  }
+
+  func testNextInboundMessageWhenClientOpenAndServerOpen_WithCompression() throws {
+    var stateMachine = self.makeClientStateMachine(
+      targetState: .clientOpenServerOpen,
+      compressionEnabled: true
+    )
+
+    let originalMessage = ByteBuffer(bytes: [42, 42, 43, 43])
+    let receivedBytes = try self.frameMessage(originalMessage, compression: .deflate)
+    XCTAssertEqual(
+      stateMachine.receive(buffer: receivedBytes, endStream: false),
+      .readInbound
+    )
+
+    XCTAssertEqual(stateMachine.nextInboundMessage(), .receiveMessage(originalMessage))
+    XCTAssertEqual(stateMachine.nextInboundMessage(), .awaitMoreMessages)
+  }
+
+  func testNextInboundMessageWhenClientOpenAndServerClosed() throws {
+    var stateMachine = self.makeClientStateMachine(targetState: .clientOpenServerOpen)
+
+    let receivedBytes = ByteBuffer(bytes: [
+      0,  // compression flag: unset
+      0, 0, 0, 2,  // message length: 2 bytes
+      42, 42,  // original message
+    ])
+    XCTAssertEqual(
+      stateMachine.receive(buffer: receivedBytes, endStream: false),
+      .readInbound
+    )
+
+    // Close server
+    XCTAssertNoThrow(try stateMachine.receive(headers: .serverTrailers, endStream: true))
+
+    XCTAssertEqual(stateMachine.nextInboundMessage(), .receiveMessage(ByteBuffer(bytes: [42, 42])))
+    XCTAssertEqual(stateMachine.nextInboundMessage(), .noMoreMessages)
+  }
+
+  func testNextInboundMessageWhenClientClosedAndServerOpen() throws {
+    var stateMachine = self.makeClientStateMachine(targetState: .clientOpenServerOpen)
+
+    let receivedBytes = ByteBuffer(bytes: [
+      0,  // compression flag: unset
+      0, 0, 0, 2,  // message length: 2 bytes
+      42, 42,  // original message
+    ])
+    XCTAssertEqual(
+      stateMachine.receive(buffer: receivedBytes, endStream: false),
+      .readInbound
+    )
+
+    // Close client
+    XCTAssertNoThrow(try stateMachine.closeOutbound())
+
+    // Even though the client is closed, because it received a message while open,
+    // we must get the message now.
+    XCTAssertEqual(stateMachine.nextInboundMessage(), .receiveMessage(ByteBuffer(bytes: [42, 42])))
+    XCTAssertEqual(stateMachine.nextInboundMessage(), .awaitMoreMessages)
+  }
+
+  func testNextInboundMessageWhenClientClosedAndServerClosed() throws {
+    var stateMachine = self.makeClientStateMachine(targetState: .clientOpenServerOpen)
+
+    let receivedBytes = ByteBuffer(bytes: [
+      0,  // compression flag: unset
+      0, 0, 0, 2,  // message length: 2 bytes
+      42, 42,  // original message
+    ])
+    XCTAssertEqual(
+      stateMachine.receive(buffer: receivedBytes, endStream: false),
+      .readInbound
+    )
+
+    // Close server
+    XCTAssertNoThrow(try stateMachine.receive(headers: .serverTrailers, endStream: true))
+
+    // Close client
+    XCTAssertNoThrow(try stateMachine.closeOutbound())
+
+    // Even though the client is closed, because it received a message while open,
+    // we must get the message now.
+    XCTAssertEqual(stateMachine.nextInboundMessage(), .receiveMessage(ByteBuffer(bytes: [42, 42])))
+    XCTAssertEqual(stateMachine.nextInboundMessage(), .noMoreMessages)
+  }
+
+  // - MARK: Unexpected close
+
+  func testUnexpectedCloseWhenServerIdleOrOpen() throws {
+    let thrownError = RPCError(code: .deadlineExceeded, message: "Test error")
+    let reasonAndExpectedStatusPairs = [
+      (
+        GRPCStreamStateMachine.UnexpectedInboundCloseReason.channelInactive,
+        Status(code: .unavailable, message: "Stream unexpectedly closed.")
+      ),
+      (
+        GRPCStreamStateMachine.UnexpectedInboundCloseReason.streamReset(.noError),
+        Status(
+          code: .unavailable,
+          message: "Stream unexpectedly closed: received RST_STREAM frame (0x0: no error)."
+        )
+      ),
+      (
+        GRPCStreamStateMachine.UnexpectedInboundCloseReason.errorThrown(thrownError),
+        Status(
+          code: .unavailable,
+          message: "Stream unexpectedly closed with error."
+        )
+      ),
+    ]
+    let states = [
+      TargetStateMachineState.clientIdleServerIdle,
+      .clientOpenServerIdle,
+      .clientOpenServerOpen,
+      .clientClosedServerIdle,
+      .clientClosedServerOpen,
+    ]
+
+    for state in states {
+      for (closeReason, expectedStatus) in reasonAndExpectedStatusPairs {
+        var stateMachine = self.makeClientStateMachine(targetState: state)
+        var action = stateMachine.unexpectedClose(reason: closeReason)
+
+        guard case .forwardStatus_clientOnly(let status) = action else {
+          XCTFail("Should have been `fireError` but was `\(action)` (state: \(state)).")
+          return
+        }
+        XCTAssertEqual(status, expectedStatus)
+
+        // Calling unexpectedInboundClose again should return `doNothing` because
+        // we're already closed.
+        action = stateMachine.unexpectedClose(reason: closeReason)
+        guard case .doNothing = action else {
+          XCTFail("Should have been `doNothing` but was `\(action)` (state: \(state)).")
+          return
+        }
+      }
+    }
+  }
+
+  func testUnexpectedCloseWhenServerClosed() throws {
+    let closeReasons = [
+      GRPCStreamStateMachine.UnexpectedInboundCloseReason.channelInactive,
+      .streamReset(.noError),
+      .errorThrown(RPCError(code: .deadlineExceeded, message: "Test error")),
+    ]
+    let states = [
+      TargetStateMachineState.clientOpenServerClosed,
+      .clientClosedServerClosed,
+    ]
+
+    for state in states {
+      for closeReason in closeReasons {
+        var stateMachine = self.makeClientStateMachine(targetState: state)
+        var action = stateMachine.unexpectedClose(reason: closeReason)
+        guard case .doNothing = action else {
+          XCTFail("Should have been `doNothing` but was `\(action)` (state: \(state)).")
+          return
+        }
+
+        // Calling unexpectedInboundClose again should return `doNothing` again.
+        action = stateMachine.unexpectedClose(reason: closeReason)
+        guard case .doNothing = action else {
+          XCTFail("Should have been `doNothing` but was `\(action)` (state: \(state)).")
+          return
+        }
+      }
+    }
+  }
+
+  // - MARK: Common paths
+
+  func testNormalFlow() throws {
+    var stateMachine = self.makeClientStateMachine(targetState: .clientIdleServerIdle)
+
+    // Client sends metadata
+    let clientInitialMetadata = try stateMachine.send(metadata: .init()).assertHeaders()
+    XCTAssertEqual(
+      clientInitialMetadata,
+      [
+        GRPCHTTP2Keys.path.rawValue: "/test/test",
+        GRPCHTTP2Keys.scheme.rawValue: "http",
+        GRPCHTTP2Keys.method.rawValue: "POST",
+        GRPCHTTP2Keys.contentType.rawValue: "application/grpc",
+        GRPCHTTP2Keys.te.rawValue: "trailers",
+        GRPCHTTP2Keys.acceptEncoding.rawValue: "deflate",
+      ]
+    )
+
+    // Server sends initial metadata
+    let serverInitialHeadersAction = try stateMachine.receive(
+      headers: .serverInitialMetadata,
+      endStream: false
+    )
+    XCTAssertEqual(
+      serverInitialHeadersAction,
+      .receivedMetadata(
+        [
+          ":status": "200",
+          "content-type": "application/grpc",
+        ],
+        nil
+      )
+    )
+
+    // Client sends messages
+    XCTAssertEqual(try stateMachine.nextOutboundFrame(), .awaitMoreMessages)
+
+    let message = ByteBuffer(bytes: [1, 2, 3, 4])
+    let framedMessage = try self.frameMessage(message, compression: .none)
+    try stateMachine.send(message: message, promise: nil).assertNothing()
+    XCTAssertEqual(
+      try stateMachine.nextOutboundFrame(),
+      .sendFrame(frame: framedMessage, endStream: false, promise: nil)
+    )
+    XCTAssertEqual(try stateMachine.nextOutboundFrame(), .awaitMoreMessages)
+
+    // Server sends response
+    XCTAssertEqual(stateMachine.nextInboundMessage(), .awaitMoreMessages)
+
+    let firstResponseBytes = ByteBuffer(bytes: [5, 6, 7])
+    let firstResponse = try self.frameMessage(firstResponseBytes, compression: .none)
+    let secondResponseBytes = ByteBuffer(bytes: [8, 9, 10])
+    let secondResponse = try self.frameMessage(secondResponseBytes, compression: .none)
+    XCTAssertEqual(
+      stateMachine.receive(buffer: firstResponse, endStream: false),
+      .readInbound
+    )
+    XCTAssertEqual(
+      stateMachine.receive(buffer: secondResponse, endStream: false),
+      .readInbound
+    )
+
+    // Make sure messages have arrived
+    XCTAssertEqual(stateMachine.nextInboundMessage(), .receiveMessage(firstResponseBytes))
+    XCTAssertEqual(stateMachine.nextInboundMessage(), .receiveMessage(secondResponseBytes))
+    XCTAssertEqual(stateMachine.nextInboundMessage(), .awaitMoreMessages)
+
+    // Client sends end
+    XCTAssertNoThrow(try stateMachine.closeOutbound())
+
+    // Server ends
+    let metadataReceivedAction = try stateMachine.receive(
+      headers: .serverTrailers,
+      endStream: true
+    )
+    let receivedMetadata = {
+      var m = Metadata(headers: .serverTrailers)
+      m.removeAllValues(forKey: GRPCHTTP2Keys.grpcStatus.rawValue)
+      m.removeAllValues(forKey: GRPCHTTP2Keys.grpcStatusMessage.rawValue)
+      return m
+    }()
+    XCTAssertEqual(
+      metadataReceivedAction,
+      .receivedStatusAndMetadata_clientOnly(
+        status: .init(code: .ok, message: ""),
+        metadata: receivedMetadata,
+        close: false
+      )
+    )
+
+    // Client closed but END_STREAM wasn't flushed before the server closed,
+    // so it must be sent now.
+    XCTAssertEqual(
+      try stateMachine.nextOutboundFrame(),
+      .sendFrame(frame: ByteBuffer(), endStream: true, promise: nil)
+    )
+    XCTAssertEqual(try stateMachine.nextOutboundFrame(), .noMoreMessages)
+    XCTAssertEqual(stateMachine.nextInboundMessage(), .noMoreMessages)
+  }
+
+  func testClientClosesBeforeItCanOpen() throws {
+    var stateMachine = self.makeClientStateMachine(targetState: .clientIdleServerIdle)
+    XCTAssertNoThrow(try stateMachine.closeOutbound())
+  }
+
+  func testClientClosesBeforeServerOpens() throws {
+    var stateMachine = self.makeClientStateMachine(targetState: .clientIdleServerIdle)
+
+    // Client sends metadata
+    let clientInitialMetadata = try stateMachine.send(metadata: .init()).assertHeaders()
+    XCTAssertEqual(
+      clientInitialMetadata,
+      [
+        GRPCHTTP2Keys.path.rawValue: "/test/test",
+        GRPCHTTP2Keys.scheme.rawValue: "http",
+        GRPCHTTP2Keys.method.rawValue: "POST",
+        GRPCHTTP2Keys.contentType.rawValue: "application/grpc",
+        GRPCHTTP2Keys.te.rawValue: "trailers",
+        GRPCHTTP2Keys.acceptEncoding.rawValue: "deflate",
+      ]
+    )
+
+    // Client sends messages and ends
+    XCTAssertEqual(try stateMachine.nextOutboundFrame(), .awaitMoreMessages)
+
+    let message = ByteBuffer(bytes: [1, 2, 3, 4])
+    let framedMessage = try self.frameMessage(message, compression: .none)
+    XCTAssertNoThrow(try stateMachine.send(message: message, promise: nil))
+    XCTAssertNoThrow(try stateMachine.closeOutbound())
+    XCTAssertEqual(
+      try stateMachine.nextOutboundFrame(),
+      .sendFrame(frame: framedMessage, endStream: true, promise: nil)
+    )
+    XCTAssertEqual(try stateMachine.nextOutboundFrame(), .noMoreMessages)
+
+    // Server sends initial metadata
+    let serverInitialHeadersAction = try stateMachine.receive(
+      headers: .serverInitialMetadata,
+      endStream: false
+    )
+    XCTAssertEqual(
+      serverInitialHeadersAction,
+      .receivedMetadata(
+        [
+          ":status": "200",
+          "content-type": "application/grpc",
+        ],
+        nil
+      )
+    )
+
+    // Server sends response
+    XCTAssertEqual(stateMachine.nextInboundMessage(), .awaitMoreMessages)
+
+    let firstResponseBytes = ByteBuffer(bytes: [5, 6, 7])
+    let firstResponse = try self.frameMessage(firstResponseBytes, compression: .none)
+    let secondResponseBytes = ByteBuffer(bytes: [8, 9, 10])
+    let secondResponse = try self.frameMessage(secondResponseBytes, compression: .none)
+    XCTAssertEqual(
+      stateMachine.receive(buffer: firstResponse, endStream: false),
+      .readInbound
+    )
+    XCTAssertEqual(
+      stateMachine.receive(buffer: secondResponse, endStream: false),
+      .readInbound
+    )
+
+    // Make sure messages have arrived
+    XCTAssertEqual(stateMachine.nextInboundMessage(), .receiveMessage(firstResponseBytes))
+    XCTAssertEqual(stateMachine.nextInboundMessage(), .receiveMessage(secondResponseBytes))
+    XCTAssertEqual(stateMachine.nextInboundMessage(), .awaitMoreMessages)
+
+    // Server ends
+    let metadataReceivedAction = try stateMachine.receive(
+      headers: .serverTrailers,
+      endStream: true
+    )
+    let receivedMetadata = {
+      var m = Metadata(headers: .serverTrailers)
+      m.removeAllValues(forKey: GRPCHTTP2Keys.grpcStatus.rawValue)
+      m.removeAllValues(forKey: GRPCHTTP2Keys.grpcStatusMessage.rawValue)
+      return m
+    }()
+    XCTAssertEqual(
+      metadataReceivedAction,
+      .receivedStatusAndMetadata_clientOnly(
+        status: .init(code: .ok, message: ""),
+        metadata: receivedMetadata,
+        close: false
+      )
+    )
+
+    XCTAssertEqual(try stateMachine.nextOutboundFrame(), .noMoreMessages)
+    XCTAssertEqual(stateMachine.nextInboundMessage(), .noMoreMessages)
+  }
+
+  func testClientClosesBeforeServerResponds() throws {
+    var stateMachine = self.makeClientStateMachine(targetState: .clientIdleServerIdle)
+
+    // Client sends metadata
+    let clientInitialMetadata = try stateMachine.send(metadata: .init()).assertHeaders()
+    XCTAssertEqual(
+      clientInitialMetadata,
+      [
+        GRPCHTTP2Keys.path.rawValue: "/test/test",
+        GRPCHTTP2Keys.scheme.rawValue: "http",
+        GRPCHTTP2Keys.method.rawValue: "POST",
+        GRPCHTTP2Keys.contentType.rawValue: "application/grpc",
+        GRPCHTTP2Keys.te.rawValue: "trailers",
+        GRPCHTTP2Keys.acceptEncoding.rawValue: "deflate",
+      ]
+    )
+
+    // Client sends messages
+    XCTAssertEqual(try stateMachine.nextOutboundFrame(), .awaitMoreMessages)
+
+    let message = ByteBuffer(bytes: [1, 2, 3, 4])
+    let framedMessage = try self.frameMessage(message, compression: .none)
+    try stateMachine.send(message: message, promise: nil).assertNothing()
+    XCTAssertEqual(
+      try stateMachine.nextOutboundFrame(),
+      .sendFrame(frame: framedMessage, endStream: false, promise: nil)
+    )
+    XCTAssertEqual(try stateMachine.nextOutboundFrame(), .awaitMoreMessages)
+
+    // Server sends initial metadata
+    let serverInitialHeadersAction = try stateMachine.receive(
+      headers: .serverInitialMetadata,
+      endStream: false
+    )
+    XCTAssertEqual(
+      serverInitialHeadersAction,
+      .receivedMetadata(
+        [
+          ":status": "200",
+          "content-type": "application/grpc",
+        ],
+        nil
+      )
+    )
+
+    // Client closes
+    XCTAssertNoThrow(try stateMachine.closeOutbound())
+
+    // Server sends response
+    XCTAssertEqual(stateMachine.nextInboundMessage(), .awaitMoreMessages)
+
+    let firstResponseBytes = ByteBuffer(bytes: [5, 6, 7])
+    let firstResponse = try self.frameMessage(firstResponseBytes, compression: .none)
+    let secondResponseBytes = ByteBuffer(bytes: [8, 9, 10])
+    let secondResponse = try self.frameMessage(secondResponseBytes, compression: .none)
+    XCTAssertEqual(
+      stateMachine.receive(buffer: firstResponse, endStream: false),
+      .readInbound
+    )
+    XCTAssertEqual(
+      stateMachine.receive(buffer: secondResponse, endStream: false),
+      .readInbound
+    )
+
+    // Make sure messages have arrived
+    XCTAssertEqual(stateMachine.nextInboundMessage(), .receiveMessage(firstResponseBytes))
+    XCTAssertEqual(stateMachine.nextInboundMessage(), .receiveMessage(secondResponseBytes))
+    XCTAssertEqual(stateMachine.nextInboundMessage(), .awaitMoreMessages)
+
+    // Server ends
+    let metadataReceivedAction = try stateMachine.receive(
+      headers: .serverTrailers,
+      endStream: true
+    )
+    let receivedMetadata = {
+      var m = Metadata(headers: .serverTrailers)
+      m.removeAllValues(forKey: GRPCHTTP2Keys.grpcStatus.rawValue)
+      m.removeAllValues(forKey: GRPCHTTP2Keys.grpcStatusMessage.rawValue)
+      return m
+    }()
+    XCTAssertEqual(
+      metadataReceivedAction,
+      .receivedStatusAndMetadata_clientOnly(
+        status: .init(code: .ok, message: ""),
+        metadata: receivedMetadata,
+        close: false
+      )
+    )
+
+    // Client closed but END_STREAM wasn't flushed before the server closed,
+    // so it must be sent now.
+    XCTAssertEqual(
+      try stateMachine.nextOutboundFrame(),
+      .sendFrame(frame: ByteBuffer(), endStream: true, promise: nil)
+    )
+    XCTAssertEqual(try stateMachine.nextOutboundFrame(), .noMoreMessages)
+    XCTAssertEqual(stateMachine.nextInboundMessage(), .noMoreMessages)
+  }
+
+  // - MARK: Poisoned state
+
+  func testPoisonedState_sendMetadataFailsPromise() throws {
+    var stateMachine = self.makeClientStateMachine(targetState: .poisoned)
+    let action = try stateMachine.send(metadata: [])
+    try action.assertFailPromise()
+  }
+
+  func testPoisonedState_sendMessageFailsPromise() throws {
+    var stateMachine = self.makeClientStateMachine(targetState: .poisoned)
+    let action = try stateMachine.send(message: ByteBuffer(), promise: nil)
+    try action.assertFailPromise()
+  }
+
+  func testPoisonedState_receiveHeadersReturnsDoNothing() throws {
+    var stateMachine = self.makeClientStateMachine(targetState: .poisoned)
+    let action = try stateMachine.receive(headers: .serverInitialMetadata, endStream: false)
+    try action.assertDoNothing()
+  }
+
+  func testPoisonedState_receiveBufferReturnsDoNothing() throws {
+    var stateMachine = self.makeClientStateMachine(targetState: .poisoned)
+    let action = stateMachine.receive(buffer: ByteBuffer(), endStream: false)
+    try action.assertDoNothing()
+  }
+
+  func testPoisonedState_nextInboundMessageReturnsNoMoreMessages() throws {
+    var stateMachine = self.makeClientStateMachine(targetState: .poisoned)
+    let action = stateMachine.nextInboundMessage()
+    try action.assertNoMoreMessages()
+  }
+
+  func testPoisonedState_closeOutboundIsNoOp() throws {
+    var stateMachine = self.makeClientStateMachine(targetState: .poisoned)
+    // Should be a no-op
+    XCTAssertNoThrow(try stateMachine.closeOutbound())
+  }
+
+  func testPoisonedState_tearDownDoesNotCrash() throws {
+    var stateMachine = self.makeClientStateMachine(targetState: .poisoned)
+    stateMachine.tearDown()
+  }
+
+  func testPoisonedState_rpcErrorHasInternalErrorCode() throws {
+    var stateMachine = self.makeClientStateMachine(targetState: .poisoned)
+    let action = try stateMachine.send(metadata: [])
+    let error = try action.assertFailPromise()
+    XCTAssertEqual(error.code, .internalError)
+  }
+
+  func testProtocolViolation_eosPlusDataInClientOpenServerOpen() throws {
+    var stateMachine = self.makeClientStateMachine(targetState: .clientOpenServerOpen)
+    // EOS set on a DATA frame received from the server is a gRPC protocol violation.
+    let action = stateMachine.receive(buffer: ByteBuffer(), endStream: true)
+    try action.assertEndRPCAndForwardErrorStatus()
+    // Poisoned: subsequent receives return doNothing.
+    let action2 = stateMachine.receive(buffer: ByteBuffer(), endStream: false)
+    try action2.assertDoNothing()
+  }
+
+  func testProtocolViolation_eosPlusDataInClientClosedServerOpen() throws {
+    var stateMachine = self.makeClientStateMachine(targetState: .clientClosedServerOpen)
+    let action = stateMachine.receive(buffer: ByteBuffer(), endStream: true)
+    try action.assertEndRPCAndForwardErrorStatus()
+    let action2 = stateMachine.receive(buffer: ByteBuffer(), endStream: false)
+    try action2.assertDoNothing()
+  }
+
+  func testProtocolViolation_receiveBufferWhenServerClosed() throws {
+    var stateMachine = self.makeClientStateMachine(targetState: .clientOpenServerClosed)
+    // Server already sent END_STREAM; receiving more data from the server is a protocol
+    // violation.
+    let action = stateMachine.receive(buffer: ByteBuffer(), endStream: false)
+    try action.assertDoNothing()
+    // Poisoned: send now fails the promise.
+    let action2 = try stateMachine.send(message: ByteBuffer(), promise: nil)
+    try action2.assertFailPromise()
+  }
+
+  func testUnexpectedClose_inClientOpenServerClosed_entersPoisonedState() throws {
+    var stateMachine = self.makeClientStateMachine(targetState: .clientOpenServerClosed)
+    // Status was already surfaced; unexpected close returns doNothing...
+    let action = stateMachine.unexpectedClose(reason: .channelInactive)
+    try action.assertDoNothing()
+    // ...but the state machine is now poisoned.
+    let action2 = try stateMachine.send(message: ByteBuffer(), promise: nil)
+    try action2.assertFailPromise()
+  }
+
+  func testUnexpectedClose_inClientClosedServerClosed_isNoOp() throws {
+    var stateMachine = self.makeClientStateMachine(targetState: .clientClosedServerClosed)
+    // RPC already completed cleanly; late channel events are a genuine no-op and must
+    // not poison the state machine.
+    let action = stateMachine.unexpectedClose(reason: .channelInactive)
+    try action.assertDoNothing()
+    let next = stateMachine.nextInboundMessage()
+    try next.assertNoMoreMessages()
+    // END_STREAM hasn't been flushed yet, so the first call emits it.
+    let endStream = try stateMachine.nextOutboundFrame()
+    XCTAssertEqual(endStream, .sendFrame(frame: ByteBuffer(), endStream: true, promise: nil))
+    let next2 = try stateMachine.nextOutboundFrame()
+    try next2.assertNoMoreMessages()
+  }
+
+  func testUnexpectedClose_whenAlreadyPoisoned_isNoOp() throws {
+    var stateMachine = self.makeClientStateMachine(targetState: .poisoned)
+    let action = stateMachine.unexpectedClose(reason: .channelInactive)
+    try action.assertDoNothing()
+    // Still poisoned.
+    let action2 = try stateMachine.send(metadata: [])
+    try action2.assertFailPromise()
+  }
+
+  func testCloseOutboundTwice_isNoOp() throws {
+    var stateMachine = self.makeClientStateMachine(targetState: .clientOpenServerOpen)
+    XCTAssertNoThrow(try stateMachine.closeOutbound())
+    // Independent close mechanisms can race; calling close again must not throw or
+    // enter the poisoned state.
+    XCTAssertNoThrow(try stateMachine.closeOutbound())
+    let next = stateMachine.nextInboundMessage()
+    try next.assertAwaitMoreMessages()
+  }
+
+  func testSendMessage_inClientOpenServerClosed_succeedsPromise() throws {
+    // Server has already responded; client may be racing with receipt of final status.
+    // The promise should be succeeded to avoid a spurious error on a completed RPC.
+    var stateMachine = self.makeClientStateMachine(targetState: .clientOpenServerClosed)
+    let action = try stateMachine.send(message: ByteBuffer(), promise: nil)
+    try action.assertSucceedPromise()
+  }
+
+  func testProtocolViolation_decodeFailureInClientOpenServerOpen_entersPoisonedState() throws {
+    // A corrupt DATA frame from the server causes a decode failure while the stream is fully
+    // open. The state machine must enter the poisoned state so that a subsequent channelInactive
+    // does not fire a second status to the pipeline.
+    var stateMachine = self.makeClientStateMachine(targetState: .clientOpenServerOpen)
+    let corrupt = ByteBuffer(bytes: [0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00])
+    let action = stateMachine.receive(buffer: corrupt, endStream: false)
+    try action.assertEndRPCAndForwardErrorStatus()
+    // Poisoned: subsequent receives return doNothing.
+    let action2 = stateMachine.receive(buffer: ByteBuffer(), endStream: false)
+    try action2.assertDoNothing()
+    // Poisoned: sends fail the promise rather than silently buffering.
+    let sendAction = try stateMachine.send(message: ByteBuffer(), promise: nil)
+    try sendAction.assertFailPromise()
+  }
+
+  func testProtocolViolation_decodeFailureInClientClosedServerOpen_entersPoisonedState() throws {
+    // Same as above but the client has already sent END_STREAM before the corrupt frame arrives.
+    var stateMachine = self.makeClientStateMachine(targetState: .clientClosedServerOpen)
+    let corrupt = ByteBuffer(bytes: [0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00])
+    let action = stateMachine.receive(buffer: corrupt, endStream: false)
+    try action.assertEndRPCAndForwardErrorStatus()
+    // Poisoned: subsequent receives return doNothing.
+    let action2 = stateMachine.receive(buffer: ByteBuffer(), endStream: false)
+    try action2.assertDoNothing()
+  }
+
+  // - MARK: RPC-type-aware outbound frame delay
+
+  func testNextOutboundFrame_nonStreamingRequestRPC_delaysUntilHalfClosed() throws {
+    // Unary and server-streaming RPCs have a single request message, so frames are buffered until
+    // the client half-closes. This lets the message carry end-stream rather than requiring a
+    // separate empty DATA frame.
+    for rpcType in [MethodDescriptor.RPCType.unary, .serverStreaming] {
+      for targetState in [TargetStateMachineState.clientOpenServerIdle, .clientOpenServerOpen] {
+        var stateMachine = self.makeClientStateMachine(
+          targetState: targetState,
+          rpcType: rpcType
+        )
+
+        // No messages yet: still awaiting.
+        try stateMachine.nextOutboundFrame().assertAwaitMoreMessages()
+
+        let message = ByteBuffer(bytes: [1, 2, 3, 4])
+        try stateMachine.send(message: message, promise: nil).assertNothing()
+
+        // Message is buffered; client is still open, so delay applies.
+        try stateMachine.nextOutboundFrame().assertAwaitMoreMessages()
+
+        // Half-close: now the buffered message should flush with end-stream set.
+        try stateMachine.closeOutbound()
+
+        let framedMessage = try self.frameMessage(message, compression: .none)
+        let frame = try stateMachine.nextOutboundFrame().assertSendFrame(endStream: true)
+        XCTAssertEqual(frame, framedMessage)
+        try stateMachine.nextOutboundFrame().assertNoMoreMessages()
+      }
+    }
+  }
+
+  func testNextOutboundFrame_streamingRequestRPC_noDelay() throws {
+    // Client-streaming and bidirectional-streaming RPCs send multiple requests, so frames are
+    // emitted immediately without waiting for half-close.
+    for rpcType in [MethodDescriptor.RPCType.clientStreaming, .bidirectionalStreaming] {
+      for targetState in [TargetStateMachineState.clientOpenServerIdle, .clientOpenServerOpen] {
+        var stateMachine = self.makeClientStateMachine(
+          targetState: targetState,
+          rpcType: rpcType
+        )
+
+        // No messages yet.
+        try stateMachine.nextOutboundFrame().assertAwaitMoreMessages()
+
+        let message1 = ByteBuffer(bytes: [1, 2])
+        try stateMachine.send(message: message1, promise: nil).assertNothing()
+        let framedMessage1 = try self.frameMessage(message1, compression: .none)
+        let frame1 = try stateMachine.nextOutboundFrame().assertSendFrame(endStream: false)
+        XCTAssertEqual(frame1, framedMessage1)
+
+        let message2 = ByteBuffer(bytes: [3, 4])
+        try stateMachine.send(message: message2, promise: nil).assertNothing()
+        let framedMessage2 = try self.frameMessage(message2, compression: .none)
+        let frame2 = try stateMachine.nextOutboundFrame().assertSendFrame(endStream: false)
+        XCTAssertEqual(frame2, framedMessage2)
+
+        try stateMachine.nextOutboundFrame().assertAwaitMoreMessages()
+      }
+    }
+  }
+
+  func testNextOutboundFrame_unaryRPC_serverAlreadyClosed_noMoreMessages() throws {
+    // If the server closed the stream first, there's no point sending any request frames,
+    // even for a unary RPC.
+    var stateMachine = self.makeClientStateMachine(
+      targetState: .clientOpenServerClosed,
+      rpcType: .unary
+    )
+
+    try stateMachine.send(message: ByteBuffer(bytes: [1, 2, 3, 4]), promise: nil)
+      .assertSucceedPromise()
+    try stateMachine.nextOutboundFrame().assertNoMoreMessages()
+  }
+
+  func testNormalFlow_unaryRPC() throws {
+    // Full round-trip for a unary RPC. The key difference from the streaming case is that the
+    // single request message is held until the client half-closes, then sent with end-stream set,
+    // avoiding a separate empty DATA frame.
+    var stateMachine = self.makeClientStateMachine(
+      targetState: .clientIdleServerIdle,
+      rpcType: .unary
+    )
+
+    // Client opens.
+    try stateMachine.send(metadata: []).assertHeaders()
+
+    // Server responds with initial metadata.
+    try stateMachine.receive(headers: .serverInitialMetadata, endStream: false)
+      .assertReceivedMetadata()
+
+    // Client queues its single request message; frame is withheld until half-close.
+    let requestMessage = ByteBuffer(bytes: [1, 2, 3, 4])
+    try stateMachine.send(message: requestMessage, promise: nil).assertNothing()
+    try stateMachine.nextOutboundFrame().assertAwaitMoreMessages()
+
+    // Half-close: the request message is now emitted with end-stream.
+    try stateMachine.closeOutbound()
+    let framedRequest = try self.frameMessage(requestMessage, compression: .none)
+    let frame = try stateMachine.nextOutboundFrame().assertSendFrame(endStream: true)
+    XCTAssertEqual(frame, framedRequest)
+    try stateMachine.nextOutboundFrame().assertNoMoreMessages()
+
+    // Server sends one response message.
+    let responseMessage = ByteBuffer(bytes: [5, 6, 7])
+    let framedResponse = try self.frameMessage(responseMessage, compression: .none)
+    try stateMachine.receive(buffer: framedResponse, endStream: false).assertReadInbound()
+    XCTAssertEqual(try stateMachine.nextInboundMessage().assertReceiveMessage(), responseMessage)
+    try stateMachine.nextInboundMessage().assertAwaitMoreMessages()
+
+    // Server closes with trailers.
+    try stateMachine.receive(headers: .serverTrailers, endStream: true)
+      .assertReceivedStatusAndMetadata()
+    try stateMachine.nextInboundMessage().assertNoMoreMessages()
+  }
+}
+
+@available(gRPCSwiftNIOTransport 2.0, *)
+final class GRPCStreamServerStateMachineTests: XCTestCase {
+  private func makeServerStateMachine(
+    targetState: TargetStateMachineState,
+    deflateCompressionEnabled: Bool = false
+  ) -> GRPCStreamStateMachine {
+
+    var stateMachine = GRPCStreamStateMachine(
+      configuration: .server(
+        .init(
+          scheme: .http,
+          acceptedEncodings: deflateCompressionEnabled ? [.deflate] : []
+        )
+      ),
+      maxPayloadSize: 100,
+      skipAssertions: true
+    )
+
+    let clientMetadata: HPACKHeaders =
+      deflateCompressionEnabled
+      ? .clientInitialMetadataWithDeflateCompression : .clientInitialMetadata
+    switch targetState {
+    case .clientIdleServerIdle:
+      break
+    case .clientOpenServerIdle:
+      // Open client
+      XCTAssertNoThrow(try stateMachine.receive(headers: clientMetadata, endStream: false))
+    case .clientOpenServerOpen:
+      // Open client
+      XCTAssertNoThrow(try stateMachine.receive(headers: clientMetadata, endStream: false))
+      // Open server
+      XCTAssertNoThrow(try stateMachine.send(metadata: Metadata(headers: .serverInitialMetadata)))
+    case .clientOpenServerClosed:
+      // Open client
+      XCTAssertNoThrow(try stateMachine.receive(headers: clientMetadata, endStream: false))
+      // Open server
+      XCTAssertNoThrow(try stateMachine.send(metadata: Metadata(headers: .serverInitialMetadata)))
+      // Close server
+      XCTAssertNoThrow(
+        try stateMachine.send(
+          status: .init(code: .ok, message: ""),
+          metadata: []
+        )
+      )
+    case .clientClosedServerIdle:
+      // Open client
+      XCTAssertNoThrow(try stateMachine.receive(headers: clientMetadata, endStream: false))
+      // Close client
+      XCTAssertNoThrow(stateMachine.receive(buffer: .init(), endStream: true))
+    case .clientClosedServerOpen:
+      // Open client
+      XCTAssertNoThrow(try stateMachine.receive(headers: clientMetadata, endStream: false))
+      // Open server
+      XCTAssertNoThrow(try stateMachine.send(metadata: Metadata(headers: .serverInitialMetadata)))
+      // Close client
+      XCTAssertNoThrow(stateMachine.receive(buffer: .init(), endStream: true))
+    case .clientClosedServerClosed:
+      // Open client
+      XCTAssertNoThrow(try stateMachine.receive(headers: clientMetadata, endStream: false))
+      // Open server
+      XCTAssertNoThrow(try stateMachine.send(metadata: Metadata(headers: .serverInitialMetadata)))
+      // Close client
+      XCTAssertNoThrow(stateMachine.receive(buffer: .init(), endStream: true))
+      // Close server
+      XCTAssertNoThrow(
+        try stateMachine.send(
+          status: .init(code: .ok, message: ""),
+          metadata: []
+        )
+      )
+    case .poisoned:
+      // Open client so that send(message:) is an unreachable transition.
+      XCTAssertNoThrow(try stateMachine.receive(headers: clientMetadata, endStream: false))
+      XCTAssertThrowsError(
+        ofType: GRPCStreamStateMachine.UnreachableTransition.self,
+        try stateMachine.send(message: ByteBuffer(), promise: nil)
+      ) { _ in }
+    }
+
+    return stateMachine
+  }
+
+  // - MARK: Send Metadata
+
+  func testSendMetadataWhenClientIdleAndServerIdle() throws {
+    var stateMachine = self.makeServerStateMachine(targetState: .clientIdleServerIdle)
+
+    XCTAssertThrowsError(
+      ofType: GRPCStreamStateMachine.UnreachableTransition.self,
+      try stateMachine.send(metadata: .init())
+    ) { error in
+      XCTAssertEqual(
+        error.message,
+        "Client cannot be idle if server is sending initial metadata: it must have opened."
+      )
+    }
+  }
+
+  func testSendMetadataWhenClientOpenAndServerIdle() throws {
+    var stateMachine = self.makeServerStateMachine(
+      targetState: .clientOpenServerIdle,
+      deflateCompressionEnabled: false
+    )
+    XCTAssertEqual(
+      try stateMachine.send(metadata: .init()).assertHeaders(),
+      [
+        ":status": "200",
+        "content-type": "application/grpc",
+      ]
+    )
+  }
+
+  func testSendMetadataWhenClientOpenAndServerIdle_AndCompressionEnabled() {
+    // Enable deflate compression on server
+    var stateMachine = self.makeServerStateMachine(
+      targetState: .clientOpenServerIdle,
+      deflateCompressionEnabled: true
+    )
+
+    XCTAssertEqual(
+      try stateMachine.send(metadata: .init()).assertHeaders(),
+      [
+        ":status": "200",
+        "content-type": "application/grpc",
+        "grpc-encoding": "deflate",
+      ]
+    )
+  }
+
+  func testSendMetadataWhenClientOpenAndServerOpen() throws {
+    var stateMachine = self.makeServerStateMachine(targetState: .clientOpenServerOpen)
+
+    // Try sending metadata again: should throw
+    XCTAssertThrowsError(
+      ofType: GRPCStreamStateMachine.UnreachableTransition.self,
+      try stateMachine.send(metadata: .init())
+    ) { error in
+      XCTAssertEqual(error.message, "Server has already sent initial metadata.")
+    }
+  }
+
+  func testSendMetadataWhenClientOpenAndServerClosed() throws {
+    var stateMachine = self.makeServerStateMachine(targetState: .clientOpenServerClosed)
+
+    // Try sending metadata again: should throw
+    XCTAssertThrowsError(
+      ofType: GRPCStreamStateMachine.UnreachableTransition.self,
+      try stateMachine.send(metadata: .init())
+    ) { error in
+      XCTAssertEqual(error.message, "Server cannot send metadata if closed.")
+    }
+  }
+
+  func testSendMetadataWhenClientClosedAndServerIdle() throws {
+    var stateMachine = self.makeServerStateMachine(targetState: .clientClosedServerIdle)
+
+    // We should be allowed to send initial metadata if client is closed:
+    // client may be finished sending request but may still be awaiting response.
+    XCTAssertNoThrow(try stateMachine.send(metadata: .init()))
+  }
+
+  func testSendMetadataWhenClientClosedAndServerOpen() throws {
+    var stateMachine = self.makeServerStateMachine(targetState: .clientClosedServerOpen)
+
+    // Try sending metadata again: should throw
+    XCTAssertThrowsError(
+      ofType: GRPCStreamStateMachine.UnreachableTransition.self,
+      try stateMachine.send(metadata: .init())
+    ) { error in
+      XCTAssertEqual(error.message, "Server has already sent initial metadata.")
+    }
+  }
+
+  func testSendMetadataWhenClientClosedAndServerClosed() throws {
+    var stateMachine = self.makeServerStateMachine(targetState: .clientClosedServerClosed)
+
+    // Try sending metadata again: should throw
+    XCTAssertThrowsError(
+      ofType: GRPCStreamStateMachine.UnreachableTransition.self,
+      try stateMachine.send(metadata: .init())
+    ) { error in
+      XCTAssertEqual(error.message, "Server cannot send metadata if closed.")
+    }
+  }
+
+  // - MARK: Send Message
+
+  func testSendMessageWhenClientIdleAndServerIdle() {
+    var stateMachine = self.makeServerStateMachine(targetState: .clientIdleServerIdle)
+
+    XCTAssertThrowsError(
+      ofType: GRPCStreamStateMachine.UnreachableTransition.self,
+      try stateMachine.send(message: ByteBuffer(), promise: nil)
+    ) { error in
+      XCTAssertEqual(
+        error.message,
+        "Server must have sent initial metadata before sending a message."
+      )
+    }
+  }
+
+  func testSendMessageWhenClientOpenAndServerIdle() {
+    var stateMachine = self.makeServerStateMachine(targetState: .clientOpenServerIdle)
+
+    // Now send a message
+    XCTAssertThrowsError(
+      ofType: GRPCStreamStateMachine.UnreachableTransition.self,
+      try stateMachine.send(message: ByteBuffer(), promise: nil)
+    ) { error in
+      XCTAssertEqual(
+        error.message,
+        "Server must have sent initial metadata before sending a message."
+      )
+    }
+  }
+
+  func testSendMessageWhenClientOpenAndServerOpen() {
+    var stateMachine = self.makeServerStateMachine(targetState: .clientOpenServerOpen)
+
+    // Now send a message
+    XCTAssertNoThrow(try stateMachine.send(message: ByteBuffer(), promise: nil))
+  }
+
+  func testSendMessageWhenClientOpenAndServerClosed() {
+    var stateMachine = self.makeServerStateMachine(targetState: .clientOpenServerClosed)
+
+    // Try sending another message: it should fail
+    XCTAssertThrowsError(
+      ofType: GRPCStreamStateMachine.UnreachableTransition.self,
+      try stateMachine.send(message: ByteBuffer(), promise: nil)
+    ) { error in
+      XCTAssertEqual(error.message, "Server can't send a message if it's closed.")
+    }
+  }
+
+  func testSendMessageWhenClientClosedAndServerIdle() {
+    var stateMachine = self.makeServerStateMachine(targetState: .clientClosedServerIdle)
+
+    XCTAssertThrowsError(
+      ofType: GRPCStreamStateMachine.UnreachableTransition.self,
+      try stateMachine.send(message: ByteBuffer(), promise: nil)
+    ) { error in
+      XCTAssertEqual(
+        error.message,
+        "Server must have sent initial metadata before sending a message."
+      )
+    }
+  }
+
+  func testSendMessageWhenClientClosedAndServerOpen() {
+    var stateMachine = self.makeServerStateMachine(targetState: .clientClosedServerOpen)
+
+    // Try sending a message: even though client is closed, we should send it
+    // because it may be expecting a response.
+    XCTAssertNoThrow(try stateMachine.send(message: ByteBuffer(), promise: nil))
+  }
+
+  func testSendMessageWhenClientClosedAndServerClosed() {
+    var stateMachine = self.makeServerStateMachine(targetState: .clientClosedServerClosed)
+
+    // Try sending another message: it should fail
+    XCTAssertThrowsError(
+      ofType: GRPCStreamStateMachine.UnreachableTransition.self,
+      try stateMachine.send(message: ByteBuffer(), promise: nil)
+    ) { error in
+      XCTAssertEqual(error.message, "Server can't send a message if it's closed.")
+    }
+  }
+
+  // - MARK: Send Status and Trailers
+
+  func testSendStatusAndTrailersWhenClientIdle() {
+    var stateMachine = self.makeServerStateMachine(targetState: .clientIdleServerIdle)
+
+    XCTAssertThrowsError(
+      ofType: GRPCStreamStateMachine.UnreachableTransition.self,
+      try stateMachine.send(
+        status: .init(code: .ok, message: ""),
+        metadata: .init()
+      )
+    ) { error in
+      XCTAssertEqual(error.message, "Server can't send status if client is idle.")
+    }
+  }
+
+  func testSendStatusAndTrailersWhenClientOpenAndServerIdle() throws {
+    var stateMachine = self.makeServerStateMachine(targetState: .clientOpenServerIdle)
+
+    let trailers = try stateMachine.send(
+      status: .init(code: .unknown, message: "RPC unknown"),
+      metadata: .init()
+    ).assertTrailers()
+
+    // Make sure it's a trailers-only response: it must have :status header and content-type
+    XCTAssertEqual(
+      trailers,
+      [
+        ":status": "200",
+        "content-type": "application/grpc",
+        "grpc-status": "2",
+        "grpc-message": "RPC unknown",
+      ]
+    )
+
+    // Try sending another message: it should fail because server is now closed.
+    XCTAssertThrowsError(
+      ofType: GRPCStreamStateMachine.UnreachableTransition.self,
+      try stateMachine.send(message: ByteBuffer(), promise: nil)
+    ) { error in
+      XCTAssertEqual(error.message, "Server can't send a message if it's closed.")
+    }
+  }
+
+  func testSendStatusAndTrailersWhenClientOpenAndServerOpen() throws {
+    var stateMachine = self.makeServerStateMachine(targetState: .clientOpenServerOpen)
+
+    let trailers = try stateMachine.send(
+      status: .init(code: .ok, message: ""),
+      metadata: .init()
+    ).assertTrailers()
+
+    // Make sure it's NOT a trailers-only response, because the server was
+    // already open (so it sent initial metadata): it shouldn't have :status or content-type headers
+    XCTAssertEqual(trailers, ["grpc-status": "0"])
+
+    // Try sending another message: it should fail because server is now closed.
+    XCTAssertThrowsError(
+      ofType: GRPCStreamStateMachine.UnreachableTransition.self,
+      try stateMachine.send(message: ByteBuffer(), promise: nil)
+    ) { error in
+      XCTAssertEqual(error.message, "Server can't send a message if it's closed.")
+    }
+  }
+
+  func testSendStatusAndTrailersWhenClientOpenAndServerClosed() throws {
+    var stateMachine = self.makeServerStateMachine(targetState: .clientOpenServerClosed)
+
+    try stateMachine.send(
+      status: .init(code: .ok, message: ""),
+      metadata: .init()
+    ).assertDropAndFailPromise()
+  }
+
+  func testSendStatusAndTrailersWhenClientClosedAndServerIdle() throws {
+    var stateMachine = self.makeServerStateMachine(targetState: .clientClosedServerIdle)
+
+    let trailers = try stateMachine.send(
+      status: .init(code: .unknown, message: "RPC unknown"),
+      metadata: .init()
+    ).assertTrailers()
+
+    // Make sure it's a trailers-only response: it must have :status header and content-type
+    XCTAssertEqual(
+      trailers,
+      [
+        ":status": "200",
+        "content-type": "application/grpc",
+        "grpc-status": "2",
+        "grpc-message": "RPC unknown",
+      ]
+    )
+
+    // Try sending another message: it should fail because server is now closed.
+    XCTAssertThrowsError(
+      ofType: GRPCStreamStateMachine.UnreachableTransition.self,
+      try stateMachine.send(message: ByteBuffer(), promise: nil)
+    ) { error in
+      XCTAssertEqual(error.message, "Server can't send a message if it's closed.")
+    }
+  }
+
+  func testSendStatusAndTrailersWhenClientClosedAndServerOpen() throws {
+    var stateMachine = self.makeServerStateMachine(targetState: .clientClosedServerOpen)
+
+    let trailers = try stateMachine.send(
+      status: .init(code: .ok, message: ""),
+      metadata: .init()
+    ).assertTrailers()
+
+    // Make sure it's NOT a trailers-only response, because the server was
+    // already open (so it sent initial metadata): it shouldn't have :status or content-type headers
+    XCTAssertEqual(trailers, ["grpc-status": "0"])
+
+    // Try sending another message: it should fail because server is now closed.
+    XCTAssertThrowsError(
+      ofType: GRPCStreamStateMachine.UnreachableTransition.self,
+      try stateMachine.send(message: ByteBuffer(), promise: nil)
+    ) { error in
+      XCTAssertEqual(error.message, "Server can't send a message if it's closed.")
+    }
+  }
+
+  func testSendStatusAndTrailersWhenClientClosedAndServerClosed() throws {
+    var stateMachine = self.makeServerStateMachine(targetState: .clientClosedServerClosed)
+
+    try stateMachine.send(
+      status: .init(code: .ok, message: ""),
+      metadata: .init()
+    ).assertDropAndFailPromise()
+  }
+
+  // - MARK: Receive metadata
+
+  func testReceiveMetadataWhenClientIdleAndServerIdle() throws {
+    var stateMachine = self.makeServerStateMachine(targetState: .clientIdleServerIdle)
+
+    let action = try stateMachine.receive(headers: .clientInitialMetadata, endStream: false)
+    XCTAssertEqual(
+      action,
+      .receivedMetadata(
+        Metadata(headers: .clientInitialMetadata),
+        "/test/test"
+      )
+    )
+  }
+
+  func testReceiveMetadataWhenClientIdleAndServerIdle_WithEndStream() throws {
+    var stateMachine = self.makeServerStateMachine(targetState: .clientIdleServerIdle)
+
+    let action = try stateMachine.receive(headers: .clientInitialMetadata, endStream: true)
+    XCTAssertEqual(
+      action,
+      .receivedMetadata(
+        Metadata(headers: .clientInitialMetadata),
+        "/test/test"
+      )
+    )
+  }
+
+  func testReceiveMetadataWhenClientIdleAndServerIdle_MissingContentType() throws {
+    var stateMachine = self.makeServerStateMachine(targetState: .clientIdleServerIdle)
+
+    let action = try stateMachine.receive(
+      headers: .receivedWithoutContentType,
+      endStream: false
+    )
+
+    self.assertRejectedRPC(action) { trailers in
+      XCTAssertEqual(trailers.count, 1)
+      XCTAssertEqual(trailers.firstString(forKey: .status), "415")
+    }
+  }
+
+  func testReceiveMetadataWhenClientIdleAndServerIdle_InvalidContentType() throws {
+    var stateMachine = self.makeServerStateMachine(targetState: .clientIdleServerIdle)
+
+    let action = try stateMachine.receive(
+      headers: .receivedWithInvalidContentType,
+      endStream: false
+    )
+
+    self.assertRejectedRPC(action) { trailers in
+      XCTAssertEqual(trailers.count, 1)
+      XCTAssertEqual(trailers.firstString(forKey: .status), "415")
+    }
+  }
+
+  func testReceiveMetadataWhenClientIdleAndServerIdle_MissingPath() throws {
+    var stateMachine = self.makeServerStateMachine(targetState: .clientIdleServerIdle)
+
+    let action = try stateMachine.receive(
+      headers: .receivedWithoutEndpoint,
+      endStream: false
+    )
+
+    self.assertRejectedRPC(action) { trailers in
+      XCTAssertEqual(
+        trailers,
+        [
+          ":status": "200",
+          "content-type": "application/grpc",
+          "grpc-status": String(Status.Code.invalidArgument.rawValue),
+          "grpc-message": "No :path header has been set.",
+        ]
+      )
+    }
+  }
+
+  func testReceiveMetadataWhenClientIdleAndServerIdle_InvalidPath() throws {
+    var stateMachine = self.makeServerStateMachine(targetState: .clientIdleServerIdle)
+
+    let action = try stateMachine.receive(
+      headers: .receivedWithInvalidPath,
+      endStream: false
+    )
+
+    // Path validation happens in the server stream handler.
+    let (_, path) = try action.assertReceivedMetadata()
+    XCTAssertEqual(path, "someinvalidpath")
+  }
+
+  func testReceiveMetadataWhenClientIdleAndServerIdle_MissingTE() throws {
+    var stateMachine = self.makeServerStateMachine(targetState: .clientIdleServerIdle)
+
+    let action = try stateMachine.receive(
+      headers: .receivedWithoutTE,
+      endStream: false
+    )
+
+    let metadata: Metadata = [
+      ":path": "/test/test",
+      ":scheme": "http",
+      ":method": "POST",
+      "content-type": "application/grpc",
+    ]
+    XCTAssertEqual(action, .receivedMetadata(metadata, "/test/test"))
+  }
+
+  func testReceiveMetadataWhenClientIdleAndServerIdle_MissingMethod() throws {
+    var stateMachine = self.makeServerStateMachine(targetState: .clientIdleServerIdle)
+
+    let action = try stateMachine.receive(
+      headers: .receivedWithoutMethod,
+      endStream: false
+    )
+
+    self.assertRejectedRPC(action) { trailers in
+      XCTAssertEqual(
+        trailers,
+        [
+          ":status": "200",
+          "content-type": "application/grpc",
+          "grpc-status": "3",
+          "grpc-message":
+            ":method header is expected to be present and have a value of \"POST\".",
+        ]
+      )
+    }
+  }
+
+  func testReceiveMetadataWhenClientIdleAndServerIdle_InvalidMethod() throws {
+    var stateMachine = self.makeServerStateMachine(targetState: .clientIdleServerIdle)
+
+    let action = try stateMachine.receive(
+      headers: .receivedWithInvalidMethod,
+      endStream: false
+    )
+
+    self.assertRejectedRPC(action) { trailers in
+      XCTAssertEqual(
+        trailers,
+        [
+          ":status": "200",
+          "content-type": "application/grpc",
+          "grpc-status": "3",
+          "grpc-message":
+            ":method header is expected to be present and have a value of \"POST\".",
+        ]
+      )
+    }
+  }
+
+  func testReceiveMetadataWhenClientIdleAndServerIdle_MissingScheme() throws {
+    var stateMachine = self.makeServerStateMachine(targetState: .clientIdleServerIdle)
+
+    let action = try stateMachine.receive(
+      headers: .receivedWithoutScheme,
+      endStream: false
+    )
+
+    self.assertRejectedRPC(action) { trailers in
+      XCTAssertEqual(
+        trailers,
+        [
+          ":status": "200",
+          "content-type": "application/grpc",
+          "grpc-status": "3",
+          "grpc-message": ":scheme header must be present and one of \"http\" or \"https\".",
+        ]
+      )
+    }
+  }
+
+  func testReceiveMetadataWhenClientIdleAndServerIdle_InvalidScheme() throws {
+    var stateMachine = self.makeServerStateMachine(targetState: .clientIdleServerIdle)
+
+    let action = try stateMachine.receive(
+      headers: .receivedWithInvalidScheme,
+      endStream: false
+    )
+
+    self.assertRejectedRPC(action) { trailers in
+      XCTAssertEqual(
+        trailers,
+        [
+          ":status": "200",
+          "content-type": "application/grpc",
+          "grpc-status": "3",
+          "grpc-message": ":scheme header must be present and one of \"http\" or \"https\".",
+        ]
+      )
+    }
+  }
+
+  func testReceiveMetadataWhenClientIdleAndServerIdle_ServerUnsupportedEncoding() throws {
+    var stateMachine = self.makeServerStateMachine(
+      targetState: .clientIdleServerIdle,
+      deflateCompressionEnabled: true
+    )
+
+    // Try opening client with a compression algorithm that is not accepted
+    // by the server.
+    let action = try stateMachine.receive(
+      headers: .clientInitialMetadataWithGzipCompression,
+      endStream: false
+    )
+
+    self.assertRejectedRPC(action) { trailers in
+      let expected: HPACKHeaders = [
+        ":status": "200",
+        "content-type": "application/grpc",
+        "grpc-status": "12",
+        "grpc-message":
+          "gzip compression is not supported; supported algorithms are listed in grpc-accept-encoding",
+        "grpc-accept-encoding": "deflate",
+        "grpc-accept-encoding": "identity",
+      ]
+      XCTAssertEqual(expected.count, trailers.count, "Expected \(expected) but got \(trailers)")
+      for header in trailers {
+        XCTAssertTrue(
+          expected.contains { name, value, _ in
+            header.name == name && header.value == header.value
+          }
+        )
+      }
+    }
+  }
+
+  func testReceiveMetadataWhenClientOpenAndServerIdle() throws {
+    var stateMachine = self.makeServerStateMachine(targetState: .clientOpenServerIdle)
+
+    // Try receiving initial metadata again - should be a protocol violation
+    let action = try stateMachine.receive(headers: .clientInitialMetadata, endStream: false)
+    XCTAssertEqual(action, .protocolViolation_serverOnly)
+  }
+
+  func testReceiveMetadataWhenClientOpenAndServerOpen() throws {
+    var stateMachine = self.makeServerStateMachine(targetState: .clientOpenServerOpen)
+
+    let action = try stateMachine.receive(headers: .clientInitialMetadata, endStream: false)
+    XCTAssertEqual(action, .protocolViolation_serverOnly)
+  }
+
+  func testReceiveMetadataWhenClientOpenAndServerClosed() throws {
+    var stateMachine = self.makeServerStateMachine(targetState: .clientOpenServerClosed)
+
+    let action = try stateMachine.receive(headers: .clientInitialMetadata, endStream: false)
+    XCTAssertEqual(action, .protocolViolation_serverOnly)
+  }
+
+  func testReceiveMetadataWhenClientClosedAndServerIdle() throws {
+    var stateMachine = self.makeServerStateMachine(targetState: .clientClosedServerIdle)
+
+    // Receiving HEADERS after client sent END_STREAM is an HTTP/2 protocol violation.
+    let action = try stateMachine.receive(headers: .clientInitialMetadata, endStream: false)
+    XCTAssertEqual(action, .protocolViolation_serverOnly)
+  }
+
+  func testReceiveMetadataWhenClientClosedAndServerOpen() throws {
+    var stateMachine = self.makeServerStateMachine(targetState: .clientClosedServerOpen)
+
+    // Receiving HEADERS after client sent END_STREAM is an HTTP/2 protocol violation.
+    let action = try stateMachine.receive(headers: .clientInitialMetadata, endStream: false)
+    XCTAssertEqual(action, .protocolViolation_serverOnly)
+  }
+
+  func testReceiveMetadataWhenClientClosedAndServerClosed() throws {
+    var stateMachine = self.makeServerStateMachine(targetState: .clientClosedServerClosed)
+
+    // Receiving HEADERS after client sent END_STREAM is an HTTP/2 protocol violation.
+    let action = try stateMachine.receive(headers: .clientInitialMetadata, endStream: false)
+    XCTAssertEqual(action, .protocolViolation_serverOnly)
+  }
+
+  // - MARK: Receive message
+
+  func testReceiveMessageWhenClientIdleAndServerIdle() {
+    var stateMachine = self.makeServerStateMachine(targetState: .clientIdleServerIdle)
+
+    // Receiving a DATA frame before the client has sent HEADERS is an HTTP/2 protocol violation.
+    // The state machine handles it defensively: poison + forwardErrorAndClose.
+    let action = stateMachine.receive(buffer: .init(), endStream: false)
+    XCTAssertEqual(
+      action,
+      .forwardErrorAndClose_serverOnly(
+        RPCError(
+          code: .internalError,
+          message: "Received DATA frame before client sent HEADERS."
+        )
+      )
+    )
+  }
+
+  func testReceiveMessageWhenClientOpenAndServerIdle() {
+    var stateMachine = self.makeServerStateMachine(targetState: .clientOpenServerIdle)
+
+    // Receive messages successfully: the second one should close client.
+    XCTAssertNoThrow(stateMachine.receive(buffer: .init(), endStream: false))
+    XCTAssertNoThrow(stateMachine.receive(buffer: .init(), endStream: true))
+
+    // Verify client is now closed: receiving more DATA is an HTTP/2 protocol violation.
+    let action = stateMachine.receive(buffer: .init(), endStream: false)
+    XCTAssertEqual(
+      action,
+      .forwardErrorAndClose_serverOnly(
+        RPCError(
+          code: .internalError,
+          message: "Received DATA frame after client sent END_STREAM."
+        )
+      )
+    )
+  }
+
+  func testReceiveMessageWhenClientOpenAndServerOpen() throws {
+    var stateMachine = self.makeServerStateMachine(targetState: .clientOpenServerOpen)
+
+    // Receive messages successfully: the second one should close client.
+    XCTAssertNoThrow(stateMachine.receive(buffer: .init(), endStream: false))
+    XCTAssertNoThrow(stateMachine.receive(buffer: .init(), endStream: true))
+
+    // Verify client is now closed: receiving more DATA is an HTTP/2 protocol violation.
+    let action = stateMachine.receive(buffer: .init(), endStream: false)
+    XCTAssertEqual(
+      action,
+      .forwardErrorAndClose_serverOnly(
+        RPCError(
+          code: .internalError,
+          message: "Received DATA frame after client sent END_STREAM."
+        )
+      )
+    )
+  }
+
+  func testReceiveMessage_ServerCompressionEnabled() throws {
+    // Enable deflate compression on server
+    var stateMachine = self.makeServerStateMachine(
+      targetState: .clientOpenServerOpen,
+      deflateCompressionEnabled: true
+    )
+
+    let originalMessage = ByteBuffer(bytes: [42, 42, 43, 43])
+
+    // Receiving uncompressed message should still work.
+    let receivedUncompressedBytes = try self.frameMessage(originalMessage, compression: .none)
+    XCTAssertNoThrow(stateMachine.receive(buffer: receivedUncompressedBytes, endStream: false))
+    var receivedAction = stateMachine.nextInboundMessage()
+    switch receivedAction {
+    case .noMoreMessages, .awaitMoreMessages:
+      XCTFail("Should have received message")
+    case .receiveMessage(let receivedMessaged):
+      XCTAssertEqual(originalMessage, receivedMessaged)
+    }
+
+    // Receiving compressed message with deflate should work
+    let receivedDeflateCompressedBytes = try self.frameMessage(
+      originalMessage,
+      compression: .deflate
+    )
+    XCTAssertNoThrow(
+      stateMachine.receive(buffer: receivedDeflateCompressedBytes, endStream: false)
+    )
+    receivedAction = stateMachine.nextInboundMessage()
+    switch receivedAction {
+    case .noMoreMessages, .awaitMoreMessages:
+      XCTFail("Should have received message")
+    case .receiveMessage(let receivedMessaged):
+      XCTAssertEqual(originalMessage, receivedMessaged)
+    }
+
+    // Receiving compressed message with gzip (unsupported) should throw error
+    let receivedGZIPCompressedBytes = try self.frameMessage(originalMessage, compression: .gzip)
+    let action = stateMachine.receive(buffer: receivedGZIPCompressedBytes, endStream: false)
+    XCTAssertEqual(
+      action,
+      .forwardErrorAndClose_serverOnly(
+        RPCError(code: .internalError, message: "Failed to decode message")
+      )
+    )
+
+    receivedAction = stateMachine.nextInboundMessage()
+    switch receivedAction {
+    case .noMoreMessages:
+      // Decode failure poisoned the state machine; no more messages will be delivered.
+      ()
+    case .awaitMoreMessages:
+      XCTFail("Should not be awaiting more messages after decode failure")
+    case .receiveMessage:
+      XCTFail("Should not have received message")
+    }
+  }
+
+  func testReceiveMessageWhenClientOpenAndServerClosed() {
+    var stateMachine = self.makeServerStateMachine(targetState: .clientOpenServerClosed)
+
+    // Client is not done sending request, don't fail.
+    XCTAssertEqual(stateMachine.receive(buffer: ByteBuffer(), endStream: false), .doNothing)
+  }
+
+  func testReceiveMessageWhenClientClosedAndServerIdle() {
+    var stateMachine = self.makeServerStateMachine(targetState: .clientClosedServerIdle)
+
+    // Receiving DATA after client sent END_STREAM is an HTTP/2 protocol violation.
+    let action = stateMachine.receive(buffer: .init(), endStream: false)
+    XCTAssertEqual(
+      action,
+      .forwardErrorAndClose_serverOnly(
+        RPCError(
+          code: .internalError,
+          message: "Received DATA frame after client sent END_STREAM."
+        )
+      )
+    )
+  }
+
+  func testReceiveMessageWhenClientClosedAndServerOpen() {
+    var stateMachine = self.makeServerStateMachine(targetState: .clientClosedServerOpen)
+
+    // Receiving DATA after client sent END_STREAM is an HTTP/2 protocol violation.
+    let action = stateMachine.receive(buffer: .init(), endStream: false)
+    XCTAssertEqual(
+      action,
+      .forwardErrorAndClose_serverOnly(
+        RPCError(
+          code: .internalError,
+          message: "Received DATA frame after client sent END_STREAM."
+        )
+      )
+    )
+  }
+
+  func testReceiveMessageWhenClientClosedAndServerClosed() throws {
+    var stateMachine = self.makeServerStateMachine(targetState: .clientClosedServerClosed)
+    let action = stateMachine.receive(buffer: .init(), endStream: false)
+    try action.assertDoNothing()
+  }
+
+  // - MARK: Next outbound message
+
+  func testNextOutboundMessageWhenClientIdleAndServerIdle() throws {
+    var stateMachine = self.makeServerStateMachine(targetState: .clientIdleServerIdle)
+
+    // Nothing has been buffered yet; nextOutboundFrame should return
+    // awaitMoreMessages rather than asserting. This can happen when
+    // channelWritabilityChanged fires before the stream has opened.
+    XCTAssertEqual(try stateMachine.nextOutboundFrame(), .awaitMoreMessages)
+  }
+
+  func testNextOutboundMessageWhenClientOpenAndServerIdle() throws {
+    var stateMachine = self.makeServerStateMachine(targetState: .clientOpenServerIdle)
+
+    // Server hasn't opened yet; nothing to flush.
+    XCTAssertEqual(try stateMachine.nextOutboundFrame(), .awaitMoreMessages)
+  }
+
+  func testNextOutboundMessageWhenClientOpenAndServerIdle_WithCompression() throws {
+    var stateMachine = self.makeServerStateMachine(targetState: .clientOpenServerIdle)
+
+    // Server hasn't opened yet; nothing to flush.
+    XCTAssertEqual(try stateMachine.nextOutboundFrame(), .awaitMoreMessages)
+  }
+
+  func testNextOutboundMessageWhenClientOpenAndServerOpen() throws {
+    var stateMachine = self.makeServerStateMachine(targetState: .clientOpenServerOpen)
+
+    XCTAssertEqual(try stateMachine.nextOutboundFrame(), .awaitMoreMessages)
+
+    XCTAssertNoThrow(try stateMachine.send(message: ByteBuffer(bytes: [42, 42]), promise: nil))
+
+    let response = try stateMachine.nextOutboundFrame()
+    let expectedBytes: [UInt8] = [
+      0,  // compression flag: unset
+      0, 0, 0, 2,  // message length: 2 bytes
+      42, 42,  // original message
+    ]
+    XCTAssertEqual(
+      response,
+      .sendFrame(frame: ByteBuffer(bytes: expectedBytes), endStream: false, promise: nil)
+    )
+
+    // And then make sure that nothing else is returned
+    XCTAssertEqual(try stateMachine.nextOutboundFrame(), .awaitMoreMessages)
+  }
+
+  func testNextOutboundMessageWhenClientOpenAndServerOpen_WithCompression() throws {
+    var stateMachine = self.makeServerStateMachine(
+      targetState: .clientOpenServerOpen,
+      deflateCompressionEnabled: true
+    )
+
+    XCTAssertEqual(try stateMachine.nextOutboundFrame(), .awaitMoreMessages)
+
+    let originalMessage = ByteBuffer(bytes: [42, 42, 43, 43])
+    XCTAssertNoThrow(try stateMachine.send(message: originalMessage, promise: nil))
+
+    let response = try stateMachine.nextOutboundFrame()
+    let framedMessage = try self.frameMessage(originalMessage, compression: .deflate)
+    XCTAssertEqual(response, .sendFrame(frame: framedMessage, endStream: false, promise: nil))
+  }
+
+  func testNextOutboundMessageWhenClientOpenAndServerClosed() throws {
+    var stateMachine = self.makeServerStateMachine(targetState: .clientOpenServerOpen)
+
+    // Send message and close server
+    XCTAssertNoThrow(try stateMachine.send(message: ByteBuffer(bytes: [42, 42]), promise: nil))
+    XCTAssertNoThrow(
+      try stateMachine.send(
+        status: .init(code: .ok, message: ""),
+        metadata: []
+      )
+    )
+
+    let response = try stateMachine.nextOutboundFrame()
+    let expectedBytes: [UInt8] = [
+      0,  // compression flag: unset
+      0, 0, 0, 2,  // message length: 2 bytes
+      42, 42,  // original message
+    ]
+    XCTAssertEqual(
+      response,
+      .sendFrame(frame: ByteBuffer(bytes: expectedBytes), endStream: false, promise: nil)
+    )
+
+    // And then make sure that nothing else is returned anymore
+    XCTAssertEqual(try stateMachine.nextOutboundFrame(), .noMoreMessages)
+  }
+
+  func testNextOutboundMessageWhenClientClosedAndServerIdle() throws {
+    var stateMachine = self.makeServerStateMachine(targetState: .clientClosedServerIdle)
+
+    // Server hasn't opened yet; nothing to flush.
+    XCTAssertEqual(try stateMachine.nextOutboundFrame(), .awaitMoreMessages)
+  }
+
+  func testNextOutboundMessageWhenClientClosedAndServerOpen() throws {
+    var stateMachine = self.makeServerStateMachine(targetState: .clientOpenServerOpen)
+
+    // Send a message
+    XCTAssertNoThrow(try stateMachine.send(message: ByteBuffer(bytes: [42, 42]), promise: nil))
+
+    // Close client
+    XCTAssertNoThrow(stateMachine.receive(buffer: .init(), endStream: true))
+
+    // Send another message
+    XCTAssertNoThrow(try stateMachine.send(message: ByteBuffer(bytes: [43, 43]), promise: nil))
+
+    // Make sure that getting the next outbound message _does_ return the message
+    // we have enqueued.
+    let response = try stateMachine.nextOutboundFrame()
+    let expectedBytes: [UInt8] = [
+      0,  // compression flag: unset
+      0, 0, 0, 2,  // message length: 2 bytes
+      42, 42,  // original message
+      // End of first message - beginning of second
+      0,  // compression flag: unset
+      0, 0, 0, 2,  // message length: 2 bytes
+      43, 43,  // original message
+    ]
+    XCTAssertEqual(
+      response,
+      .sendFrame(frame: ByteBuffer(bytes: expectedBytes), endStream: false, promise: nil)
+    )
+
+    // And then make sure that nothing else is returned anymore
+    XCTAssertEqual(try stateMachine.nextOutboundFrame(), .awaitMoreMessages)
+  }
+
+  func testNextOutboundMessageWhenClientClosedAndServerClosed() throws {
+    var stateMachine = self.makeServerStateMachine(targetState: .clientClosedServerOpen)
+
+    // Send a message and close server
+    XCTAssertNoThrow(try stateMachine.send(message: ByteBuffer(bytes: [42, 42]), promise: nil))
+    XCTAssertNoThrow(
+      try stateMachine.send(
+        status: .init(code: .ok, message: ""),
+        metadata: []
+      )
+    )
+
+    // We have enqueued a message, make sure we return it even though server is closed,
+    // because we haven't yet drained all of the pending messages.
+    let response = try stateMachine.nextOutboundFrame()
+    let expectedBytes: [UInt8] = [
+      0,  // compression flag: unset
+      0, 0, 0, 2,  // message length: 2 bytes
+      42, 42,  // original message
+    ]
+    XCTAssertEqual(
+      response,
+      .sendFrame(frame: ByteBuffer(bytes: expectedBytes), endStream: false, promise: nil)
+    )
+
+    // And then make sure that nothing else is returned anymore
+    XCTAssertEqual(try stateMachine.nextOutboundFrame(), .noMoreMessages)
+  }
+
+  // - MARK: Next inbound message
+
+  func testNextInboundMessageWhenClientIdleAndServerIdle() {
+    var stateMachine = self.makeServerStateMachine(targetState: .clientIdleServerIdle)
+    XCTAssertEqual(stateMachine.nextInboundMessage(), .awaitMoreMessages)
+  }
+
+  func testNextInboundMessageWhenClientOpenAndServerIdle() {
+    var stateMachine = self.makeServerStateMachine(targetState: .clientOpenServerIdle)
+    XCTAssertEqual(stateMachine.nextInboundMessage(), .awaitMoreMessages)
+  }
+
+  func testNextInboundMessageWhenClientOpenAndServerOpen() throws {
+    var stateMachine = self.makeServerStateMachine(targetState: .clientOpenServerOpen)
+
+    let receivedBytes = ByteBuffer(bytes: [
+      0,  // compression flag: unset
+      0, 0, 0, 2,  // message length: 2 bytes
+      42, 42,  // original message
+    ])
+    XCTAssertEqual(
+      stateMachine.receive(buffer: receivedBytes, endStream: false),
+      .readInbound
+    )
+
+    XCTAssertEqual(stateMachine.nextInboundMessage(), .receiveMessage(ByteBuffer(bytes: [42, 42])))
+    XCTAssertEqual(stateMachine.nextInboundMessage(), .awaitMoreMessages)
+  }
+
+  func testNextInboundMessageWhenClientOpenAndServerOpen_WithCompression() throws {
+    var stateMachine = self.makeServerStateMachine(
+      targetState: .clientOpenServerOpen,
+      deflateCompressionEnabled: true
+    )
+
+    let originalMessage = ByteBuffer(bytes: [42, 42, 43, 43])
+    let receivedBytes = try self.frameMessage(originalMessage, compression: .deflate)
+
+    XCTAssertEqual(
+      stateMachine.receive(buffer: receivedBytes, endStream: false),
+      .readInbound
+    )
+
+    XCTAssertEqual(stateMachine.nextInboundMessage(), .receiveMessage(originalMessage))
+    XCTAssertEqual(stateMachine.nextInboundMessage(), .awaitMoreMessages)
+  }
+
+  func testNextInboundMessageWhenClientOpenAndServerClosed() throws {
+    var stateMachine = self.makeServerStateMachine(targetState: .clientOpenServerOpen)
+
+    let receivedBytes = ByteBuffer(bytes: [
+      0,  // compression flag: unset
+      0, 0, 0, 2,  // message length: 2 bytes
+      42, 42,  // original message
+    ])
+    XCTAssertEqual(
+      stateMachine.receive(buffer: receivedBytes, endStream: false),
+      .readInbound
+    )
+
+    // Close server
+    XCTAssertNoThrow(
+      try stateMachine.send(
+        status: .init(code: .ok, message: ""),
+        metadata: []
+      )
+    )
+
+    XCTAssertEqual(stateMachine.nextInboundMessage(), .noMoreMessages)
+  }
+
+  func testNextInboundMessageWhenClientClosedAndServerIdle() throws {
+    var stateMachine = self.makeServerStateMachine(targetState: .clientOpenServerIdle)
+    let action = stateMachine.receive(
+      buffer: ByteBuffer(repeating: 0, count: 5),
+      endStream: true
+    )
+    XCTAssertEqual(action, .readInbound)
+    XCTAssertEqual(stateMachine.nextInboundMessage(), .receiveMessage(ByteBuffer()))
+    XCTAssertEqual(stateMachine.nextInboundMessage(), .noMoreMessages)
+  }
+
+  func testNextInboundMessageWhenClientClosedAndServerOpen() throws {
+    var stateMachine = self.makeServerStateMachine(targetState: .clientOpenServerOpen)
+
+    let receivedBytes = ByteBuffer(bytes: [
+      0,  // compression flag: unset
+      0, 0, 0, 2,  // message length: 2 bytes
+      42, 42,  // original message
+    ])
+    XCTAssertEqual(
+      stateMachine.receive(buffer: receivedBytes, endStream: false),
+      .readInbound
+    )
+
+    // Close client
+    XCTAssertNoThrow(stateMachine.receive(buffer: .init(), endStream: true))
+
+    // Even though the client is closed, because the server received a message
+    // while it was still open, we must get the message now.
+    XCTAssertEqual(stateMachine.nextInboundMessage(), .receiveMessage(ByteBuffer(bytes: [42, 42])))
+    XCTAssertEqual(stateMachine.nextInboundMessage(), .noMoreMessages)
+  }
+
+  func testNextInboundMessageWhenClientClosedAndServerClosed() throws {
+    var stateMachine = self.makeServerStateMachine(targetState: .clientOpenServerOpen)
+
+    let receivedBytes = ByteBuffer(bytes: [
+      0,  // compression flag: unset
+      0, 0, 0, 2,  // message length: 2 bytes
+      42, 42,  // original message
+    ])
+    XCTAssertEqual(
+      stateMachine.receive(buffer: receivedBytes, endStream: false),
+      .readInbound
+    )
+
+    // Close server
+    XCTAssertNoThrow(
+      try stateMachine.send(
+        status: .init(code: .ok, message: ""),
+        metadata: []
+      )
+    )
+
+    // Close client
+    XCTAssertNoThrow(stateMachine.receive(buffer: .init(), endStream: true))
+
+    // The server is closed, the message should be dropped.
+    XCTAssertEqual(stateMachine.nextInboundMessage(), .noMoreMessages)
+  }
+
+  // - MARK: Unexpected close
+
+  func testUnexpectedCloseWhenClientIdleOrOpen() throws {
+    let reasonAndExpectedErrorPairs = [
+      (
+        GRPCStreamStateMachine.UnexpectedInboundCloseReason.channelInactive,
+        RPCError(code: .unavailable, message: "Stream unexpectedly closed.")
+      ),
+      (
+        GRPCStreamStateMachine.UnexpectedInboundCloseReason.streamReset(.noError),
+        RPCError(
+          code: .unavailable,
+          message: "Stream unexpectedly closed: received RST_STREAM frame (0x0: no error)."
+        )
+      ),
+      (
+        GRPCStreamStateMachine.UnexpectedInboundCloseReason.errorThrown(
+          RPCError(code: .deadlineExceeded, message: "Test error")
+        ),
+        RPCError(code: .deadlineExceeded, message: "Test error")
+      ),
+    ]
+    let states = [
+      TargetStateMachineState.clientIdleServerIdle,
+      .clientOpenServerIdle,
+      .clientOpenServerOpen,
+      .clientClosedServerIdle,
+      .clientClosedServerOpen,
+    ]
+
+    for state in states {
+      for (closeReason, expectedError) in reasonAndExpectedErrorPairs {
+        var stateMachine = self.makeServerStateMachine(targetState: state)
+        var action = stateMachine.unexpectedClose(reason: closeReason)
+        guard case .fireError_serverOnly(let error) = action else {
+          XCTFail("Should have been `fireError` but was `\(action)` (state: \(state)).")
+          return
+        }
+        XCTAssertEqual(error as? RPCError, expectedError)
+
+        // Calling unexpectedInboundClose again should return `doNothing` because
+        // we're already closed.
+        action = stateMachine.unexpectedClose(reason: closeReason)
+        guard case .doNothing = action else {
+          XCTFail("Should have been `doNothing` but was `\(action)` (state: \(state)).")
+          return
+        }
+      }
+    }
+  }
+
+  func testUnexpectedCloseWhenClientClosed() throws {
+    let closeReasons = [
+      GRPCStreamStateMachine.UnexpectedInboundCloseReason.channelInactive,
+      .streamReset(.noError),
+      .errorThrown(RPCError(code: .deadlineExceeded, message: "Test error")),
+    ]
+
+    for closeReason in closeReasons {
+      var stateMachine = self.makeServerStateMachine(targetState: .clientClosedServerClosed)
+      var action = stateMachine.unexpectedClose(reason: closeReason)
+      guard case .doNothing = action else {
+        XCTFail("Should have been `doNothing` but was `\(action)`.")
+        return
+      }
+
+      // Calling unexpectedInboundClose again should return `doNothing` again.
+      action = stateMachine.unexpectedClose(reason: closeReason)
+      guard case .doNothing = action else {
+        XCTFail("Should have been `doNothing` but was `\(action)`.")
+        return
+      }
+    }
+  }
+
+  // - MARK: Common paths
+
+  func testNormalFlow() throws {
+    var stateMachine = self.makeServerStateMachine(targetState: .clientIdleServerIdle)
+
+    // Client sends metadata
+    let receiveMetadataAction = try stateMachine.receive(
+      headers: .clientInitialMetadata,
+      endStream: false
+    )
+    XCTAssertEqual(
+      receiveMetadataAction,
+      .receivedMetadata(
+        Metadata(headers: .clientInitialMetadata),
+        "/test/test"
+      )
+    )
+
+    // Server sends initial metadata
+    let sentInitialHeaders = try stateMachine.send(
+      metadata: Metadata(headers: ["custom": "value"])
+    ).assertHeaders()
+    XCTAssertEqual(
+      sentInitialHeaders,
+      [
+        ":status": "200",
+        "content-type": "application/grpc",
+        "custom": "value",
+      ]
+    )
+
+    // Client sends messages
+    let deframedMessage = ByteBuffer(bytes: [1, 2, 3, 4])
+    let completeMessage = try self.frameMessage(deframedMessage, compression: .none)
+    // Split message into two parts to make sure the stitching together of the frames works well
+    let firstMessage = completeMessage.getSlice(at: 0, length: 4)!
+    let secondMessage = completeMessage.getSlice(at: 4, length: completeMessage.readableBytes - 4)!
+
+    XCTAssertEqual(
+      stateMachine.receive(buffer: firstMessage, endStream: false),
+      .readInbound
+    )
+    XCTAssertEqual(stateMachine.nextInboundMessage(), .awaitMoreMessages)
+    XCTAssertEqual(
+      stateMachine.receive(buffer: secondMessage, endStream: false),
+      .readInbound
+    )
+    XCTAssertEqual(stateMachine.nextInboundMessage(), .receiveMessage(deframedMessage))
+
+    // Server sends response
+    let eventLoop = EmbeddedEventLoop()
+    let firstPromise = eventLoop.makePromise(of: Void.self)
+    let secondPromise = eventLoop.makePromise(of: Void.self)
+
+    let firstResponse = ByteBuffer(bytes: [5, 6, 7])
+    let secondResponse = ByteBuffer(bytes: [8, 9, 10])
+    XCTAssertEqual(try stateMachine.nextOutboundFrame(), .awaitMoreMessages)
+
+    try stateMachine.send(message: firstResponse, promise: firstPromise).assertNothing()
+    try stateMachine.send(message: secondResponse, promise: secondPromise).assertNothing()
+
+    // Make sure messages are outbound
+    let framedMessages = try self.frameMessages(
+      [firstResponse, secondResponse],
+      compression: .none
+    )
+
+    guard
+      case .sendFrame(let nextOutboundByteBuffer, let nextEndStream, let nextOutboundPromise) =
+        try stateMachine.nextOutboundFrame()
+    else {
+      XCTFail("Should have received .sendMessage")
+      return
+    }
+    XCTAssertEqual(nextOutboundByteBuffer, framedMessages)
+    XCTAssertTrue(firstPromise.futureResult === nextOutboundPromise?.futureResult)
+    XCTAssertFalse(nextEndStream)
+
+    // Make sure that the promises associated with each sent message are chained
+    // together: when succeeding the one returned by the state machine on
+    // `nextOutboundMessage()`, the others should also be succeeded.
+    firstPromise.succeed()
+    try secondPromise.futureResult.assertSuccess().wait()
+
+    // Client sends end
+    XCTAssertEqual(
+      stateMachine.receive(buffer: ByteBuffer(), endStream: true),
+      .readInbound
+    )
+
+    // Server ends
+    let response = try stateMachine.send(
+      status: .init(code: .ok, message: ""),
+      metadata: []
+    ).assertTrailers()
+    XCTAssertEqual(response, ["grpc-status": "0"])
+
+    XCTAssertEqual(try stateMachine.nextOutboundFrame(), .noMoreMessages)
+    XCTAssertEqual(stateMachine.nextInboundMessage(), .noMoreMessages)
+  }
+
+  func testClientClosesBeforeServerOpens() throws {
+    var stateMachine = self.makeServerStateMachine(targetState: .clientIdleServerIdle)
+
+    // Client sends metadata
+    let receiveMetadataAction = try stateMachine.receive(
+      headers: .clientInitialMetadata,
+      endStream: false
+    )
+    XCTAssertEqual(
+      receiveMetadataAction,
+      .receivedMetadata(
+        Metadata(headers: .clientInitialMetadata),
+        "/test/test"
+      )
+    )
+
+    // Client sends messages
+    let deframedMessage = ByteBuffer(bytes: [1, 2, 3, 4])
+    let completeMessage = try self.frameMessage(deframedMessage, compression: .none)
+    // Split message into two parts to make sure the stitching together of the frames works well
+    let firstMessage = completeMessage.getSlice(at: 0, length: 4)!
+    let secondMessage = completeMessage.getSlice(at: 4, length: completeMessage.readableBytes - 4)!
+
+    XCTAssertEqual(
+      stateMachine.receive(buffer: firstMessage, endStream: false),
+      .readInbound
+    )
+    XCTAssertEqual(stateMachine.nextInboundMessage(), .awaitMoreMessages)
+    XCTAssertEqual(
+      stateMachine.receive(buffer: secondMessage, endStream: false),
+      .readInbound
+    )
+    XCTAssertEqual(stateMachine.nextInboundMessage(), .receiveMessage(deframedMessage))
+
+    // Client sends end
+    XCTAssertEqual(
+      stateMachine.receive(buffer: ByteBuffer(), endStream: true),
+      .readInbound
+    )
+
+    // Server sends initial metadata
+    let sentInitialHeaders = try stateMachine.send(
+      metadata: Metadata(headers: ["custom": "value"])
+    ).assertHeaders()
+    XCTAssertEqual(
+      sentInitialHeaders,
+      [
+        "custom": "value",
+        ":status": "200",
+        "content-type": "application/grpc",
+      ]
+    )
+
+    // Server sends response
+    let firstResponse = ByteBuffer(bytes: [5, 6, 7])
+    let secondResponse = ByteBuffer(bytes: [8, 9, 10])
+    XCTAssertEqual(try stateMachine.nextOutboundFrame(), .awaitMoreMessages)
+    try stateMachine.send(message: firstResponse, promise: nil).assertNothing()
+    try stateMachine.send(message: secondResponse, promise: nil).assertNothing()
+
+    // Make sure messages are outbound
+    let framedMessages = try self.frameMessages(
+      [firstResponse, secondResponse],
+      compression: .none
+    )
+    XCTAssertEqual(
+      try stateMachine.nextOutboundFrame(),
+      .sendFrame(frame: framedMessages, endStream: false, promise: nil)
+    )
+
+    // Server ends
+    let response = try stateMachine.send(
+      status: .init(code: .ok, message: ""),
+      metadata: []
+    ).assertTrailers()
+    XCTAssertEqual(response, ["grpc-status": "0"])
+
+    XCTAssertEqual(try stateMachine.nextOutboundFrame(), .noMoreMessages)
+    XCTAssertEqual(stateMachine.nextInboundMessage(), .noMoreMessages)
+  }
+
+  func testClientClosesBeforeServerResponds() throws {
+    var stateMachine = self.makeServerStateMachine(targetState: .clientIdleServerIdle)
+
+    // Client sends metadata
+    let receiveMetadataAction = try stateMachine.receive(
+      headers: .clientInitialMetadata,
+      endStream: false
+    )
+    XCTAssertEqual(
+      receiveMetadataAction,
+      .receivedMetadata(
+        Metadata(headers: .clientInitialMetadata),
+        "/test/test"
+      )
+    )
+
+    // Client sends messages
+    let deframedMessage = ByteBuffer(bytes: [1, 2, 3, 4])
+    let completeMessage = try self.frameMessage(deframedMessage, compression: .none)
+    // Split message into two parts to make sure the stitching together of the frames works well
+    let firstMessage = completeMessage.getSlice(at: 0, length: 4)!
+    let secondMessage = completeMessage.getSlice(at: 4, length: completeMessage.readableBytes - 4)!
+
+    XCTAssertEqual(
+      stateMachine.receive(buffer: firstMessage, endStream: false),
+      .readInbound
+    )
+    XCTAssertEqual(stateMachine.nextInboundMessage(), .awaitMoreMessages)
+    XCTAssertEqual(
+      stateMachine.receive(buffer: secondMessage, endStream: false),
+      .readInbound
+    )
+    XCTAssertEqual(stateMachine.nextInboundMessage(), .receiveMessage(deframedMessage))
+
+    // Server sends initial metadata
+    let sentInitialHeaders = try stateMachine.send(
+      metadata: Metadata(headers: ["custom": "value"])
+    ).assertHeaders()
+    XCTAssertEqual(
+      sentInitialHeaders,
+      [
+        "custom": "value",
+        ":status": "200",
+        "content-type": "application/grpc",
+      ]
+    )
+
+    // Client sends end
+    XCTAssertEqual(
+      stateMachine.receive(buffer: ByteBuffer(), endStream: true),
+      .readInbound
+    )
+
+    // Server sends response
+    let firstResponse = ByteBuffer(bytes: [5, 6, 7])
+    let secondResponse = ByteBuffer(bytes: [8, 9, 10])
+    XCTAssertEqual(try stateMachine.nextOutboundFrame(), .awaitMoreMessages)
+    try stateMachine.send(message: firstResponse, promise: nil).assertNothing()
+    try stateMachine.send(message: secondResponse, promise: nil).assertNothing()
+
+    // Make sure messages are outbound
+    let framedMessages = try self.frameMessages(
+      [firstResponse, secondResponse],
+      compression: .none
+    )
+    XCTAssertEqual(
+      try stateMachine.nextOutboundFrame(),
+      .sendFrame(frame: framedMessages, endStream: false, promise: nil)
+    )
+
+    // Server ends
+    let response = try stateMachine.send(
+      status: .init(code: .ok, message: ""),
+      metadata: []
+    ).assertTrailers()
+    XCTAssertEqual(response, ["grpc-status": "0"])
+
+    XCTAssertEqual(try stateMachine.nextOutboundFrame(), .noMoreMessages)
+    XCTAssertEqual(stateMachine.nextInboundMessage(), .noMoreMessages)
+  }
+
+  // - MARK: Poisoned state
+
+  func testPoisonedState_sendMetadataFailsPromise() throws {
+    var stateMachine = self.makeServerStateMachine(targetState: .poisoned)
+    let action = try stateMachine.send(metadata: Metadata())
+    try action.assertFailPromise()
+  }
+
+  func testPoisonedState_sendMessageFailsPromise() throws {
+    var stateMachine = self.makeServerStateMachine(targetState: .poisoned)
+    let action = try stateMachine.send(message: ByteBuffer(), promise: nil)
+    try action.assertFailPromise()
+  }
+
+  func testPoisonedState_sendStatusDropsAndFailsPromise() throws {
+    var stateMachine = self.makeServerStateMachine(targetState: .poisoned)
+    let action = try stateMachine.send(status: .init(code: .ok, message: ""), metadata: [])
+    try action.assertDropAndFailPromise()
+  }
+
+  func testPoisonedState_receiveHeadersReturnsDoNothing() throws {
+    var stateMachine = self.makeServerStateMachine(targetState: .poisoned)
+    let action = try stateMachine.receive(headers: .clientInitialMetadata, endStream: false)
+    try action.assertDoNothing()
+  }
+
+  func testPoisonedState_receiveBufferReturnsDoNothing() throws {
+    var stateMachine = self.makeServerStateMachine(targetState: .poisoned)
+    let action = stateMachine.receive(buffer: ByteBuffer(), endStream: false)
+    try action.assertDoNothing()
+  }
+
+  func testPoisonedState_nextInboundMessageReturnsNoMoreMessages() throws {
+    var stateMachine = self.makeServerStateMachine(targetState: .poisoned)
+    let next = stateMachine.nextInboundMessage()
+    try next.assertNoMoreMessages()
+  }
+
+  func testPoisonedState_nextOutboundFrameReturnsNoMoreMessages() throws {
+    var stateMachine = self.makeServerStateMachine(targetState: .poisoned)
+    let next = try stateMachine.nextOutboundFrame()
+    try next.assertNoMoreMessages()
+  }
+
+  func testPoisonedState_tearDownDoesNotCrash() throws {
+    var stateMachine = self.makeServerStateMachine(targetState: .poisoned)
+    stateMachine.tearDown()
+  }
+
+  func testProtocolViolation_duplicateClientMetadata() throws {
+    // Server receives a second HEADERS frame from the client while client is already open.
+    var stateMachine = self.makeServerStateMachine(targetState: .clientOpenServerIdle)
+    let action = try stateMachine.receive(headers: .clientInitialMetadata, endStream: false)
+    try action.assertProtocolViolation()
+    // Poisoned: subsequent receives return doNothing.
+    let action2 = stateMachine.receive(buffer: ByteBuffer(), endStream: false)
+    try action2.assertDoNothing()
+  }
+
+  func testProtocolViolation_decodeFailureEntersPoisonedState() throws {
+    // A corrupt DATA frame causes a decode failure; the machine must enter the poisoned state
+    // and subsequent operations must degrade gracefully.
+    var stateMachine = self.makeServerStateMachine(targetState: .clientOpenServerOpen)
+    // Craft a buffer that is not a valid gRPC framed message (bad 5-byte header).
+    let corrupt = ByteBuffer(bytes: [0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00])
+    let action = stateMachine.receive(buffer: corrupt, endStream: false)
+    try action.assertForwardErrorAndClose()
+    // Poisoned: subsequent receive returns doNothing.
+    let action2 = stateMachine.receive(buffer: ByteBuffer(), endStream: false)
+    try action2.assertDoNothing()
+  }
+
+  func testUnexpectedClose_inClientOpenServerClosed_entersPoisonedState() throws {
+    var stateMachine = self.makeServerStateMachine(targetState: .clientOpenServerClosed)
+    // Status was already surfaced; unexpected close returns doNothing...
+    let action = stateMachine.unexpectedClose(reason: .channelInactive)
+    try action.assertDoNothing()
+    // ...but the machine must now be poisoned so subsequent sends fail.
+    let action2 = try stateMachine.send(message: ByteBuffer(), promise: nil)
+    try action2.assertFailPromise()
+  }
+
+  func testUnexpectedClose_inClientClosedServerClosed_isNoOp() throws {
+    var stateMachine = self.makeServerStateMachine(targetState: .clientClosedServerClosed)
+    // RPC completed cleanly; a late channelInactive must not poison the machine.
+    let action = stateMachine.unexpectedClose(reason: .channelInactive)
+    try action.assertDoNothing()
+    let next = stateMachine.nextInboundMessage()
+    try next.assertNoMoreMessages()
+    let next2 = try stateMachine.nextOutboundFrame()
+    try next2.assertNoMoreMessages()
+  }
+
+  func testUnexpectedClose_whenAlreadyPoisoned_isNoOp() throws {
+    var stateMachine = self.makeServerStateMachine(targetState: .poisoned)
+    let action = stateMachine.unexpectedClose(reason: .channelInactive)
+    try action.assertDoNothing()
+    // Still poisoned.
+    let action2 = try stateMachine.send(message: ByteBuffer(), promise: nil)
+    try action2.assertFailPromise()
+  }
+
+  func testServerDiscardsClientDataAfterEarlyClose() throws {
+    // When the server closes early, the client may still be streaming. The server discards
+    // the trailing data, not enter the poisoned state.
+    var stateMachine = self.makeServerStateMachine(targetState: .clientOpenServerClosed)
+    let action = stateMachine.receive(buffer: ByteBuffer(), endStream: false)
+    try action.assertDoNothing()
+  }
+
+  func testReceiveMetadataWithEndStream_transitionsToClientClosedServerClosed() throws {
+    // Missing content-type with endStream:true must close both sides immediately.
+    var stateMachine = self.makeServerStateMachine(targetState: .clientIdleServerIdle)
+    // Send headers with no content-type and endStream:true.
+    var badHeaders = HPACKHeaders.clientInitialMetadata
+    badHeaders.remove(name: "content-type")
+    let action = try stateMachine.receive(headers: badHeaders, endStream: true)
+    // The RPC should be rejected.
+    try action.assertRejectRPC()
+    // Both client and server are now closed; the machine should be in a terminal state.
+    let next = try stateMachine.nextOutboundFrame()
+    try next.assertNoMoreMessages()
+    let next2 = stateMachine.nextInboundMessage()
+    try next2.assertNoMoreMessages()
+  }
+
+  func testReceiveMetadataWithoutEndStream_transitionsToClientOpenServerClosed() throws {
+    // Missing content-type with endStream:false means only the server closes early.
+    var stateMachine = self.makeServerStateMachine(targetState: .clientIdleServerIdle)
+    var badHeaders = HPACKHeaders.clientInitialMetadata
+    badHeaders.remove(name: "content-type")
+    let action = try stateMachine.receive(headers: badHeaders, endStream: false)
+    try action.assertRejectRPC()
+    // Server is closed but client is still open: server can discard further client data.
+    let action2 = stateMachine.receive(buffer: ByteBuffer(), endStream: false)
+    try action2.assertDoNothing()
+  }
+}
+
+@available(gRPCSwiftNIOTransport 2.0, *)
+extension XCTestCase {
+  func assertRejectedRPC(
+    _ action: GRPCStreamStateMachine.OnMetadataReceived,
+    expression: (HPACKHeaders) throws -> Void
+  ) rethrows {
+    guard case .rejectRPC_serverOnly(let trailers) = action else {
+      XCTFail("RPC should have been rejected.")
+      return
+    }
+    try expression(trailers)
+  }
+
+  func frameMessage(_ message: ByteBuffer, compression: CompressionAlgorithm) throws -> ByteBuffer {
+    try frameMessages([message], compression: compression)
+  }
+
+  func frameMessages(
+    _ messages: [ByteBuffer],
+    compression: CompressionAlgorithm
+  ) throws -> ByteBuffer {
+    var framer = GRPCMessageFramer()
+    let compressor: Zlib.Compressor? = {
+      switch compression {
+      case .deflate:
+        return Zlib.Compressor(method: .deflate)
+      case .gzip:
+        return Zlib.Compressor(method: .gzip)
+      default:
+        return nil
+      }
+    }()
+    defer { compressor?.end() }
+    for message in messages {
+      framer.append(message, promise: nil)
+    }
+    return try XCTUnwrap(framer.next(compressor: compressor)).bytes
+  }
+}
+
+@available(gRPCSwiftNIOTransport 2.0, *)
+extension GRPCStreamStateMachine.OnNextOutboundFrame {
+  static func == (
+    lhs: GRPCStreamStateMachine.OnNextOutboundFrame,
+    rhs: GRPCStreamStateMachine.OnNextOutboundFrame
+  ) -> Bool {
+    switch (lhs, rhs) {
+    case (.noMoreMessages, .noMoreMessages):
+      return true
+    case (.awaitMoreMessages, .awaitMoreMessages):
+      return true
+    case (.sendFrame(let lhsMessage, let lhsEnd, _), .sendFrame(let rhsMessage, let rhsEnd, _)):
+      // Note that we're not comparing the EventLoopPromises here, as they're
+      // not Equatable. This is fine though, since we only use this in tests.
+      return lhsMessage == rhsMessage && lhsEnd == rhsEnd
+    default:
+      return false
+    }
+  }
+}
+
+@available(gRPCSwiftNIOTransport 2.0, *)
+extension GRPCStreamStateMachine.OnNextOutboundFrame: Equatable {}
+
+private struct AssertionFailed: Error {}
+
+@available(gRPCSwiftNIOTransport 2.1, *)
+extension GRPCStreamStateMachine.OnServerSendStatus {
+  func assertTrailers() throws -> HPACKHeaders {
+    switch self {
+    case .writeTrailers(let trailers):
+      return trailers
+    case .dropAndFailPromise:
+      XCTFail("Expected trailers, got \(self)")
+      throw AssertionFailed()
+    }
+  }
+
+  @discardableResult
+  func assertDropAndFailPromise() throws -> RPCError {
+    switch self {
+    case .dropAndFailPromise(let error):
+      return error
+    case .writeTrailers:
+      XCTFail("Expected dropAndFailPromise, got \(self)")
+      throw AssertionFailed()
+    }
+  }
+}
+
+@available(gRPCSwiftNIOTransport 2.2, *)
+extension GRPCStreamStateMachine.OnSendMessage {
+  func assertNothing() throws {
+    switch self {
+    case .nothing:
+      ()
+    case .succeedPromise:
+      XCTFail("Expected nothing, got \(self)")
+      throw AssertionFailed()
+    case .failPromise:
+      XCTFail("Expected nothing, got \(self)")
+      throw AssertionFailed()
+    }
+  }
+
+  @discardableResult
+  func assertFailPromise() throws -> RPCError {
+    switch self {
+    case .failPromise(let error):
+      return error
+    case .nothing, .succeedPromise:
+      XCTFail("Expected failPromise, got \(self)")
+      throw AssertionFailed()
+    }
+  }
+}
+
+@available(gRPCSwiftNIOTransport 2.2, *)
+extension GRPCStreamStateMachine.OnSendMetadata {
+  @discardableResult
+  func assertHeaders() throws -> HPACKHeaders {
+    switch self {
+    case .write(let headers):
+      return headers
+    case .failPromise:
+      XCTFail("Expected headers, got \(self)")
+      throw AssertionFailed()
+    }
+  }
+
+  @discardableResult
+  func assertFailPromise() throws -> RPCError {
+    switch self {
+    case .failPromise(let error):
+      return error
+    case .write:
+      XCTFail("Expected failPromise, got \(self)")
+      throw AssertionFailed()
+    }
+  }
+}
+
+@available(gRPCSwiftNIOTransport 2.2, *)
+extension GRPCStreamStateMachine.OnUnexpectedInboundClose {
+  func assertDoNothing() throws {
+    switch self {
+    case .doNothing:
+      ()
+    case .forwardStatus_clientOnly, .fireError_serverOnly:
+      XCTFail("Expected doNothing, got \(self)")
+      throw AssertionFailed()
+    }
+  }
+
+  func assertForwardStatus() throws -> Status {
+    switch self {
+    case .forwardStatus_clientOnly(let status):
+      return status
+    case .doNothing, .fireError_serverOnly:
+      XCTFail("Expected forwardStatus_clientOnly, got \(self)")
+      throw AssertionFailed()
+    }
+  }
+
+  func assertFireError() throws -> any Error {
+    switch self {
+    case .fireError_serverOnly(let error):
+      return error
+    case .doNothing, .forwardStatus_clientOnly:
+      XCTFail("Expected fireError_serverOnly, got \(self)")
+      throw AssertionFailed()
+    }
+  }
+}
+
+@available(gRPCSwiftNIOTransport 2.2, *)
+extension GRPCStreamStateMachine.OnSendMessage {
+  func assertSucceedPromise() throws {
+    switch self {
+    case .succeedPromise:
+      ()
+    case .nothing, .failPromise:
+      XCTFail("Expected succeedPromise, got \(self)")
+      throw AssertionFailed()
+    }
+  }
+}
+
+@available(gRPCSwiftNIOTransport 2.2, *)
+extension GRPCStreamStateMachine.OnMetadataReceived {
+  func assertDoNothing() throws {
+    switch self {
+    case .doNothing:
+      ()
+    case .receivedMetadata, .receivedStatusAndMetadata_clientOnly, .rejectRPC_serverOnly,
+      .protocolViolation_serverOnly:
+      XCTFail("Expected doNothing, got \(self)")
+      throw AssertionFailed()
+    }
+  }
+
+  @discardableResult
+  func assertReceivedMetadata() throws -> (Metadata, String?) {
+    switch self {
+    case .receivedMetadata(let metadata, let path):
+      return (metadata, path)
+    case .doNothing, .receivedStatusAndMetadata_clientOnly, .rejectRPC_serverOnly,
+      .protocolViolation_serverOnly:
+      XCTFail("Expected receivedMetadata, got \(self)")
+      throw AssertionFailed()
+    }
+  }
+
+  func assertReceivedStatusAndMetadata() throws {
+    switch self {
+    case .receivedStatusAndMetadata_clientOnly:
+      ()
+    case .doNothing, .receivedMetadata, .rejectRPC_serverOnly,
+      .protocolViolation_serverOnly:
+      XCTFail("Expected receivedStatusAndMetadata_clientOnly, got \(self)")
+      throw AssertionFailed()
+    }
+  }
+
+  func assertProtocolViolation() throws {
+    switch self {
+    case .protocolViolation_serverOnly:
+      ()
+    case .doNothing, .receivedMetadata, .receivedStatusAndMetadata_clientOnly,
+      .rejectRPC_serverOnly:
+      XCTFail("Expected protocolViolation_serverOnly, got \(self)")
+      throw AssertionFailed()
+    }
+  }
+
+  @discardableResult
+  func assertRejectRPC() throws -> HPACKHeaders {
+    switch self {
+    case .rejectRPC_serverOnly(let trailers):
+      return trailers
+    case .doNothing, .receivedMetadata, .receivedStatusAndMetadata_clientOnly,
+      .protocolViolation_serverOnly:
+      XCTFail("Expected rejectRPC_serverOnly, got \(self)")
+      throw AssertionFailed()
+    }
+  }
+}
+
+@available(gRPCSwiftNIOTransport 2.2, *)
+extension GRPCStreamStateMachine.OnBufferReceivedAction {
+  func assertDoNothing() throws {
+    switch self {
+    case .doNothing:
+      ()
+    case .readInbound, .endRPCAndForwardErrorStatus_clientOnly, .forwardErrorAndClose_serverOnly:
+      XCTFail("Expected doNothing, got \(self)")
+      throw AssertionFailed()
+    }
+  }
+
+  func assertReadInbound() throws {
+    switch self {
+    case .readInbound:
+      ()
+    case .doNothing, .endRPCAndForwardErrorStatus_clientOnly, .forwardErrorAndClose_serverOnly:
+      XCTFail("Expected readInbound, got \(self)")
+      throw AssertionFailed()
+    }
+  }
+
+  @discardableResult
+  func assertEndRPCAndForwardErrorStatus() throws -> Status {
+    switch self {
+    case .endRPCAndForwardErrorStatus_clientOnly(let status):
+      return status
+    case .doNothing, .readInbound, .forwardErrorAndClose_serverOnly:
+      XCTFail("Expected endRPCAndForwardErrorStatus_clientOnly, got \(self)")
+      throw AssertionFailed()
+    }
+  }
+
+  @discardableResult
+  func assertForwardErrorAndClose() throws -> RPCError {
+    switch self {
+    case .forwardErrorAndClose_serverOnly(let error):
+      return error
+    case .doNothing, .readInbound, .endRPCAndForwardErrorStatus_clientOnly:
+      XCTFail("Expected forwardErrorAndClose_serverOnly, got \(self)")
+      throw AssertionFailed()
+    }
+  }
+}
+
+@available(gRPCSwiftNIOTransport 2.2, *)
+extension GRPCStreamStateMachine.OnNextInboundMessage {
+  func assertNoMoreMessages() throws {
+    switch self {
+    case .noMoreMessages:
+      ()
+    case .awaitMoreMessages, .receiveMessage:
+      XCTFail("Expected noMoreMessages, got \(self)")
+      throw AssertionFailed()
+    }
+  }
+
+  func assertAwaitMoreMessages() throws {
+    switch self {
+    case .awaitMoreMessages:
+      ()
+    case .noMoreMessages, .receiveMessage:
+      XCTFail("Expected awaitMoreMessages, got \(self)")
+      throw AssertionFailed()
+    }
+  }
+
+  func assertReceiveMessage() throws -> ByteBuffer {
+    switch self {
+    case .receiveMessage(let buffer):
+      return buffer
+    case .noMoreMessages, .awaitMoreMessages:
+      XCTFail("Expected receiveMessage, got \(self)")
+      throw AssertionFailed()
+    }
+  }
+}
+
+@available(gRPCSwiftNIOTransport 2.2, *)
+extension GRPCStreamStateMachine.OnNextOutboundFrame {
+  func assertNoMoreMessages() throws {
+    switch self {
+    case .noMoreMessages:
+      ()
+    case .awaitMoreMessages, .sendFrame, .closeAndFailPromise:
+      XCTFail("Expected noMoreMessages, got \(self)")
+      throw AssertionFailed()
+    }
+  }
+
+  func assertAwaitMoreMessages() throws {
+    switch self {
+    case .awaitMoreMessages:
+      ()
+    case .noMoreMessages, .sendFrame, .closeAndFailPromise:
+      XCTFail("Expected awaitMoreMessages, got \(self)")
+      throw AssertionFailed()
+    }
+  }
+
+  @discardableResult
+  func assertSendFrame(endStream: Bool) throws -> ByteBuffer {
+    switch self {
+    case .sendFrame(let frame, let eos, _):
+      XCTAssertEqual(eos, endStream, "Expected endStream=\(endStream), got \(eos)")
+      return frame
+    case .noMoreMessages, .awaitMoreMessages, .closeAndFailPromise:
+      XCTFail("Expected sendFrame, got \(self)")
+      throw AssertionFailed()
+    }
+  }
+}

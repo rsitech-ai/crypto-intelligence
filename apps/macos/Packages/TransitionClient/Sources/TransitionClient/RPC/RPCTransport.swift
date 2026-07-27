@@ -1,2 +1,5 @@
-import Foundation
-public enum RpctransportContract:Sendable{public static let schemaVersion:UInt32=1}
+public protocol RPCTransport: Sendable {
+  func getSnapshot(
+    using credentials: SessionCredentials
+  ) async throws -> MarketSnapshot
+}

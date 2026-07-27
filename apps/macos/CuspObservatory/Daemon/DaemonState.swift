@@ -1,2 +1,8 @@
-import Foundation
-public enum DaemonstateContract:Sendable{public static let schemaVersion:UInt32=1}
+enum DaemonState: String, CaseIterable, Sendable {
+  case stopped
+  case starting
+  case healthy
+  case degraded
+  case failed
+  case stopping
+}

@@ -1,0 +1,3 @@
+# Preserve the exact upstream vendor archive; integrity is enforced by
+# scripts/verify-vendored-grpc-transport.sh.
+apps/macos/Vendor/grpc-swift-nio-transport/** -whitespace
