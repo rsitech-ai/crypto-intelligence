@@ -12,6 +12,8 @@ use clap::Parser;
 use config::{ConfigError, Overrides};
 use runtime::{RuntimeError, RuntimeOptions, start_fixture_runtime};
 use serde_json::json;
+#[cfg(debug_assertions)]
+use startup::wait_readiness_gate_from_fd;
 use startup::{
     StartupError, issue_session_descriptor, open_wal_file, read_session_secret_from_fd_async,
 };
@@ -28,6 +30,9 @@ struct Arguments {
     approved_root: PathBuf,
     #[arg(long)]
     config: Option<PathBuf>,
+    #[cfg(debug_assertions)]
+    #[arg(long, hide = true)]
+    readiness_gate_fd: Option<u32>,
 }
 
 #[tokio::main]
@@ -97,6 +102,31 @@ async fn run() -> Result<(), AppError> {
         Err(error) => return Err(error.into()),
     };
 
+    if is_cancelled(&cancellation) {
+        shutdown_running(running).await?;
+        return Ok(());
+    }
+    #[cfg(debug_assertions)]
+    if let Some(fd) = arguments.readiness_gate_fd {
+        let mut readiness_cancellation = cancellation.clone();
+        let cancelled = tokio::select! {
+            biased;
+            () = wait_for_cancellation(&mut readiness_cancellation) => true,
+            result = wait_readiness_gate_from_fd(fd) => {
+                result?;
+                false
+            }
+        };
+        if cancelled {
+            shutdown_running(running).await?;
+            return Ok(());
+        }
+    }
+    if is_cancelled(&cancellation) {
+        shutdown_running(running).await?;
+        return Ok(());
+    }
+
     {
         let mut stdout = io::stdout().lock();
         serde_json::to_writer(&mut stdout, running.readiness())?;
@@ -105,6 +135,10 @@ async fn run() -> Result<(), AppError> {
     }
 
     wait_for_cancellation(&mut cancellation).await;
+    shutdown_running(running).await
+}
+
+async fn shutdown_running(running: runtime::RunningDaemon) -> Result<(), AppError> {
     tokio::time::timeout(
         Duration::from_secs(REQUIRED_SHUTDOWN_SECONDS),
         running.shutdown(),
@@ -154,6 +188,10 @@ async fn wait_for_cancellation(cancellation: &mut watch::Receiver<bool>) {
             return;
         }
     }
+}
+
+fn is_cancelled(cancellation: &watch::Receiver<bool>) -> bool {
+    *cancellation.borrow()
 }
 
 #[derive(Debug, Error)]

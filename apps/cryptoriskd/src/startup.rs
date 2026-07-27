@@ -36,13 +36,8 @@ pub(crate) fn parse_session_secret(
 }
 
 pub async fn read_session_secret_from_fd_async(fd: u32) -> Result<SessionSecret, StartupError> {
-    let file = take_session_secret_fd(fd)?;
-    let flags = fcntl_getfl(&file)
-        .map_err(io::Error::from)
-        .map_err(StartupError::SecretIo)?;
-    fcntl_setfl(&file, flags | OFlags::NONBLOCK)
-        .map_err(io::Error::from)
-        .map_err(StartupError::SecretIo)?;
+    let file = take_inherited_fd(fd).map_err(StartupError::SecretIo)?;
+    set_nonblocking(&file).map_err(StartupError::SecretIo)?;
     let file = tokio::io::unix::AsyncFd::new(file).map_err(StartupError::SecretIo)?;
     let mut bytes = Zeroizing::new(Vec::with_capacity(SESSION_SECRET_LENGTH + 1));
     while bytes.len() <= SESSION_SECRET_LENGTH {
@@ -62,32 +57,61 @@ pub async fn read_session_secret_from_fd_async(fd: u32) -> Result<SessionSecret,
     parse_session_secret(bytes)
 }
 
-fn take_session_secret_fd(fd: u32) -> Result<File, StartupError> {
+#[cfg(debug_assertions)]
+pub async fn wait_readiness_gate_from_fd(fd: u32) -> io::Result<()> {
+    let file = take_inherited_fd(fd)?;
+    set_nonblocking(&file)?;
+    let file = tokio::io::unix::AsyncFd::new(file)?;
+    loop {
+        let mut ready = file.readable().await?;
+        let mut release = [0_u8; 1];
+        match ready.try_io(|inner| {
+            let mut reader = inner.get_ref();
+            reader.read(&mut release)
+        }) {
+            Ok(Ok(1)) => return Ok(()),
+            Ok(Ok(0)) => {
+                return Err(io::Error::new(
+                    io::ErrorKind::UnexpectedEof,
+                    "readiness gate closed before release",
+                ));
+            }
+            Ok(Ok(_)) => unreachable!("one-byte readiness gate read is bounded"),
+            Ok(Err(error)) => return Err(error),
+            Err(_) => {}
+        }
+    }
+}
+
+fn take_inherited_fd(fd: u32) -> io::Result<File> {
     let raw_fd = i32::try_from(fd).map_err(|_| {
-        StartupError::SecretIo(io::Error::new(
+        io::Error::new(
             io::ErrorKind::InvalidInput,
             "inherited descriptor is outside the platform range",
-        ))
+        )
     })?;
     if raw_fd < 3 {
-        return Err(StartupError::SecretIo(io::Error::new(
+        return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
             "inherited descriptor must not alias standard I/O",
-        )));
+        ));
     }
     // SAFETY: borrowing does not transfer ownership. `fcntl_getfd` validates
     // the inherited integer before the sole-owner conversion below.
     #[allow(unsafe_code)]
     let borrowed = unsafe { BorrowedFd::borrow_raw(raw_fd) };
-    fcntl_getfd(borrowed)
-        .map_err(io::Error::from)
-        .map_err(StartupError::SecretIo)?;
+    fcntl_getfd(borrowed).map_err(io::Error::from)?;
     // SAFETY: `fcntl_getfd` above proves the descriptor is valid. Startup is
     // its sole owner and this conversion immediately gives the exact
     // descriptor RAII ownership so every success/error path closes it.
     #[allow(unsafe_code)]
     let file = unsafe { File::from_raw_fd(raw_fd) };
     Ok(file)
+}
+
+fn set_nonblocking(file: &File) -> io::Result<()> {
+    let flags = fcntl_getfl(file).map_err(io::Error::from)?;
+    fcntl_setfl(file, flags | OFlags::NONBLOCK).map_err(io::Error::from)
 }
 
 pub fn issue_session_descriptor() -> Result<SessionDescriptor, StartupError> {
