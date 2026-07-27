@@ -46,6 +46,17 @@ enum DaemonSupervisorError: Error, Sendable, Equatable {
   case shutdownTimeout
 }
 
+struct DaemonSupervisorEvent: Sendable, Equatable {
+  let state: DaemonState
+  let snapshot: MarketSnapshot?
+}
+
+private enum RuntimeTerminationResult: Equatable {
+  case graceful
+  case forced
+  case unresolved
+}
+
 struct ProcessDaemonLauncher: DaemonLaunching {
   static func command(
     configuration: DaemonConfiguration
@@ -126,7 +137,7 @@ actor ProcessDaemonRuntime: DaemonRuntime {
   private let standardOutput: FileHandle
   private let parentLiveness: FileHandle
   private var exitStatus: Int32?
-  private var exitWaiters: [CheckedContinuation<Int32, Never>] = []
+  private var exitWaiters: [UUID: CheckedContinuation<Int32, any Error>] = [:]
 
   init(
     process: Process,
@@ -188,12 +199,33 @@ actor ProcessDaemonRuntime: DaemonRuntime {
   }
 
   func waitForExit() async throws -> Int32 {
-    if let exitStatus {
-      return exitStatus
+    let identifier = UUID()
+    return try await withTaskCancellationHandler {
+      try await withCheckedThrowingContinuation { continuation in
+        if let exitStatus {
+          continuation.resume(returning: exitStatus)
+        } else if Task.isCancelled {
+          continuation.resume(throwing: CancellationError())
+        } else {
+          exitWaiters[identifier] = continuation
+        }
+      }
+    } onCancel: {
+      Task {
+        await self.cancelExitWaiter(identifier)
+      }
     }
-    return await withCheckedContinuation { continuation in
-      exitWaiters.append(continuation)
+  }
+
+  private func cancelExitWaiter(_ identifier: UUID) {
+    guard
+      let waiter = exitWaiters.removeValue(
+        forKey: identifier
+      )
+    else {
+      return
     }
+    waiter.resume(throwing: CancellationError())
   }
 
   private func recordExit(_ status: Int32) {
@@ -201,7 +233,7 @@ actor ProcessDaemonRuntime: DaemonRuntime {
       return
     }
     exitStatus = status
-    let waiters = exitWaiters
+    let waiters = Array(exitWaiters.values)
     exitWaiters.removeAll(keepingCapacity: false)
     for waiter in waiters {
       waiter.resume(returning: status)
@@ -235,14 +267,37 @@ actor DaemonSupervisor {
   private let nowUnixSeconds: @Sendable () -> Int64
 
   private var runtime: (any DaemonRuntime)?
-  private var startupTask: Task<Data, Error>?
+  private var startupTask: Task<MarketSnapshot, Error>?
   private var monitorTask: Task<Void, Never>?
+  private var activeRunID: UUID?
+  private var eventContinuations: [UUID: AsyncStream<DaemonSupervisorEvent>.Continuation] = [:]
 
   private(set) var currentState: DaemonState = .stopped
   private(set) var latestSnapshot: MarketSnapshot?
 
   var ownedTaskCount: Int {
     (startupTask == nil ? 0 : 1) + (monitorTask == nil ? 0 : 1)
+  }
+
+  func events() -> AsyncStream<DaemonSupervisorEvent> {
+    let identifier = UUID()
+    let (stream, continuation) = AsyncStream.makeStream(
+      of: DaemonSupervisorEvent.self,
+      bufferingPolicy: .bufferingNewest(1)
+    )
+    eventContinuations[identifier] = continuation
+    continuation.yield(
+      DaemonSupervisorEvent(
+        state: currentState,
+        snapshot: latestSnapshot
+      )
+    )
+    continuation.onTermination = { [weak self] _ in
+      Task {
+        await self?.removeEventContinuation(identifier)
+      }
+    }
+    return stream
   }
 
   init(
@@ -262,58 +317,111 @@ actor DaemonSupervisor {
   }
 
   func start() async throws {
-    guard currentState == .stopped || currentState == .failed else {
+    guard
+      currentState == .stopped || currentState == .failed,
+      runtime == nil,
+      startupTask == nil,
+      monitorTask == nil
+    else {
       throw DaemonSupervisorError.alreadyRunning
     }
 
-    currentState = .starting
-    latestSnapshot = nil
-    let bootstrap: SessionBootstrap
-    do {
-      bootstrap = try SessionBootstrap()
+    let runID = UUID()
+    activeRunID = runID
+    publish(state: .starting, snapshot: nil)
+    let deadline = ContinuousClock.now.advanced(by: startupTimeout)
+    let configuration = configuration
+    let launcher = launcher
+    let transportFactory = transportFactory
+    let nowUnixSeconds = nowUnixSeconds
+    let shutdownTimeout = shutdownTimeout
+    let startup = Task { [self] in
+      let bootstrap = try SessionBootstrap()
+      try Task.checkCancellation()
       let launched = try await launcher.launch(
         configuration: configuration,
         bootstrap: bootstrap
       )
-      runtime = launched
-      let readiness = Task {
-        try await launched.readinessLine()
-      }
-      startupTask = readiness
-      let data = try await Self.value(
-        from: readiness,
-        before: startupTimeout
-      )
-      startupTask = nil
-
-      let descriptor = try ReadinessDescriptor(
-        jsonData: data,
-        expectedDaemonPID: UInt32(launched.processID),
-        nowUnixSeconds: nowUnixSeconds()
-      )
       do {
-        try ProtocolCompatibility.validate(descriptor)
+        try Task.checkCancellation()
+        try registerRuntime(launched, for: runID)
+        try Task.checkCancellation()
+        try ensureActive(runID)
+
+        let data = try await launched.readinessLine()
+        try Task.checkCancellation()
+        try ensureActive(runID)
+
+        let descriptor = try ReadinessDescriptor(
+          jsonData: data,
+          expectedDaemonPID: UInt32(launched.processID),
+          nowUnixSeconds: nowUnixSeconds()
+        )
+        do {
+          try ProtocolCompatibility.validate(descriptor)
+        } catch {
+          throw DaemonSupervisorError.incompatibleProtocol
+        }
+        let credentials = try bootstrap.credentials(for: descriptor)
+        let transport = try await transportFactory.makeTransport(
+          for: descriptor
+        )
+        try Task.checkCancellation()
+        try ensureActive(runID)
+
+        let remaining = try Self.remaining(until: deadline)
+        let snapshot = try await transport.getSnapshot(
+          using: credentials,
+          timeout: remaining
+        )
+        try Task.checkCancellation()
+        try ensureActive(runID)
+        return snapshot
       } catch {
-        throw DaemonSupervisorError.incompatibleProtocol
-      }
-      let credentials = try bootstrap.credentials(for: descriptor)
-      let transport = try await transportFactory.makeTransport(
-        for: descriptor
-      )
-      let snapshot = try await transport.getSnapshot(
-        using: credentials
-      )
-      latestSnapshot = snapshot
-      currentState = snapshot.health == .healthy ? .healthy : .degraded
-      beginMonitoring(launched)
-    } catch {
-      startupTask?.cancel()
-      startupTask = nil
-      if currentState == .stopping || currentState == .stopped {
+        if ownsRuntime(launched, for: runID) {
+          throw error
+        }
+        await Self.stopUnregisteredRuntime(
+          launched,
+          timeout: shutdownTimeout
+        )
         throw error
       }
-      currentState = .failed
+    }
+    startupTask = startup
+
+    do {
+      let remaining = try Self.remaining(until: deadline)
+      let snapshot = try await Self.value(
+        from: startup,
+        before: remaining
+      )
+      startupTask = nil
+      try ensureActive(runID)
+      guard let launched = runtime else {
+        throw DaemonSupervisorError.launchFailed
+      }
+      publish(
+        state: snapshot.health == .healthy ? .healthy : .degraded,
+        snapshot: snapshot
+      )
+      beginMonitoring(launched, runID: runID)
+    } catch {
+      startup.cancel()
+      startupTask = nil
+      let callerCancelled = Task.isCancelled
+      guard activeRunID == runID,
+        currentState != .stopping,
+        currentState != .stopped
+      else {
+        throw CancellationError()
+      }
+      activeRunID = nil
+      publish(state: .failed, snapshot: nil)
       await terminateRuntime()
+      if callerCancelled {
+        throw CancellationError()
+      }
       throw Self.publicStartupError(error)
     }
   }
@@ -322,61 +430,113 @@ actor DaemonSupervisor {
     guard currentState != .stopped else {
       return
     }
-    currentState = .stopping
+    activeRunID = nil
+    publish(state: .stopping, snapshot: nil)
     startupTask?.cancel()
     startupTask = nil
     monitorTask?.cancel()
     monitorTask = nil
 
     guard let active = runtime else {
-      latestSnapshot = nil
-      currentState = .stopped
+      publish(state: .stopped, snapshot: nil)
       return
     }
-    await active.terminate()
-    do {
-      _ = try await Self.value(
-        before: shutdownTimeout,
-        operation: {
-          try await active.waitForExit()
-        }
-      )
-    } catch {
-      await active.forceTerminate()
-      _ = try? await active.waitForExit()
+    switch await terminate(active) {
+    case .graceful:
       runtime = nil
-      latestSnapshot = nil
-      currentState = .stopped
+      publish(state: .stopped, snapshot: nil)
+    case .forced:
+      runtime = nil
+      publish(state: .stopped, snapshot: nil)
+      throw DaemonSupervisorError.shutdownTimeout
+    case .unresolved:
+      publish(state: .failed, snapshot: nil)
       throw DaemonSupervisorError.shutdownTimeout
     }
-    runtime = nil
-    latestSnapshot = nil
-    currentState = .stopped
   }
 
-  private func beginMonitoring(_ monitored: any DaemonRuntime) {
+  private func beginMonitoring(
+    _ monitored: any DaemonRuntime,
+    runID: UUID
+  ) {
     monitorTask = Task { [weak self] in
       let status = try? await monitored.waitForExit()
       guard !Task.isCancelled else {
         return
       }
-      await self?.processExited(status: status)
+      await self?.processExited(status: status, runID: runID)
     }
   }
 
-  private func processExited(status: Int32?) {
+  private func processExited(
+    status: Int32?,
+    runID: UUID
+  ) {
+    guard activeRunID == runID else {
+      return
+    }
     monitorTask = nil
     runtime = nil
-    latestSnapshot = nil
+    activeRunID = nil
     if currentState != .stopping && currentState != .stopped {
-      currentState = .failed
+      publish(state: .failed, snapshot: nil)
     }
+  }
+
+  private func registerRuntime(
+    _ launched: any DaemonRuntime,
+    for runID: UUID
+  ) throws {
+    try ensureActive(runID)
+    runtime = launched
+  }
+
+  private func ownsRuntime(
+    _ launched: any DaemonRuntime,
+    for runID: UUID
+  ) -> Bool {
+    activeRunID == runID
+      && runtime?.processID == launched.processID
+  }
+
+  private func ensureActive(_ runID: UUID) throws {
+    guard activeRunID == runID, currentState == .starting else {
+      throw CancellationError()
+    }
+  }
+
+  private func publish(
+    state: DaemonState,
+    snapshot: MarketSnapshot?
+  ) {
+    currentState = state
+    latestSnapshot = snapshot
+    let event = DaemonSupervisorEvent(
+      state: state,
+      snapshot: snapshot
+    )
+    for continuation in eventContinuations.values {
+      continuation.yield(event)
+    }
+  }
+
+  private func removeEventContinuation(_ identifier: UUID) {
+    eventContinuations[identifier] = nil
   }
 
   private func terminateRuntime() async {
     guard let active = runtime else {
       return
     }
+    let result = await terminate(active)
+    if result != .unresolved {
+      runtime = nil
+    }
+  }
+
+  private func terminate(
+    _ active: any DaemonRuntime
+  ) async -> RuntimeTerminationResult {
     await active.terminate()
     do {
       _ = try await Self.value(
@@ -385,11 +545,21 @@ actor DaemonSupervisor {
           try await active.waitForExit()
         }
       )
+      return .graceful
     } catch {
       await active.forceTerminate()
-      _ = try? await active.waitForExit()
+      do {
+        _ = try await Self.value(
+          before: shutdownTimeout,
+          operation: {
+            try await active.waitForExit()
+          }
+        )
+        return .forced
+      } catch {
+        return .unresolved
+      }
     }
-    runtime = nil
   }
 
   private static func publicStartupError(
@@ -409,7 +579,43 @@ actor DaemonSupervisor {
         return .invalidReadiness
       }
     }
+    if error as? GRPCTransportError == .timeout {
+      return .startupTimeout
+    }
     return .snapshotUnavailable
+  }
+
+  private static func remaining(
+    until deadline: ContinuousClock.Instant
+  ) throws -> Duration {
+    let remaining = ContinuousClock.now.duration(to: deadline)
+    guard remaining > .zero else {
+      throw DaemonSupervisorError.startupTimeout
+    }
+    return remaining
+  }
+
+  private static func stopUnregisteredRuntime(
+    _ runtime: any DaemonRuntime,
+    timeout: Duration
+  ) async {
+    await runtime.terminate()
+    do {
+      _ = try await value(
+        before: timeout,
+        operation: {
+          try await runtime.waitForExit()
+        }
+      )
+    } catch {
+      await runtime.forceTerminate()
+      _ = try? await value(
+        before: timeout,
+        operation: {
+          try await runtime.waitForExit()
+        }
+      )
+    }
   }
 
   private static func value<T: Sendable>(
@@ -433,6 +639,9 @@ actor DaemonSupervisor {
         throw DaemonSupervisorError.startupTimeout
       }
       if case .timeout = first {
+        task.cancel()
+      }
+      if case .cancelled = first {
         task.cancel()
       }
       group.cancelAll()

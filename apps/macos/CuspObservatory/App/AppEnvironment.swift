@@ -107,7 +107,9 @@ struct AppEnvironment {
     processInfo: ProcessInfo,
     fileManager: FileManager
   ) throws -> URL {
-    if let identifier = processInfo.environment["CMTI_TEST_RUN_ID"] {
+    if isUITestEnvironment(processInfo.environment),
+      let identifier = processInfo.environment["CMTI_TEST_RUN_ID"]
+    {
       try validateTestRunIdentifier(identifier)
       return fileManager.temporaryDirectory
         .appending(path: "CuspObservatoryTests")
@@ -132,7 +134,9 @@ struct AppEnvironment {
     bundleExecutableURL: URL,
     environment: [String: String]
   ) throws -> URL {
-    if let identifier = environment["CMTI_TEST_RUN_ID"] {
+    if isUITestEnvironment(environment),
+      let identifier = environment["CMTI_TEST_RUN_ID"]
+    {
       try validateTestRunIdentifier(identifier)
       if let override = environment["CMTI_DAEMON_PATH"] {
         return URL(fileURLWithPath: override)
@@ -149,6 +153,16 @@ struct AppEnvironment {
   ) -> Bool {
     environment["XCTestConfigurationFilePath"] == nil
       && environment["XCInjectBundleInto"] == nil
+  }
+
+  private static func isUITestEnvironment(
+    _ environment: [String: String]
+  ) -> Bool {
+    #if CMTI_UI_TEST_HARNESS
+      environment["CMTI_UI_TEST_MODE"] == "1"
+    #else
+      false
+    #endif
   }
 
   private static func validateTestRunIdentifier(
@@ -236,6 +250,7 @@ final class AppCoordinator {
   private let environmentLoader: EnvironmentLoader
   private var supervisor: DaemonSupervisor?
   private var startupTask: Task<Void, Never>?
+  private var eventTask: Task<Void, Never>?
 
   init(
     environment: AppEnvironment? = nil,
@@ -250,6 +265,8 @@ final class AppCoordinator {
   }
 
   private func install(_ environment: AppEnvironment) {
+    eventTask?.cancel()
+    eventTask = nil
     runtimeRoot = environment.runtimeRoot
     daemonLog = environment.daemonLog
     supervisor = environment.supervisor
@@ -293,6 +310,7 @@ final class AppCoordinator {
         }
         model.reflect(lifecycle: lifecycle)
         try model.apply(snapshot: snapshot)
+        observe(supervisor)
         logger.info("daemon_snapshot_ready")
       } catch is CancellationError {
         logger.info("daemon_start_cancelled")
@@ -307,6 +325,8 @@ final class AppCoordinator {
   func retry() {
     let previous = startupTask
     startupTask?.cancel()
+    eventTask?.cancel()
+    eventTask = nil
     startupTask = Task { [weak self] in
       guard let self else {
         return
@@ -331,16 +351,51 @@ final class AppCoordinator {
   func stop() async {
     let starting = startupTask
     startupTask?.cancel()
+    let observing = eventTask
+    eventTask?.cancel()
+    eventTask = nil
     guard let supervisor else {
       model.reflect(lifecycle: .stopped)
       startupTask = nil
+      _ = await observing?.result
       return
     }
     logger.info("daemon_stop_requested")
-    try? await supervisor.stop()
+    do {
+      try await supervisor.stop()
+    } catch {
+      logger.error("daemon_stop_escalated")
+    }
     _ = await starting?.result
+    _ = await observing?.result
     startupTask = nil
-    model.reflect(lifecycle: .stopped)
-    logger.info("daemon_stopped")
+    let lifecycle = await supervisor.currentState
+    model.reflect(lifecycle: lifecycle)
+    if lifecycle == .stopped {
+      logger.info("daemon_stopped")
+    } else {
+      logger.error("daemon_stop_unconfirmed")
+    }
+  }
+
+  private func observe(_ observed: DaemonSupervisor) {
+    eventTask?.cancel()
+    eventTask = Task { [weak self] in
+      let events = await observed.events()
+      for await event in events {
+        guard !Task.isCancelled, let self else {
+          return
+        }
+        model.reflect(lifecycle: event.state)
+        if let snapshot = event.snapshot {
+          do {
+            try model.apply(snapshot: snapshot)
+          } catch {
+            model.reflect(lifecycle: .failed)
+            logger.error("daemon_snapshot_invalid")
+          }
+        }
+      }
+    }
   }
 }

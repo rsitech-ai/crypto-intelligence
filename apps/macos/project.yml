@@ -10,6 +10,7 @@ options:
 configs:
   Debug: debug
   Release: release
+  Debug-UITesting: debug
 
 settings:
   base:
@@ -73,6 +74,9 @@ targets:
         CODE_SIGN_STYLE: Manual
         PRODUCT_BUNDLE_IDENTIFIER: ai.rsitech.CuspObservatory
         PRODUCT_NAME: CuspObservatory
+      configs:
+        Debug-UITesting:
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG CMTI_UI_TEST_HARNESS
 
   CuspObservatoryTests:
     type: bundle.unit-test
@@ -119,7 +123,7 @@ schemes:
     run:
       config: Debug
     test:
-      config: Debug
+      config: Debug-UITesting
       gatherCoverageData: false
       targets:
         - name: CuspObservatoryTests

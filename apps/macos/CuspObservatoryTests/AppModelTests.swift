@@ -33,6 +33,98 @@ struct AppModelTests {
     #expect(coordinator.model.phase == .recovery)
   }
 
+  @Test("child exit clears the overview and retry starts a fresh run")
+  func childExitPublishesRecoveryAndRetry() async throws {
+    let firstRuntime = CoordinatorFakeRuntime(processID: 41)
+    let secondRuntime = CoordinatorFakeRuntime(processID: 42)
+    let launcher = CoordinatorRuntimeQueue(
+      runtimes: [firstRuntime, secondRuntime]
+    )
+    let root = URL(fileURLWithPath: "/tmp/cmti-coordinator-events")
+    let supervisor = DaemonSupervisor(
+      configuration: DaemonConfiguration(
+        executable: root.appending(path: "cryptoriskd"),
+        approvedRoot: root,
+        configFile: root.appending(path: "config.toml")
+      ),
+      launcher: launcher,
+      transportFactory: CoordinatorTransportFactory(),
+      startupTimeout: .seconds(1),
+      shutdownTimeout: .milliseconds(100),
+      nowUnixSeconds: { 1_700_000_000 }
+    )
+    let coordinator = AppCoordinator(
+      environment: AppEnvironment(
+        runtimeRoot: root,
+        daemonLog: root.appending(path: "cmti.jsonl"),
+        supervisor: supervisor
+      )
+    )
+
+    coordinator.start()
+    try await waitUntil {
+      coordinator.model.phase == .healthy
+    }
+    #expect(coordinator.model.overview?.sequence == 102)
+
+    await firstRuntime.exit(status: 17)
+    try await waitUntil {
+      coordinator.model.phase == .recovery
+    }
+    #expect(coordinator.model.overview == nil)
+    #expect(
+      coordinator.model.recoveryMessage
+        == "The local market service could not start."
+    )
+
+    coordinator.retry()
+    try await waitUntil {
+      coordinator.model.phase == .healthy
+        && coordinator.model.overview?.sequence == 102
+    }
+    #expect(await launcher.launchCount == 2)
+
+    await coordinator.stop()
+    #expect(coordinator.model.phase == .disconnected)
+    #expect(await supervisor.ownedTaskCount == 0)
+  }
+
+  @Test("unconfirmed shutdown remains visible as recovery")
+  func unconfirmedShutdownRemainsFailed() async throws {
+    let runtime = CoordinatorUnkillableRuntime(processID: 43)
+    let root = URL(fileURLWithPath: "/tmp/cmti-coordinator-unconfirmed-stop")
+    let supervisor = DaemonSupervisor(
+      configuration: DaemonConfiguration(
+        executable: root.appending(path: "cryptoriskd"),
+        approvedRoot: root,
+        configFile: root.appending(path: "config.toml")
+      ),
+      launcher: CoordinatorUnkillableLauncher(runtime: runtime),
+      transportFactory: CoordinatorTransportFactory(),
+      startupTimeout: .seconds(1),
+      shutdownTimeout: .milliseconds(20),
+      nowUnixSeconds: { 1_700_000_000 }
+    )
+    let coordinator = AppCoordinator(
+      environment: AppEnvironment(
+        runtimeRoot: root,
+        daemonLog: root.appending(path: "cmti.jsonl"),
+        supervisor: supervisor
+      )
+    )
+
+    coordinator.start()
+    try await waitUntil {
+      coordinator.model.phase == .healthy
+    }
+
+    await coordinator.stop()
+
+    #expect(coordinator.model.phase == .recovery)
+    #expect(await supervisor.currentState == .failed)
+    #expect(await runtime.forceTerminationCount == 1)
+  }
+
   @Test("runtime privacy defaults remain local and remote-disabled")
   func privacyDefaultsAreLocalOnly() {
     let configuration = AppEnvironment.runtimeConfiguration
@@ -45,7 +137,7 @@ struct AppModelTests {
     #expect(!configuration.contains("https://"))
   }
 
-  @Test("production ignores a standalone daemon path override")
+  @Test("only the compiled UI-test harness accepts a daemon override")
   func productionDaemonCannotBeOverridden() throws {
     let bundleExecutable = URL(
       fileURLWithPath: "/Applications/Cusp Observatory.app/Contents/MacOS/CuspObservatory"
@@ -57,11 +149,19 @@ struct AppModelTests {
         "CMTI_DAEMON_PATH": "/tmp/untrusted-daemon"
       ]
     )
-    let test = try AppEnvironment.daemonURL(
+    let productionShaped = try AppEnvironment.daemonURL(
+      bundleExecutableURL: bundleExecutable,
+      environment: [
+        "CMTI_DAEMON_PATH": "/tmp/untrusted-daemon",
+        "CMTI_TEST_RUN_ID": "A1B2-C3D4",
+      ]
+    )
+    let uiTest = try AppEnvironment.daemonURL(
       bundleExecutableURL: bundleExecutable,
       environment: [
         "CMTI_DAEMON_PATH": "/tmp/fixture-daemon",
         "CMTI_TEST_RUN_ID": "A1B2-C3D4",
+        "CMTI_UI_TEST_MODE": "1",
       ]
     )
 
@@ -69,7 +169,11 @@ struct AppModelTests {
       production.path
         == "/Applications/Cusp Observatory.app/Contents/MacOS/cryptoriskd"
     )
-    #expect(test.path == "/tmp/fixture-daemon")
+    #expect(
+      productionShaped.path
+        == "/Applications/Cusp Observatory.app/Contents/MacOS/cryptoriskd"
+    )
+    #expect(uiTest.path == "/tmp/fixture-daemon")
   }
 
   @Test("runtime root symlinks fail before use")
@@ -116,7 +220,10 @@ struct AppModelTests {
     )
     #expect(
       AppEnvironment.shouldStartSupervisor(
-        environment: ["CMTI_TEST_RUN_ID": "UI-TEST"]
+        environment: [
+          "CMTI_TEST_RUN_ID": "UI-TEST",
+          "CMTI_UI_TEST_MODE": "1",
+        ]
       )
     )
   }
@@ -217,5 +324,167 @@ private struct UnusedTransportFactory: RPCTransportBuilding {
     for descriptor: ReadinessDescriptor
   ) async throws -> any RPCTransport {
     throw DaemonSupervisorError.snapshotUnavailable
+  }
+}
+
+private enum CoordinatorTestError: Error {
+  case timedOut
+  case noRuntime
+}
+
+private func waitUntil(
+  timeout: Duration = .milliseconds(300),
+  condition: @MainActor () async -> Bool
+) async throws {
+  let deadline = ContinuousClock.now.advanced(by: timeout)
+  while ContinuousClock.now < deadline {
+    if await condition() {
+      return
+    }
+    try await Task.sleep(for: .milliseconds(5))
+  }
+  throw CoordinatorTestError.timedOut
+}
+
+private actor CoordinatorRuntimeQueue: DaemonLaunching {
+  private var runtimes: [CoordinatorFakeRuntime]
+  private(set) var launchCount = 0
+
+  init(runtimes: [CoordinatorFakeRuntime]) {
+    self.runtimes = runtimes
+  }
+
+  func launch(
+    configuration: DaemonConfiguration,
+    bootstrap: SessionBootstrap
+  ) throws -> any DaemonRuntime {
+    guard !runtimes.isEmpty else {
+      throw CoordinatorTestError.noRuntime
+    }
+    launchCount += 1
+    return runtimes.removeFirst()
+  }
+}
+
+private actor CoordinatorFakeRuntime: DaemonRuntime {
+  nonisolated let processID: Int32
+  private var status: Int32?
+  private var exitWaiters: [CheckedContinuation<Int32, Never>] = []
+
+  init(processID: Int32) {
+    self.processID = processID
+  }
+
+  func readinessLine() -> Data {
+    Data(
+      """
+      {"endpoint":"http://127.0.0.1:43127","protocol_major":1,\
+      "protocol_minor":0,"daemon_pid":\(processID),\
+      "process_nonce":"000102030405060708090a0b0c0d0e0f",\
+      "server_nonce":"101112131415161718191a1b1c1d1e1f",\
+      "issued_unix_seconds":1700000000,"expiry_unix_seconds":1700000060}
+      """.utf8
+    )
+  }
+
+  func terminate() {
+    exit(status: 0)
+  }
+
+  func forceTerminate() {
+    exit(status: SIGKILL)
+  }
+
+  func waitForExit() async throws -> Int32 {
+    if let status {
+      return status
+    }
+    return await withCheckedContinuation { continuation in
+      exitWaiters.append(continuation)
+    }
+  }
+
+  func exit(status: Int32) {
+    guard self.status == nil else {
+      return
+    }
+    self.status = status
+    let waiters = exitWaiters
+    exitWaiters.removeAll()
+    for waiter in waiters {
+      waiter.resume(returning: status)
+    }
+  }
+}
+
+private struct CoordinatorTransportFactory: RPCTransportBuilding {
+  func makeTransport(
+    for descriptor: ReadinessDescriptor
+  ) -> any RPCTransport {
+    CoordinatorTransport()
+  }
+}
+
+private struct CoordinatorTransport: RPCTransport {
+  func getSnapshot(
+    using credentials: SessionCredentials,
+    timeout: Duration
+  ) async throws -> MarketSnapshot {
+    MarketSnapshot(
+      source: "binance-fixture",
+      symbol: "BTCUSDT",
+      generation: 1,
+      sequence: 102,
+      bestBid: "60000.1",
+      bestAsk: "60000.2",
+      health: .healthy,
+      eventUnixNanos: 1_700_000_000_200_000_000,
+      receiveUnixNanos: 1_700_000_000_205_000_000,
+      freshnessMillis: 5,
+      priceDisplayScale: 2
+    )
+  }
+}
+
+private struct CoordinatorUnkillableLauncher: DaemonLaunching {
+  let runtime: CoordinatorUnkillableRuntime
+
+  func launch(
+    configuration: DaemonConfiguration,
+    bootstrap: SessionBootstrap
+  ) -> any DaemonRuntime {
+    runtime
+  }
+}
+
+private actor CoordinatorUnkillableRuntime: DaemonRuntime {
+  nonisolated let processID: Int32
+  private(set) var forceTerminationCount = 0
+
+  init(processID: Int32) {
+    self.processID = processID
+  }
+
+  func readinessLine() -> Data {
+    Data(
+      """
+      {"endpoint":"http://127.0.0.1:43127","protocol_major":1,\
+      "protocol_minor":0,"daemon_pid":\(processID),\
+      "process_nonce":"000102030405060708090a0b0c0d0e0f",\
+      "server_nonce":"101112131415161718191a1b1c1d1e1f",\
+      "issued_unix_seconds":1700000000,"expiry_unix_seconds":1700000060}
+      """.utf8
+    )
+  }
+
+  func terminate() {}
+
+  func forceTerminate() {
+    forceTerminationCount += 1
+  }
+
+  func waitForExit() async throws -> Int32 {
+    try await Task.sleep(for: .seconds(60))
+    throw CancellationError()
   }
 }

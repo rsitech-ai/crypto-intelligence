@@ -249,6 +249,67 @@ struct DaemonSupervisorTests {
     #expect(clock.now - started < .milliseconds(250))
   }
 
+  @Test("total startup deadline includes the first market RPC")
+  func startupDeadlineIncludesFirstRPC() async throws {
+    let clock = ContinuousClock()
+    let started = clock.now
+    let runtime = FakeDaemonRuntime(
+      readiness: .data(readiness()),
+      processID: 7
+    )
+    let supervisor = DaemonSupervisor(
+      configuration: configuration(),
+      launcher: FakeLauncher(runtime: runtime),
+      transportFactory: DelayedTransportFactory(
+        delay: .milliseconds(120)
+      ),
+      startupTimeout: .milliseconds(30),
+      shutdownTimeout: .milliseconds(100),
+      nowUnixSeconds: { 1_700_000_000 }
+    )
+
+    await #expect(throws: DaemonSupervisorError.startupTimeout) {
+      try await supervisor.start()
+    }
+    #expect(await supervisor.currentState == .failed)
+    #expect(await supervisor.latestSnapshot == nil)
+    #expect(await runtime.wasTerminated)
+    #expect(clock.now - started < .milliseconds(100))
+  }
+
+  @Test("stop during the first RPC prevents late healthy resurrection")
+  func stopDuringRPCWinsRunRace() async throws {
+    let runtime = FakeDaemonRuntime(
+      readiness: .data(readiness()),
+      processID: 7
+    )
+    let transport = BlockingTransport()
+    let supervisor = DaemonSupervisor(
+      configuration: configuration(),
+      launcher: FakeLauncher(runtime: runtime),
+      transportFactory: BlockingTransportFactory(
+        transport: transport
+      ),
+      startupTimeout: .seconds(1),
+      shutdownTimeout: .milliseconds(100),
+      nowUnixSeconds: { 1_700_000_000 }
+    )
+    let starting = Task {
+      try await supervisor.start()
+    }
+    try await transport.waitUntilStarted()
+
+    try await supervisor.stop()
+    #expect(await supervisor.currentState == .stopped)
+    await transport.release()
+    _ = await starting.result
+    try await Task.sleep(for: .milliseconds(20))
+
+    #expect(await supervisor.currentState == .stopped)
+    #expect(await supervisor.latestSnapshot == nil)
+    #expect(await supervisor.ownedTaskCount == 0)
+  }
+
   @Test("incompatible protocol fails closed before market RPC")
   func incompatibleProtocol() async throws {
     let runtime = FakeDaemonRuntime(
@@ -303,6 +364,162 @@ struct DaemonSupervisorTests {
     #expect(clock.now - started < .milliseconds(250))
   }
 
+  @Test("cancelling the start caller cancels the owned startup pipeline")
+  func callerCancellationStopsStartupPipeline() async throws {
+    let runtime = FakeDaemonRuntime(
+      readiness: .suspended,
+      processID: 7
+    )
+    let supervisor = DaemonSupervisor(
+      configuration: configuration(),
+      launcher: FakeLauncher(runtime: runtime),
+      transportFactory: StaticTransportFactory(),
+      startupTimeout: .seconds(10),
+      shutdownTimeout: .milliseconds(100),
+      nowUnixSeconds: { 1_700_000_000 }
+    )
+    let completion = CompletionProbe()
+    let starting = Task {
+      try await supervisor.start()
+    }
+    let observing = Task {
+      _ = await starting.result
+      await completion.markCompleted()
+    }
+    try await Task.sleep(for: .milliseconds(20))
+
+    starting.cancel()
+    try await Task.sleep(for: .milliseconds(50))
+    let completedBeforeExplicitStop = await completion.isCompleted
+    #expect(completedBeforeExplicitStop)
+
+    try await supervisor.stop()
+    _ = await observing.result
+    #expect(await runtime.wasTerminated)
+    #expect(await supervisor.ownedTaskCount == 0)
+  }
+
+  @Test("SIGTERM-resistant child escalates and reports shutdown timeout")
+  func resistantChildShutdownIsBounded() async throws {
+    let clock = ContinuousClock()
+    let fixture = try await launchProcessFixture(
+      named: "term-resistant-daemon",
+      beforeReadiness: "trap '' TERM",
+      afterReadiness: "while true; do sleep 1; done"
+    )
+    defer {
+      Darwin.kill(fixture.runtime.processID, SIGKILL)
+      try? FileManager.default.removeItem(at: fixture.root)
+    }
+    let supervisor = DaemonSupervisor(
+      configuration: fixture.configuration,
+      launcher: ExistingRuntimeLauncher(runtime: fixture.runtime),
+      transportFactory: StaticTransportFactory(),
+      startupTimeout: .seconds(1),
+      shutdownTimeout: .milliseconds(40),
+      nowUnixSeconds: {
+        Int64(Date().timeIntervalSince1970)
+      }
+    )
+    try await supervisor.start()
+    let started = clock.now
+    let completion = CompletionProbe()
+    let stopping = Task {
+      let result: StopResult
+      do {
+        try await supervisor.stop()
+        result = .success
+      } catch let error as DaemonSupervisorError {
+        result = .failure(error)
+      } catch {
+        result = .unexpectedFailure
+      }
+      await completion.markCompleted()
+      return result
+    }
+
+    try await Task.sleep(for: .milliseconds(200))
+    let completedWithinBound = await completion.isCompleted
+    #expect(completedWithinBound)
+    if !completedWithinBound {
+      Darwin.kill(fixture.runtime.processID, SIGKILL)
+    }
+    let stopResult = await stopping.value
+    let stopCompletedAt = clock.now
+    #expect(stopResult == .failure(.shutdownTimeout))
+    #expect(stopCompletedAt - started < .milliseconds(300))
+    await fixture.runtime.simulateSupervisorLoss()
+
+    let cleanupDeadline = clock.now.advanced(by: .seconds(2))
+    var table = try processTable()
+    while table.contains(fixture.root.path), clock.now < cleanupDeadline {
+      try await Task.sleep(for: .milliseconds(10))
+      table = try processTable()
+    }
+    #expect(Darwin.kill(fixture.runtime.processID, 0) == -1)
+    #expect(errno == ESRCH)
+    #expect(!table.contains(fixture.root.path))
+  }
+
+  @Test("unconfirmed force termination remains failed and owned")
+  func unconfirmedForceTerminationFailsClosed() async throws {
+    let runtime = UnkillableDaemonRuntime(processID: 7)
+    let supervisor = DaemonSupervisor(
+      configuration: configuration(),
+      launcher: UnkillableRuntimeLauncher(runtime: runtime),
+      transportFactory: StaticTransportFactory(),
+      startupTimeout: .seconds(1),
+      shutdownTimeout: .milliseconds(20),
+      nowUnixSeconds: { 1_700_000_000 }
+    )
+    try await supervisor.start()
+
+    await #expect(throws: DaemonSupervisorError.shutdownTimeout) {
+      try await supervisor.stop()
+    }
+
+    #expect(await supervisor.currentState == .failed)
+    #expect(await supervisor.latestSnapshot == nil)
+    #expect(await runtime.forceTerminationCount == 1)
+    await #expect(throws: DaemonSupervisorError.alreadyRunning) {
+      try await supervisor.start()
+    }
+    #expect(await runtime.readinessCallCount == 1)
+  }
+
+  @Test("exit waiters complete once across terminate and exit races")
+  func exitWaitersSurviveTerminationRace() async throws {
+    let fixture = try await launchProcessFixture(
+      named: "termination-race-daemon",
+      afterReadiness: "while true; do sleep 1; done"
+    )
+    defer {
+      Darwin.kill(fixture.runtime.processID, SIGKILL)
+      try? FileManager.default.removeItem(at: fixture.root)
+    }
+    let waiters = (0..<24).map { _ in
+      Task {
+        try await fixture.runtime.waitForExit()
+      }
+    }
+
+    await fixture.runtime.terminate()
+    let results = await waiters.asyncMap { waiter in
+      await waiter.result
+    }
+    let statuses = results.compactMap { try? $0.get() }
+    #expect(statuses.count == waiters.count)
+    #expect(Set(statuses).count == 1)
+    await fixture.runtime.simulateSupervisorLoss()
+
+    var table = try processTable()
+    for _ in 0..<50 where table.contains(fixture.root.path) {
+      try await Task.sleep(for: .milliseconds(10))
+      table = try processTable()
+    }
+    #expect(!table.contains(fixture.root.path))
+  }
+
   @Test("healthy startup publishes exact snapshot and clean stop")
   func cleanTermination() async throws {
     let runtime = FakeDaemonRuntime(
@@ -343,6 +560,20 @@ private final class ZeroizationProbe: @unchecked Sendable {
       value = cleared
     }
   }
+}
+
+private actor CompletionProbe {
+  private(set) var isCompleted = false
+
+  func markCompleted() {
+    isCompleted = true
+  }
+}
+
+private enum StopResult: Sendable, Equatable {
+  case success
+  case failure(DaemonSupervisorError)
+  case unexpectedFailure
 }
 
 private func configuration() -> DaemonConfiguration {
@@ -400,6 +631,28 @@ private struct FakeLauncher: DaemonLaunching {
   }
 }
 
+private struct ExistingRuntimeLauncher: DaemonLaunching {
+  let runtime: ProcessDaemonRuntime
+
+  func launch(
+    configuration: DaemonConfiguration,
+    bootstrap: SessionBootstrap
+  ) -> any DaemonRuntime {
+    runtime
+  }
+}
+
+private struct UnkillableRuntimeLauncher: DaemonLaunching {
+  let runtime: UnkillableDaemonRuntime
+
+  func launch(
+    configuration: DaemonConfiguration,
+    bootstrap: SessionBootstrap
+  ) -> any DaemonRuntime {
+    runtime
+  }
+}
+
 private actor FakeDaemonRuntime: DaemonRuntime {
   enum Readiness: Sendable {
     case data(Data)
@@ -442,6 +695,32 @@ private actor FakeDaemonRuntime: DaemonRuntime {
   }
 }
 
+private actor UnkillableDaemonRuntime: DaemonRuntime {
+  nonisolated let processID: Int32
+  private(set) var forceTerminationCount = 0
+  private(set) var readinessCallCount = 0
+
+  init(processID: Int32) {
+    self.processID = processID
+  }
+
+  func readinessLine() -> Data {
+    readinessCallCount += 1
+    return readiness()
+  }
+
+  func terminate() {}
+
+  func forceTerminate() {
+    forceTerminationCount += 1
+  }
+
+  func waitForExit() async throws -> Int32 {
+    try await Task.sleep(for: .seconds(60))
+    throw CancellationError()
+  }
+}
+
 private actor StaticTransportFactory: RPCTransportBuilding {
   private let snapshot: MarketSnapshot
   private(set) var buildCount = 0
@@ -462,9 +741,72 @@ private struct StaticTransport: RPCTransport {
   let snapshot: MarketSnapshot
 
   func getSnapshot(
-    using credentials: SessionCredentials
+    using credentials: SessionCredentials,
+    timeout: Duration
   ) async throws -> MarketSnapshot {
     snapshot
+  }
+}
+
+private struct DelayedTransportFactory: RPCTransportBuilding {
+  let delay: Duration
+
+  func makeTransport(
+    for descriptor: ReadinessDescriptor
+  ) -> any RPCTransport {
+    DelayedTransport(delay: delay)
+  }
+}
+
+private struct DelayedTransport: RPCTransport {
+  let delay: Duration
+
+  func getSnapshot(
+    using credentials: SessionCredentials,
+    timeout: Duration
+  ) async throws -> MarketSnapshot {
+    try await Task.sleep(for: delay)
+    return makeSnapshot()
+  }
+}
+
+private struct BlockingTransportFactory: RPCTransportBuilding {
+  let transport: BlockingTransport
+
+  func makeTransport(
+    for descriptor: ReadinessDescriptor
+  ) -> any RPCTransport {
+    transport
+  }
+}
+
+private actor BlockingTransport: RPCTransport {
+  private var started = false
+  private var released = false
+
+  func getSnapshot(
+    using credentials: SessionCredentials,
+    timeout: Duration
+  ) async throws -> MarketSnapshot {
+    started = true
+    while !released {
+      try await Task.sleep(for: .milliseconds(5))
+    }
+    return makeSnapshot()
+  }
+
+  func waitUntilStarted() async throws {
+    let deadline = ContinuousClock.now.advanced(by: .milliseconds(300))
+    while !started, ContinuousClock.now < deadline {
+      try await Task.sleep(for: .milliseconds(5))
+    }
+    guard started else {
+      throw DaemonSupervisorError.snapshotUnavailable
+    }
+  }
+
+  func release() {
+    released = true
   }
 }
 
@@ -486,4 +828,72 @@ private func processTable() throws -> String {
     throw DaemonSupervisorError.snapshotUnavailable
   }
   return table
+}
+
+private struct ProcessFixture {
+  let root: URL
+  let configuration: DaemonConfiguration
+  let runtime: ProcessDaemonRuntime
+}
+
+private func launchProcessFixture(
+  named name: String,
+  beforeReadiness: String = "",
+  afterReadiness: String
+) async throws -> ProcessFixture {
+  let root = FileManager.default.temporaryDirectory.appending(
+    path: UUID().uuidString,
+    directoryHint: .isDirectory
+  )
+  try FileManager.default.createDirectory(
+    at: root,
+    withIntermediateDirectories: true
+  )
+  let executable = root.appending(path: name)
+  let script = """
+    #!/bin/sh
+    dd bs=32 count=1 <&3 >/dev/null 2>&1
+    \(beforeReadiness)
+    now=$(date +%s)
+    expiry=$((now + 60))
+    printf '{"endpoint":"http://127.0.0.1:43127","protocol_major":1,"protocol_minor":0,"daemon_pid":%s,"process_nonce":"000102030405060708090a0b0c0d0e0f","server_nonce":"101112131415161718191a1b1c1d1e1f","issued_unix_seconds":%s,"expiry_unix_seconds":%s}\\n' "$$" "$now" "$expiry"
+    \(afterReadiness)
+    """
+  try Data(script.utf8).write(to: executable)
+  try FileManager.default.setAttributes(
+    [.posixPermissions: 0o700],
+    ofItemAtPath: executable.path
+  )
+  let configuration = DaemonConfiguration(
+    executable: executable,
+    approvedRoot: root,
+    configFile: root.appending(path: "unused.toml")
+  )
+  let launched = try await ProcessDaemonLauncher().launch(
+    configuration: configuration,
+    bootstrap: try SessionBootstrap(
+      randomBytes: { Array(repeating: 0xa5, count: 32) }
+    )
+  )
+  guard let runtime = launched as? ProcessDaemonRuntime else {
+    throw DaemonSupervisorError.launchFailed
+  }
+  return ProcessFixture(
+    root: root,
+    configuration: configuration,
+    runtime: runtime
+  )
+}
+
+extension Array {
+  fileprivate func asyncMap<T: Sendable>(
+    _ transform: (Element) async -> T
+  ) async -> [T] {
+    var values: [T] = []
+    values.reserveCapacity(count)
+    for element in self {
+      values.append(await transform(element))
+    }
+    return values
+  }
 }

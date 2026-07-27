@@ -23,7 +23,10 @@ struct RPCTransportTests {
     let transport = SnapshotTransport(result: .success(expected))
     let client = TransitionClient(transport: transport)
 
-    let actual = try await client.snapshot(using: credentials())
+    let actual = try await client.snapshot(
+      using: credentials(),
+      timeout: .seconds(1)
+    )
 
     #expect(actual == expected)
     #expect(actual.bestBid == "60000.1")
@@ -39,8 +42,26 @@ struct RPCTransportTests {
     let client = TransitionClient(transport: transport)
 
     await #expect(throws: TestTransportError.disconnected) {
-      try await client.snapshot(using: credentials())
+      try await client.snapshot(
+        using: credentials(),
+        timeout: .seconds(1)
+      )
     }
+  }
+
+  @Test("client forwards the caller's explicit RPC timeout")
+  func explicitTimeoutIsForwarded() async throws {
+    let transport = SnapshotTransport(
+      result: .success(snapshot())
+    )
+    let client = TransitionClient(transport: transport)
+
+    _ = try await client.snapshot(
+      using: credentials(),
+      timeout: .milliseconds(75)
+    )
+
+    #expect(await transport.lastTimeout() == .milliseconds(75))
   }
 
   @Test("generated snapshot maps exact RPC strings and display metadata")
@@ -117,20 +138,27 @@ private enum TestTransportError: Error, Equatable {
 private actor SnapshotTransport: RPCTransport {
   private let result: Result<MarketSnapshot, TestTransportError>
   private var calls = 0
+  private var timeout: Duration?
 
   init(result: Result<MarketSnapshot, TestTransportError>) {
     self.result = result
   }
 
   func getSnapshot(
-    using credentials: SessionCredentials
+    using credentials: SessionCredentials,
+    timeout: Duration
   ) async throws -> MarketSnapshot {
     calls += 1
+    self.timeout = timeout
     return try result.get()
   }
 
   func callCount() -> Int {
     calls
+  }
+
+  func lastTimeout() -> Duration? {
+    timeout
   }
 }
 
@@ -138,5 +166,21 @@ private func credentials() -> SessionCredentials {
   SessionCredentials(
     descriptorBytes: Array(repeating: 0x11, count: 76),
     tokenBytes: Array(repeating: 0x22, count: 32)
+  )
+}
+
+private func snapshot() -> MarketSnapshot {
+  MarketSnapshot(
+    source: "binance-fixture",
+    symbol: "BTCUSDT",
+    generation: 1,
+    sequence: 102,
+    bestBid: "60000.1",
+    bestAsk: "60000.2",
+    health: .healthy,
+    eventUnixNanos: 1_700_000_000_200_000_000,
+    receiveUnixNanos: 1_700_000_000_205_000_000,
+    freshnessMillis: 5,
+    priceDisplayScale: 2
   )
 }
