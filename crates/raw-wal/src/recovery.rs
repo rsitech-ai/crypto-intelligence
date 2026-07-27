@@ -7,7 +7,9 @@ use std::{
 
 use thiserror::Error;
 
-use crate::frame::{MAGIC, decode};
+use crate::frame::{
+    CHECKSUM_LENGTH, HEADER_LENGTH, MAGIC, MAX_PAYLOAD_LENGTH, SCHEMA_VERSION, decode,
+};
 
 #[derive(Debug, Error)]
 pub enum RecoveryError {
@@ -46,12 +48,7 @@ pub fn recover(file: &mut File) -> Result<RecoveryReport, RecoveryError> {
                 records.push(frame.payload().to_vec());
                 offset += frame.encoded_length();
             }
-            Err(_) if contains_later_valid_frame(&bytes, offset) => {
-                return Err(RecoveryError::Corruption {
-                    offset: offset as u64,
-                });
-            }
-            Err(_) => {
+            Err(_) if is_unambiguous_eof_tail(&bytes[offset..]) => {
                 let truncated_bytes = (bytes.len() - offset) as u64;
                 file.set_len(offset as u64)?;
                 file.seek(SeekFrom::End(0))?;
@@ -59,6 +56,11 @@ pub fn recover(file: &mut File) -> Result<RecoveryReport, RecoveryError> {
                 return Ok(RecoveryReport {
                     records,
                     truncated_bytes,
+                });
+            }
+            Err(_) => {
+                return Err(RecoveryError::Corruption {
+                    offset: offset as u64,
                 });
             }
         }
@@ -71,13 +73,32 @@ pub fn recover(file: &mut File) -> Result<RecoveryReport, RecoveryError> {
     })
 }
 
-fn contains_later_valid_frame(bytes: &[u8], failed_offset: usize) -> bool {
-    let search_start = failed_offset.saturating_add(1);
-    bytes
-        .get(search_start..)
-        .into_iter()
-        .flat_map(|tail| tail.windows(MAGIC.len()).enumerate())
-        .filter(|(_, candidate)| *candidate == MAGIC)
-        .map(|(relative, _)| search_start + relative)
-        .any(|candidate| decode(&bytes[candidate..]).is_ok())
+fn is_unambiguous_eof_tail(bytes: &[u8]) -> bool {
+    if bytes.len() < HEADER_LENGTH || bytes[..MAGIC.len()] != MAGIC {
+        return false;
+    }
+    let version = u16::from_be_bytes(
+        bytes[MAGIC.len()..MAGIC.len() + size_of::<u16>()]
+            .try_into()
+            .expect("validated frame header contains a complete version"),
+    );
+    if version != SCHEMA_VERSION {
+        return false;
+    }
+    let payload_length = u32::from_be_bytes(
+        bytes[MAGIC.len() + size_of::<u16>()..HEADER_LENGTH]
+            .try_into()
+            .expect("validated frame header contains a complete length"),
+    ) as usize;
+    if payload_length > MAX_PAYLOAD_LENGTH {
+        return false;
+    }
+    let Some(encoded_length) = HEADER_LENGTH
+        .checked_add(payload_length)
+        .and_then(|length| length.checked_add(CHECKSUM_LENGTH))
+    else {
+        return false;
+    };
+
+    bytes.len() <= encoded_length
 }
