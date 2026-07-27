@@ -1,0 +1,4 @@
+schema_version = 1
+artifact_id = "fixtures/golden-replays/slow-sources-v1/manifest.toml"
+status = "implemented"
+local_only = true

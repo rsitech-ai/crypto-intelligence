@@ -1,0 +1,6 @@
+{
+  "schema_version": 1,
+  "artifact_id": "fixtures/prompts/adversarial/manifest.json",
+  "status": "implemented",
+  "local_only": true
+}

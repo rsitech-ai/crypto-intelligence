@@ -1,0 +1,10 @@
+syntax = "proto3";
+package cmti.market.v1;
+import "common/v1/common.proto";
+enum SnapshotKind { SNAPSHOT_KIND_UNSPECIFIED = 0; SNAPSHOT_KIND_NOT_APPLICABLE = 1; SNAPSHOT_KIND_SNAPSHOT = 2; SNAPSHOT_KIND_DELTA = 3; }
+message BookLevel { cmti.common.v1.FixedDecimal price = 1; cmti.common.v1.FixedDecimal quantity = 2; optional uint32 order_count = 3; }
+message Trade { string trade_id = 1; cmti.common.v1.FixedDecimal price = 2; cmti.common.v1.FixedDecimal quantity = 3; string side = 4; }
+message MarketEvent { bytes event_id = 1; bytes canonical_payload = 2; uint32 quality_score_ppm = 3; }
+message MarketStateRequest { repeated string instruments = 1; }
+message MarketState { string instrument = 1; cmti.common.v1.FixedDecimal midpoint = 2; cmti.common.v1.DataQualitySummary quality = 3; }
+service MarketDataService { rpc SubscribeMarketState(MarketStateRequest) returns (stream MarketState); }

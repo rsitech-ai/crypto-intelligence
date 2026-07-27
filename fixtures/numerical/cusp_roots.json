@@ -1,0 +1,6 @@
+{
+  "schema_version": 1,
+  "artifact_id": "fixtures/numerical/cusp_roots.json",
+  "status": "implemented",
+  "local_only": true
+}

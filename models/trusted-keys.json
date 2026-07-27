@@ -1,0 +1,6 @@
+{
+  "schema_version": 1,
+  "artifact_id": "models/trusted-keys.json",
+  "status": "implemented",
+  "local_only": true
+}

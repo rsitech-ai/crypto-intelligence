@@ -1,0 +1,14 @@
+schema_version = 1
+data_root = "./data"
+models_root = "./models"
+log_root = "./logs"
+bind_address = "127.0.0.1:0"
+session_secret_fd = 3
+maximum_request_bytes = 8388608
+maximum_concurrent_requests = 128
+maximum_stream_buffer = 1024
+request_timeout_seconds = 30
+remote_export = false
+allow_experimental = false
+minimum_quality_ppm = 700000
+connectors = []

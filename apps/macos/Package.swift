@@ -1,0 +1,5 @@
+// swift-tools-version: 6.2
+import PackageDescription
+let package=Package(name:"CuspObservatory",platforms:[.macOS(.v13)],products:[
+.library(name:"TransitionClient",targets:["TransitionClient"]),.library(name:"LocalModelHost",targets:["LocalModelHost"]),.library(name:"CuspObservatoryCore",targets:["CuspObservatoryCore"]),.executable(name:"CuspObservatory",targets:["CuspObservatory"]),.executable(name:"LocalModelHostCLI",targets:["LocalModelHostCLI"])],targets:[
+.target(name:"TransitionClient",path:"PortableSources/TransitionClient"),.target(name:"LocalModelHost",path:"PortableSources/LocalModelHost"),.target(name:"CuspObservatoryCore",dependencies:["TransitionClient","LocalModelHost"],path:"PortableSources/CuspObservatoryCore"),.executableTarget(name:"CuspObservatory",dependencies:["CuspObservatoryCore"],path:"PortableSources/CuspObservatory"),.executableTarget(name:"LocalModelHostCLI",dependencies:["LocalModelHost"],path:"PortableSources/LocalModelHostCLI"),.testTarget(name:"PortableTests",dependencies:["TransitionClient","LocalModelHost","CuspObservatoryCore"],path:"PortableTests")],swiftLanguageModes:[.v6])

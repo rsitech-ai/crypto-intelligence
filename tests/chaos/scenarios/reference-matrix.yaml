@@ -1,0 +1,4 @@
+schema_version: 1
+artifact_id: "tests/chaos/scenarios/reference-matrix.yaml"
+status: implemented
+local_only: true

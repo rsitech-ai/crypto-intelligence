@@ -1,0 +1,6 @@
+{
+  "schema_version": 1,
+  "artifact_id": "models/public-test-artifacts/temporal-linear/model-manifest.json",
+  "status": "implemented",
+  "local_only": true
+}

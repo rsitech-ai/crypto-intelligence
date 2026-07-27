@@ -1,0 +1,4 @@
+schema_version = 1
+artifact_id = "fixtures/chains/bitcoin/manifest.toml"
+status = "implemented"
+local_only = true
