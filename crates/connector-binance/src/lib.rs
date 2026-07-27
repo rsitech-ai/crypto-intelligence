@@ -1,7 +1,7 @@
-//! connector-binance production contract.
-pub mod book_sync;
-pub mod metadata;
-pub mod parser;
+//! Strict parser for the single offline Binance BTCUSDT fixture contract.
 
-#[derive(Clone,Copy,Debug,Eq,PartialEq)] pub struct ContractMetadata { pub schema_version:u32, pub bounded:bool, pub point_in_time:bool }
-impl Default for ContractMetadata { fn default()->Self{Self{schema_version:1,bounded:true,point_in_time:true}} }
+mod parser;
+
+pub use parser::{
+    EXPECTED_GENERATION, EXPECTED_SOURCE, EXPECTED_SYMBOL, ParseError, parse_fixture_line,
+};

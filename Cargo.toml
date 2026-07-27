@@ -1,11 +1,16 @@
 [workspace]
 resolver = "2"
 members = [
+  "apps/cryptoriskd",
+  "crates/connector-binance",
   "crates/config",
   "crates/domain",
   "crates/event-envelope",
   "crates/fixed-decimal",
   "crates/local-api",
+  "crates/observability",
+  "crates/orderbook",
+  "crates/raw-wal",
   "crates/system-tests",
   "xtask",
 ]
@@ -23,7 +28,7 @@ async-trait = "0.1"
 blake3 = "1"
 chacha20poly1305 = "0.10"
 clap = { version = "4", features = ["derive"] }
-crc32fast = "1"
+crc32c = "0.6"
 ed25519-dalek = { version = "2", features = ["rand_core", "serde"] }
 futures = "0.3"
 hex = "0.4"
