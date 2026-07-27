@@ -3,3 +3,6 @@ xtask = "run -p xtask --"
 
 [build]
 rustflags = ["-Dwarnings"]
+
+[net]
+offline = true

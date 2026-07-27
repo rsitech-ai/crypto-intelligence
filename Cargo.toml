@@ -1,14 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
-  "crates/*",
-  "apps/cryptoriskd",
-  "apps/crypto-replay",
-  "apps/crypto-evaluate",
-  "apps/connector-certify",
-  "apps/load-generator",
-  "apps/release-cli",
-  "apps/shadow-reporter",
+  "crates/system-tests",
   "xtask",
 ]
 [workspace.package]
