@@ -6,8 +6,8 @@ readonly script_dir
 workspace_root="$(cd -- "${script_dir}/.." && pwd)"
 readonly workspace_root
 readonly target_readiness_label="runtime-proven foundation slice"
-verification_started="$(date -u '+%Y-%m-%d %H:%M:%S +0000')"
-readonly verification_started
+unified_log_start="$(date -u '+@%s')"
+readonly unified_log_start
 evidence_output="${workspace_root}/release/evidence/foundation-runtime-verification.json"
 prior_evidence=""
 
@@ -598,6 +598,12 @@ exact_child_pid() {
     '$2 == parent && $3 == executable { print $1 }'
 }
 
+direct_child_pids() {
+  local parent_pid="$1"
+  ps -axo pid=,ppid= | awk -v parent="${parent_pid}" \
+    '$2 == parent { print $1 }'
+}
+
 wait_for_app_runtime() {
   local app_pid="$1"
   local run_id="$2"
@@ -653,6 +659,11 @@ launch_app_runtime() {
   local stdout_file="${temporary_root}/${label}.stdout"
   local stderr_file="${temporary_root}/${label}.stderr"
   local generated_root="${app_temporary_root}/CuspObservatoryTests/${run_id}"
+  local watcher_candidates
+  local watcher_count
+  local watcher_command
+  local daemon_parent
+  local watcher_parent
   if [[ -e "${generated_root}" ]] && [[ "${allow_existing}" -ne 1 ]]; then
     record_blocker "${label}:runtime-root-preexists"
     return 1
@@ -672,9 +683,27 @@ launch_app_runtime() {
     abort_app_runtime
     return 1
   fi
-  active_app_watcher_pid="$(exact_child_pid "${active_app_daemon_pid}" sh | head -n 1)"
-  if [[ -z "${active_app_watcher_pid}" ]]; then
+  watcher_candidates="$(direct_child_pids "${active_app_daemon_pid}")"
+  watcher_count="$(printf '%s\n' "${watcher_candidates}" | awk 'NF { count += 1 } END { print count + 0 }')"
+  if [[ "${watcher_count}" -eq 0 ]]; then
     record_blocker "${label}:watcher-missing"
+    abort_app_runtime
+    return 1
+  fi
+  if [[ "${watcher_count}" -ne 1 ]]; then
+    record_blocker "${label}:watcher-ambiguous"
+    abort_app_runtime
+    return 1
+  fi
+  active_app_watcher_pid="$(printf '%s\n' "${watcher_candidates}" | awk 'NF { print; exit }')"
+  watcher_command="$(ps -p "${active_app_watcher_pid}" -o command=)"
+  if [[ "${watcher_command}" != *"/bin/sh -c"* ]] \
+    || [[ "${watcher_command}" != *"cmti-daemon"* ]] \
+    || [[ "${watcher_command}" != *"${embedded_daemon}"* ]] \
+    || [[ "${watcher_command}" != *"${generated_root}"* ]] \
+    || ! lsof -a -p "${active_app_watcher_pid}" -d 4 -Fn | rg -q '^n->'
+  then
+    record_blocker "${label}:watcher-identity-mismatch"
     abort_app_runtime
     return 1
   fi
@@ -926,7 +955,7 @@ else
 fi
 
 run_gate unified-log-inspection 120 /usr/bin/log show \
-  --style json --start "${verification_started}" \
+  --style json --start "${unified_log_start}" \
   --predicate 'process == "CuspObservatory" OR process == "cryptoriskd"'
 if rg -ni '"messageType":"(Error|Fault)"|panic|crash|hang|secret|token' \
   "${temporary_root}/unified-log-inspection.log" >/dev/null 2>&1

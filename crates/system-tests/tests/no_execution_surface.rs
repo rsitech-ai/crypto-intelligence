@@ -322,9 +322,9 @@ fn collect_proto_methods(
             collect_proto_methods(&path, methods)?;
             continue;
         }
-        if !path
+        if path
             .extension()
-            .is_some_and(|extension| extension == "proto")
+            .is_none_or(|extension| extension != "proto")
         {
             continue;
         }
@@ -454,14 +454,13 @@ fn outbound_destinations(
         for word in production_text.split(|character: char| {
             character.is_whitespace() || matches!(character, '"' | '\'' | ',' | ')' | ']')
         }) {
-            if word.starts_with("http://")
+            if (word.starts_with("http://")
                 || word.starts_with("https://")
                 || word.starts_with("ws://")
-                || word.starts_with("wss://")
+                || word.starts_with("wss://"))
+                && word != "http://{local_addr}"
             {
-                if word != "http://{local_addr}" {
-                    destinations.insert(word.to_owned());
-                }
+                destinations.insert(word.to_owned());
             }
         }
         destinations.extend(outbound_connection_declarations(
