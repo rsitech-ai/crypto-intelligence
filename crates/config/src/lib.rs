@@ -511,6 +511,9 @@ fn apply_override<T>(target: &mut T, value: Option<T>, changed: &mut bool) {
 }
 
 fn validate_bind_address(value: &str) -> Result<SocketAddrV4, ConfigError> {
+    if value != "127.0.0.1:0" {
+        return Err(ConfigError::NonLoopbackBind);
+    }
     let address = value
         .parse::<SocketAddr>()
         .map_err(|_| ConfigError::NonLoopbackBind)?;
