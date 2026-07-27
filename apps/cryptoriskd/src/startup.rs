@@ -1,6 +1,7 @@
 use std::{
     fs::File,
     io::{self, Read},
+    os::fd::FromRawFd,
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -10,7 +11,10 @@ use local_api::{
     session::{SessionDescriptor, SessionError},
 };
 use rand::{RngCore, rngs::OsRng};
-use rustix::fs::{Mode, OFlags};
+use rustix::{
+    fs::{FileType, FlockOperation, Mode, OFlags},
+    io::{FdFlags, fcntl_getfd},
+};
 use thiserror::Error;
 use zeroize::Zeroizing;
 
@@ -36,7 +40,26 @@ pub fn read_session_secret(mut reader: impl Read) -> Result<SessionSecret, Start
 }
 
 pub fn read_session_secret_from_fd(fd: u32) -> Result<SessionSecret, StartupError> {
-    let file = File::open(format!("/dev/fd/{fd}")).map_err(StartupError::SecretIo)?;
+    let raw_fd = i32::try_from(fd).map_err(|_| {
+        StartupError::SecretIo(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "inherited descriptor is outside the platform range",
+        ))
+    })?;
+    if raw_fd < 3 {
+        return Err(StartupError::SecretIo(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "inherited descriptor must not alias standard I/O",
+        )));
+    }
+    File::open(format!("/dev/fd/{fd}"))
+        .map_err(StartupError::SecretIo)
+        .map(drop)?;
+    // SAFETY: opening `/dev/fd/{fd}` above proves the inherited descriptor is
+    // valid. Startup is its sole owner and this conversion immediately gives
+    // the exact descriptor RAII ownership so every success/error path closes it.
+    #[allow(unsafe_code)]
+    let file = unsafe { File::from_raw_fd(raw_fd) };
     read_session_secret(file)
 }
 
@@ -65,45 +88,66 @@ pub fn issue_session_descriptor() -> Result<SessionDescriptor, StartupError> {
 }
 
 pub fn open_wal_file(data_root: &ValidatedDirectory) -> Result<File, StartupError> {
-    match data_root.create_new_file(WAL_FILE_NAME) {
-        Ok(file) => {
-            drop(file);
-            rustix::fs::fsync(data_root.as_fd()).map_err(io::Error::from)?;
-        }
-        Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
-        Err(error) => return Err(StartupError::WalIo(error)),
-    }
-    let file = rustix::fs::openat(
-        data_root.as_fd(),
+    let file = open_or_create_state_file(
+        data_root,
         WAL_FILE_NAME,
         OFlags::RDWR | OFlags::CLOEXEC | OFlags::NOFOLLOW,
-        Mode::empty(),
     )
-    .map_err(io::Error::from)?;
-    Ok(File::from(file))
+    .map_err(StartupError::WalIo)?;
+    rustix::fs::flock(&file, FlockOperation::NonBlockingLockExclusive)
+        .map_err(io::Error::from)
+        .map_err(StartupError::WalIo)?;
+    Ok(file)
 }
 
 pub fn open_log_file(log_root: &ValidatedDirectory) -> Result<File, StartupError> {
-    match log_root.create_new_file(LOG_FILE_NAME) {
-        Ok(file) => {
-            rustix::fs::fsync(log_root.as_fd())
-                .map_err(io::Error::from)
-                .map_err(StartupError::LogIo)?;
-            Ok(file)
-        }
-        Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
-            let file = rustix::fs::openat(
-                log_root.as_fd(),
-                LOG_FILE_NAME,
-                OFlags::WRONLY | OFlags::APPEND | OFlags::CLOEXEC | OFlags::NOFOLLOW,
-                Mode::empty(),
-            )
-            .map_err(io::Error::from)
-            .map_err(StartupError::LogIo)?;
-            Ok(File::from(file))
-        }
-        Err(error) => Err(StartupError::LogIo(error)),
+    open_or_create_state_file(
+        log_root,
+        LOG_FILE_NAME,
+        OFlags::WRONLY | OFlags::APPEND | OFlags::CLOEXEC | OFlags::NOFOLLOW,
+    )
+    .map_err(StartupError::LogIo)
+}
+
+fn open_or_create_state_file(
+    root: &ValidatedDirectory,
+    name: &str,
+    access_flags: OFlags,
+) -> io::Result<File> {
+    let create_flags = access_flags | OFlags::CREATE | OFlags::EXCL;
+    let (owned, created) =
+        match rustix::fs::openat(root.as_fd(), name, create_flags, Mode::RUSR | Mode::WUSR) {
+            Ok(owned) => (owned, true),
+            Err(rustix::io::Errno::EXIST) => (
+                rustix::fs::openat(root.as_fd(), name, access_flags, Mode::empty())?,
+                false,
+            ),
+            Err(error) => return Err(error.into()),
+        };
+    let file = File::from(owned);
+    validate_state_file(&file)?;
+    if created {
+        rustix::fs::fsync(root.as_fd()).map_err(io::Error::from)?;
     }
+    Ok(file)
+}
+
+fn validate_state_file(file: &File) -> io::Result<()> {
+    let stat = rustix::fs::fstat(file).map_err(io::Error::from)?;
+    let safe = FileType::from_raw_mode(stat.st_mode).is_file()
+        && stat.st_uid == rustix::process::geteuid().as_raw()
+        && stat.st_mode & 0o077 == 0
+        && stat.st_nlink == 1
+        && fcntl_getfd(file)
+            .map_err(io::Error::from)?
+            .contains(FdFlags::CLOEXEC);
+    if !safe {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "state file metadata violates the local security contract",
+        ));
+    }
+    Ok(())
 }
 
 #[derive(Debug, Error)]
