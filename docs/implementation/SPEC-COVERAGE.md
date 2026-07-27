@@ -2,6 +2,35 @@
 
 Every top-level section of the approved specification is assigned to one or more executable plans. Detailed task-level mappings are in `traceability.md`.
 
+## Current executable coverage status
+
+Plan assignment is not implementation proof. At clean commit
+`ee36e78d8790c1394a91dc8de0fe1607269b841c`, Task 6 proves only the bounded
+foundation vertical slice:
+
+- an explicit no-execution boundary across production dependencies, Cargo
+  features, active RPCs, CLI/configuration, outbound declarations, and Rust
+  identifiers;
+- canonical fixed-point BTCUSDT fixture ingestion, order-book state, WAL,
+  authenticated loopback RPC, and deterministic recovery;
+- native app supervision with controlled quit, forced parent loss, exact
+  watcher ownership, relaunch, and 35/35 native unit tests; and
+- commit-bound build/test/generation, secret, structured-log, process, and
+  clean-tree evidence.
+
+This is partial executable coverage of the foundation concerns in sections 4,
+7–13, 16, 24, 26, 29–31, 33, and 34. It is not complete coverage of any later
+production phase and does not supersede the plan ownership table below.
+
+Current readiness is **`blocked:repo+external`**, not
+`runtime-proven foundation slice`. The original static-audit baseline remains
+384 errors and the current count is 383. Market-data breadth, features/labels,
+Cusp/model integration, risk/alerts, slow sources, the full native product,
+model hosts, hardening/release, two clean full-gate invocations, and production
+acceptance remain unimplemented or unqualified. See
+`release/evidence/foundation-runtime-verification.json` and
+`docs/implementation/IMPLEMENTATION-PROGRESS.md`.
+
 | Section | Subject | Owning plans | Coverage |
 |---:|---|---|---|
 | 1 | Document purpose and normative language | Master, P0 | Normative baseline, task discipline, approval and traceability |
