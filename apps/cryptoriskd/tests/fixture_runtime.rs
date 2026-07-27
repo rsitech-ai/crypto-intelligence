@@ -1,6 +1,6 @@
 use std::{
     fs::{self, File, OpenOptions},
-    io::{self, Cursor, Write},
+    io::{self, Write},
     os::unix::fs::PermissionsExt,
     path::Path,
     time::{Duration, SystemTime, UNIX_EPOCH},
@@ -29,7 +29,7 @@ use runtime::{
     WalSink, ingestion_channel, start_fixture_runtime,
 };
 use startup::{
-    StartupError, issue_session_descriptor, open_log_file, open_wal_file, read_session_secret,
+    StartupError, issue_session_descriptor, open_log_file, open_wal_file, parse_session_secret,
 };
 
 const FIXTURE: &str = include_str!("../../../fixtures/binance/btcusdt-book-v1.jsonl");
@@ -38,7 +38,7 @@ const SECRET_BYTES: [u8; 32] = [0x5a; 32];
 #[test]
 fn inherited_reader_requires_exactly_32_bytes_without_exposing_them() {
     for length in [0, 1, 31, 33, 64] {
-        let error = match read_session_secret(Cursor::new(vec![0xa5; length])) {
+        let error = match parse_session_secret(Zeroizing::new(vec![0xa5; length.min(33)])) {
             Ok(_) => panic!("non-32-byte inherited secrets must fail"),
             Err(error) => error,
         };
@@ -52,7 +52,8 @@ fn inherited_reader_requires_exactly_32_bytes_without_exposing_them() {
     let descriptor = SessionDescriptor::issue(1, 0, 7, [1; 16], [2; 16], 100)
         .expect("test descriptor must issue");
     let inherited = SessionAuthenticator::new(
-        read_session_secret(Cursor::new(SECRET_BYTES)).expect("exact secret must read"),
+        parse_session_secret(Zeroizing::new(SECRET_BYTES.to_vec()))
+            .expect("exact secret must read"),
     )
     .token(&descriptor);
     let direct = SessionAuthenticator::new(secret()).token(&descriptor);
