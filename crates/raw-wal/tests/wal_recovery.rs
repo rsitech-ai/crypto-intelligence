@@ -155,6 +155,99 @@ fn corruption_before_a_later_valid_frame_fails_closed_without_truncation() {
 }
 
 #[test]
+fn corrupt_frame_followed_by_another_corrupt_frame_fails_without_truncation() {
+    let directory = tempfile::tempdir().expect("temporary directory must exist");
+    let path = directory.path().join("market.wal");
+    let first_frame_length;
+    let second_frame_length;
+    {
+        let mut segment = Segment::open(&path).expect("segment must open");
+        first_frame_length = segment
+            .append_synced(b"first")
+            .expect("first frame must persist");
+        second_frame_length = segment
+            .append_synced(b"second")
+            .expect("second frame must persist");
+        segment
+            .append_synced(b"third")
+            .expect("third frame must persist");
+    }
+    flip_byte(&path, first_frame_length + second_frame_length - 1);
+    let original = fs::read(&path).expect("segment bytes must read");
+    flip_byte(&path, original.len() as u64 - 1);
+    let original = fs::read(&path).expect("mutated segment bytes must read");
+
+    let mut segment = Segment::open(&path).expect("segment must reopen");
+    assert!(matches!(
+        segment.recover(),
+        Err(RecoveryError::Corruption { offset }) if offset == first_frame_length
+    ));
+    assert_eq!(
+        fs::read(&path).expect("failed recovery must preserve bytes"),
+        original
+    );
+}
+
+#[test]
+fn damaged_final_frame_header_fails_without_truncation() {
+    for damaged_field in ["magic", "schema", "length"] {
+        let directory = tempfile::tempdir().expect("temporary directory must exist");
+        let path = directory.path().join("market.wal");
+        let first_frame_length;
+        {
+            let mut segment = Segment::open(&path).expect("segment must open");
+            first_frame_length = segment
+                .append_synced(b"first")
+                .expect("first frame must persist");
+            segment
+                .append_synced(b"second")
+                .expect("second frame must persist");
+        }
+
+        let field_offset = match damaged_field {
+            "magic" => first_frame_length,
+            "schema" => first_frame_length + MAGIC.len() as u64,
+            "length" => first_frame_length + MAGIC.len() as u64 + size_of::<u16>() as u64,
+            _ => unreachable!("test field list is exhaustive"),
+        };
+        let mut file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(&path)
+            .expect("segment must reopen for header mutation");
+        file.seek(SeekFrom::Start(field_offset))
+            .expect("test mutation must seek");
+        match damaged_field {
+            "magic" => file.write_all(b"X").expect("magic must corrupt"),
+            "schema" => file
+                .write_all(&SCHEMA_VERSION.wrapping_add(1).to_be_bytes())
+                .expect("schema must corrupt"),
+            "length" => file
+                .write_all(&u32::MAX.to_be_bytes())
+                .expect("length must corrupt"),
+            _ => unreachable!("test field list is exhaustive"),
+        }
+        file.sync_data().expect("test mutation must sync");
+        drop(file);
+        let original = fs::read(&path).expect("mutated segment bytes must read");
+
+        let mut segment = Segment::open(&path).expect("segment must reopen");
+        assert!(
+            matches!(
+                segment.recover(),
+                Err(RecoveryError::Corruption { offset }) if offset == first_frame_length
+            ),
+            "{damaged_field} damage must fail closed"
+        );
+        assert_eq!(
+            fs::read(&path).expect("failed recovery must preserve bytes"),
+            original,
+            "{damaged_field} damage must not mutate the WAL"
+        );
+    }
+}
+
+#[test]
 fn wrong_magic_or_schema_before_a_valid_frame_fails_closed() {
     let directory = tempfile::tempdir().expect("temporary directory must exist");
     let path = directory.path().join("market.wal");
