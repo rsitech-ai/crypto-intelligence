@@ -1,6 +1,6 @@
 use std::{
     fs::{self, File, OpenOptions},
-    io::{self, Cursor},
+    io::{self, Cursor, Write},
     os::unix::fs::PermissionsExt,
     path::Path,
     time::{Duration, SystemTime, UNIX_EPOCH},
@@ -209,6 +209,63 @@ async fn blank_fixture_records_are_persisted_before_the_runtime_rejects_them() {
     }
 }
 
+#[tokio::test]
+async fn cancellation_is_observed_before_wal_recovery_and_syncs_partial_state() {
+    let directory = tempfile::tempdir().expect("temporary runtime root must exist");
+    fs::create_dir(directory.path().join("logs")).expect("log root must exist");
+    let fixture_path = directory.path().join("fixture.jsonl");
+    fs::write(&fixture_path, FIXTURE).expect("fixture must write");
+    let wal_path = directory.path().join("market.wal");
+    let mut original = raw_wal::frame::encode(b"first").expect("first frame must encode");
+    let mut torn = raw_wal::frame::encode(b"second").expect("second frame must encode");
+    let last = torn.last_mut().expect("second frame must have a checksum");
+    *last ^= 0x80;
+    original.extend_from_slice(&torn);
+    fs::write(&wal_path, &original).expect("recoverable WAL tail must write");
+    let wal = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(&wal_path)
+        .expect("WAL must open");
+    let log_path = directory.path().join("logs/cmti.jsonl");
+    let log = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path)
+        .expect("log must open");
+    let (cancellation_sender, cancellation) = tokio::sync::watch::channel(false);
+    cancellation_sender
+        .send(true)
+        .expect("startup cancellation must send");
+
+    let error = match start_fixture_runtime(RuntimeOptions {
+        fixture: File::open(fixture_path).expect("fixture must open"),
+        wal,
+        log,
+        secret: secret(),
+        descriptor: descriptor(),
+        cancellation,
+    })
+    .await
+    {
+        Ok(_) => panic!("cancelled startup must not become ready"),
+        Err(error) => error,
+    };
+
+    assert!(matches!(error, RuntimeError::Cancelled));
+    assert_eq!(
+        fs::read(&wal_path).expect("cancelled WAL must read"),
+        original,
+        "cancellation before recovery must not repair or mutate the WAL"
+    );
+    assert!(
+        fs::read_to_string(log_path)
+            .expect("cancel log must read")
+            .contains("fixture_runtime_cancelled"),
+        "cancelled startup must sync its cleanup event"
+    );
+}
+
 #[test]
 fn existing_wal_and_log_reject_hardlinks_and_special_files() {
     let hardlink_root = runtime_root();
@@ -245,6 +302,50 @@ fn existing_wal_and_log_reject_hardlinks_and_special_files() {
     assert!(
         open_wal_file(&effective.paths.data_root).is_err(),
         "special WAL file must fail closed"
+    );
+}
+
+#[test]
+fn state_files_reject_unsafe_modes_and_created_wal_retains_its_exact_inode() {
+    let unsafe_root = runtime_root();
+    let effective = effective_config(unsafe_root.path());
+    let wal_path = unsafe_root.path().join("data/market.wal");
+    fs::write(&wal_path, []).expect("WAL placeholder must write");
+    fs::set_permissions(&wal_path, fs::Permissions::from_mode(0o644))
+        .expect("unsafe WAL permissions must set");
+    assert!(
+        open_wal_file(&effective.paths.data_root).is_err(),
+        "group/world-readable WAL must fail closed"
+    );
+    let log_path = unsafe_root.path().join("logs/cmti.jsonl");
+    fs::write(&log_path, []).expect("log placeholder must write");
+    fs::set_permissions(&log_path, fs::Permissions::from_mode(0o640))
+        .expect("unsafe log permissions must set");
+    assert!(
+        open_log_file(&effective.paths.log_root).is_err(),
+        "group-readable log must fail closed"
+    );
+
+    let replacement_root = runtime_root();
+    let effective = effective_config(replacement_root.path());
+    let mut wal = open_wal_file(&effective.paths.data_root).expect("new WAL must open securely");
+    let wal_path = replacement_root.path().join("data/market.wal");
+    let retained_path = replacement_root.path().join("data/retained.wal");
+    fs::rename(&wal_path, &retained_path).expect("test replacement must move pathname");
+    fs::write(&wal_path, b"replacement").expect("replacement pathname must write");
+    fs::set_permissions(&wal_path, fs::Permissions::from_mode(0o600))
+        .expect("replacement permissions must set");
+    wal.write_all(b"retained")
+        .expect("retained exact WAL fd must remain writable");
+    wal.sync_data().expect("retained exact WAL fd must sync");
+
+    assert_eq!(
+        fs::read(&retained_path).expect("retained inode must read"),
+        b"retained"
+    );
+    assert_eq!(
+        fs::read(&wal_path).expect("replacement inode must read"),
+        b"replacement"
     );
 }
 
@@ -402,6 +503,7 @@ async fn start_with_fixture(
         log,
         secret: secret(),
         descriptor,
+        cancellation: tokio::sync::watch::channel(false).1,
     })
     .await
 }

@@ -12,8 +12,11 @@ use clap::Parser;
 use config::{ConfigError, Overrides};
 use runtime::{RuntimeError, RuntimeOptions, start_fixture_runtime};
 use serde_json::json;
-use startup::{StartupError, issue_session_descriptor, open_wal_file, read_session_secret_from_fd};
+use startup::{
+    StartupError, issue_session_descriptor, open_wal_file, read_session_secret_from_fd_async,
+};
 use thiserror::Error;
+use tokio::sync::watch;
 
 const MAX_CONFIG_BYTES: u64 = 1024 * 1024;
 const REQUIRED_SHUTDOWN_SECONDS: u64 = 5;
@@ -44,6 +47,7 @@ async fn main() {
 }
 
 async fn run() -> Result<(), AppError> {
+    let mut cancellation = install_shutdown_listener()?;
     let arguments = Arguments::parse();
     let user_config = arguments
         .config
@@ -68,19 +72,30 @@ async fn run() -> Result<(), AppError> {
         return Err(AppError::RuntimeContract);
     }
 
-    let secret = read_session_secret_from_fd(effective.config.session_secret_fd())?;
+    let mut secret_cancellation = cancellation.clone();
+    let secret = tokio::select! {
+        biased;
+        () = wait_for_cancellation(&mut secret_cancellation) => return Ok(()),
+        result = read_session_secret_from_fd_async(effective.config.session_secret_fd()) => result?,
+    };
     let descriptor = issue_session_descriptor()?;
     let fixture = effective.paths.fixture_input.try_clone()?;
     let wal = open_wal_file(&effective.paths.data_root)?;
     let log = startup::open_log_file(&effective.paths.log_root)?;
-    let running = start_fixture_runtime(RuntimeOptions {
+    let running = match start_fixture_runtime(RuntimeOptions {
         fixture,
         wal,
         log,
         secret,
         descriptor,
+        cancellation: cancellation.clone(),
     })
-    .await?;
+    .await
+    {
+        Ok(running) => running,
+        Err(RuntimeError::Cancelled) => return Ok(()),
+        Err(error) => return Err(error.into()),
+    };
 
     {
         let mut stdout = io::stdout().lock();
@@ -89,7 +104,7 @@ async fn run() -> Result<(), AppError> {
         stdout.flush()?;
     }
 
-    shutdown_signal().await?;
+    wait_for_cancellation(&mut cancellation).await;
     tokio::time::timeout(
         Duration::from_secs(REQUIRED_SHUTDOWN_SECONDS),
         running.shutdown(),
@@ -107,22 +122,37 @@ fn read_bounded_config(path: &Path) -> Result<String, AppError> {
     Ok(fs::read_to_string(path)?)
 }
 
-async fn shutdown_signal() -> Result<(), AppError> {
+fn install_shutdown_listener() -> Result<watch::Receiver<bool>, io::Error> {
+    let (sender, receiver) = watch::channel(false);
     #[cfg(unix)]
     {
         let mut terminate =
             tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
-        tokio::select! {
-            result = tokio::signal::ctrl_c() => result.map_err(AppError::Signal),
-            signal = terminate.recv() => {
-                signal.ok_or(AppError::SignalClosed)?;
-                Ok(())
+        let mut interrupt =
+            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())?;
+        tokio::spawn(async move {
+            tokio::select! {
+                _ = terminate.recv() => {}
+                _ = interrupt.recv() => {}
             }
-        }
+            let _ = sender.send(true);
+        });
     }
     #[cfg(not(unix))]
     {
-        tokio::signal::ctrl_c().await.map_err(AppError::Signal)
+        tokio::spawn(async move {
+            let _ = tokio::signal::ctrl_c().await;
+            let _ = sender.send(true);
+        });
+    }
+    Ok(receiver)
+}
+
+async fn wait_for_cancellation(cancellation: &mut watch::Receiver<bool>) {
+    while !*cancellation.borrow() {
+        if cancellation.changed().await.is_err() {
+            return;
+        }
     }
 }
 
@@ -132,8 +162,6 @@ enum AppError {
     ConfigTooLarge,
     #[error("configuration must set ingestion_queue_capacity=1024 and shutdown_grace_seconds=5")]
     RuntimeContract,
-    #[error("shutdown signal stream closed unexpectedly")]
-    SignalClosed,
     #[error("healthy shutdown exceeded five seconds")]
     ShutdownTimeout,
     #[error("configuration failed: {0}")]
