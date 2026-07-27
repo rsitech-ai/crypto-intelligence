@@ -12,5 +12,8 @@ fixed-decimal = { path = "../fixed-decimal" }
 serde.workspace = true
 thiserror.workspace = true
 
+[dev-dependencies]
+connector-binance = { path = "../connector-binance" }
+
 [lints]
 workspace = true

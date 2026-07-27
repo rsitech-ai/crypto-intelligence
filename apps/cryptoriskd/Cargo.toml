@@ -8,8 +8,27 @@ publish.workspace = true
 
 [dependencies]
 clap.workspace = true
+config = { path = "../../crates/config" }
+connector-binance = { path = "../../crates/connector-binance" }
+domain = { path = "../../crates/domain" }
+event-envelope = { path = "../../crates/event-envelope" }
+fixed-decimal = { path = "../../crates/fixed-decimal" }
+hex.workspace = true
+local-api = { path = "../../crates/local-api" }
+observability = { path = "../../crates/observability" }
+orderbook = { path = "../../crates/orderbook" }
+rand.workspace = true
+raw-wal = { path = "../../crates/raw-wal" }
+rustix.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tonic.workspace = true
+zeroize.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
 
 [lints]
 workspace = true

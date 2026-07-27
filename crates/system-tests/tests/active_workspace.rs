@@ -66,10 +66,15 @@ fn active_workspace_contains_only_implemented_packages() {
         package_names,
         BTreeSet::from([
             "config",
+            "connector-binance",
+            "cryptoriskd",
             "domain",
             "event-envelope",
             "fixed-decimal",
             "local-api",
+            "observability",
+            "orderbook",
+            "raw-wal",
             "system-tests",
             "xtask",
         ])
