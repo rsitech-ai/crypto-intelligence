@@ -1,12 +1,32 @@
-//! local-api production contract.
-pub mod alert_service;
-pub mod auth;
-pub mod compatibility;
-pub mod cusp_service;
-pub mod forecast_service;
-pub mod generated;
-pub mod model_host_client;
-pub mod stream_buffer;
+//! Authenticated, loopback-only gRPC contracts for the local runtime.
 
-#[derive(Clone,Copy,Debug,Eq,PartialEq)] pub struct ContractMetadata { pub schema_version:u32, pub bounded:bool, pub point_in_time:bool }
-impl Default for ContractMetadata { fn default()->Self{Self{schema_version:1,bounded:true,point_in_time:true}} }
+pub mod auth;
+pub mod server;
+pub mod session;
+
+/// Generated protobuf and Tonic bindings for the exact Task 3 packages.
+pub mod proto {
+    pub mod cmti {
+        pub mod common {
+            pub mod v1 {
+                tonic::include_proto!("cmti.common.v1");
+            }
+        }
+
+        pub mod health {
+            pub mod v1 {
+                tonic::include_proto!("cmti.health.v1");
+            }
+        }
+
+        pub mod market {
+            pub mod v1 {
+                tonic::include_proto!("cmti.market.v1");
+            }
+        }
+    }
+
+    pub use cmti::common::v1 as common_v1;
+    pub use cmti::health::v1 as health_v1;
+    pub use cmti::market::v1 as market_v1;
+}

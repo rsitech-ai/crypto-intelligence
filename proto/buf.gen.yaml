@@ -1,4 +1,16 @@
-schema_version: 1
-artifact_id: "proto/buf.gen.yaml"
-status: implemented
-local_only: true
+version: v2
+clean: true
+inputs:
+  - directory: proto
+plugins:
+  - local:
+      - cargo
+      - run
+      - --locked
+      - --quiet
+      - -p
+      - xtask
+      - --
+      - protoc-gen-local-api
+    out: generated/local-api
+    strategy: all
