@@ -55,8 +55,12 @@ public actor TransitionClient {
   }
 
   public func snapshot(
-    using credentials: SessionCredentials
+    using credentials: SessionCredentials,
+    timeout: Duration
   ) async throws -> MarketSnapshot {
-    try await transport.getSnapshot(using: credentials)
+    try await transport.getSnapshot(
+      using: credentials,
+      timeout: timeout
+    )
   }
 }

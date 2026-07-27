@@ -4,6 +4,7 @@ import GRPCNIOTransportHTTP2TransportServices
 public enum GRPCTransportError: Error, Sendable, Equatable {
   case invalidDisplayScale
   case invalidSnapshot
+  case timeout
 }
 
 extension GRPCTransportError: CustomStringConvertible {
@@ -13,6 +14,8 @@ extension GRPCTransportError: CustomStringConvertible {
       "market display metadata is invalid"
     case .invalidSnapshot:
       "market snapshot violates the local RPC contract"
+    case .timeout:
+      "market snapshot request timed out"
     }
   }
 }
@@ -33,7 +36,8 @@ public struct GRPCTransport: RPCTransport {
   }
 
   public func getSnapshot(
-    using credentials: SessionCredentials
+    using credentials: SessionCredentials,
+    timeout: Duration
   ) async throws -> MarketSnapshot {
     let endpoint = endpoint
     let displayScale = priceDisplayScale
@@ -46,10 +50,18 @@ public struct GRPCTransport: RPCTransport {
       let market = Cmti_Market_V1_MarketService.Client(
         wrapping: client
       )
-      let response = try await market.getSnapshot(
-        Cmti_Market_V1_GetSnapshotRequest(),
-        metadata: Self.authenticationMetadata(using: credentials)
-      )
+      var options = CallOptions.defaults
+      options.timeout = timeout
+      let response: Cmti_Market_V1_GetSnapshotResponse
+      do {
+        response = try await market.getSnapshot(
+          Cmti_Market_V1_GetSnapshotRequest(),
+          metadata: Self.authenticationMetadata(using: credentials),
+          options: options
+        )
+      } catch let error as RPCError where error.code == .deadlineExceeded {
+        throw GRPCTransportError.timeout
+      }
       return try Self.map(
         response,
         priceDisplayScale: displayScale

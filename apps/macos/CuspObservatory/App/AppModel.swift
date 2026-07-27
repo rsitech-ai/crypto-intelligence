@@ -24,6 +24,7 @@ final class AppModel {
       recoveryMessage = nil
     case .starting, .stopping:
       phase = .loading
+      overview = nil
       recoveryMessage = nil
     case .healthy:
       phase = .healthy
@@ -31,6 +32,7 @@ final class AppModel {
       phase = .degraded
     case .failed:
       phase = .recovery
+      overview = nil
       recoveryMessage = "The local market service could not start."
     }
   }

@@ -5,6 +5,7 @@ final class MarketOverviewUITests: XCTestCase {
   func testRealDaemonPublishesAccessibleHealthyBTCRow() {
     let app = XCUIApplication()
     app.launchEnvironment["CMTI_TEST_RUN_ID"] = UUID().uuidString
+    app.launchEnvironment["CMTI_UI_TEST_MODE"] = "1"
     app.launch()
 
     let row = app.descendants(matching: .any)[
