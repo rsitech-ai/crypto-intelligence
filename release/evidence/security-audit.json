@@ -5,12 +5,23 @@
   "limitations": [
     "does not verify security implementation or runtime behavior"
   ],
-  "findings": [],
+  "findings": [
+    {
+      "severity": "high",
+      "path": "apps/macos/Vendor/grpc-swift-nio-transport/Tests/GRPCNIOTransportHTTP2Tests/HTTP2TransportTLSEnabledTests.swift",
+      "issue": "hard-coded secret-shaped value"
+    },
+    {
+      "severity": "high",
+      "path": "apps/macos/Vendor/grpc-swift-nio-transport/Tests/GRPCNIOTransportHTTP2Tests/HTTP2TransportNIOTransportServicesTests.swift",
+      "issue": "hard-coded secret-shaped value"
+    }
+  ],
   "counts": {
     "critical": 0,
-    "high": 0,
+    "high": 2,
     "medium": 0,
     "low": 0
   },
-  "status": "passed"
+  "status": "failed"
 }
