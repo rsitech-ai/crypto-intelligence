@@ -58,6 +58,14 @@ struct MetadataPackage {
     manifest_path: PathBuf,
 }
 
+#[derive(Debug, Eq, PartialEq)]
+enum ManifestLintPolicy {
+    Compliant,
+    MissingLints,
+    WorkspaceLintsDisabled,
+    MalformedWorkspaceLints,
+}
+
 fn main() -> ExitCode {
     match run() {
         Ok(()) => ExitCode::SUCCESS,
@@ -141,18 +149,68 @@ fn ensure_workspace_lints(manifest_path: &Path) -> Result<(), XtaskError> {
             path: manifest_path.to_path_buf(),
             source,
         })?;
-    let uses_workspace_lints = value
-        .get("lints")
-        .and_then(toml::Value::as_table)
-        .and_then(|lints| lints.get("workspace"))
-        .and_then(toml::Value::as_bool)
-        .is_some_and(|workspace| workspace);
-
-    if uses_workspace_lints {
+    if manifest_lint_policy(&value) == ManifestLintPolicy::Compliant {
         Ok(())
     } else {
         Err(XtaskError::MissingWorkspaceLints {
             path: manifest_path.to_path_buf(),
         })
+    }
+}
+
+fn manifest_lint_policy(manifest: &toml::Value) -> ManifestLintPolicy {
+    let Some(lints) = manifest.get("lints") else {
+        return ManifestLintPolicy::MissingLints;
+    };
+    let Some(lints) = lints.as_table() else {
+        return ManifestLintPolicy::MalformedWorkspaceLints;
+    };
+
+    match lints.get("workspace") {
+        Some(toml::Value::Boolean(true)) => ManifestLintPolicy::Compliant,
+        Some(toml::Value::Boolean(false)) => ManifestLintPolicy::WorkspaceLintsDisabled,
+        Some(_) => ManifestLintPolicy::MalformedWorkspaceLints,
+        None => ManifestLintPolicy::MissingLints,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn manifest(source: &str) -> toml::Value {
+        toml::from_str(source).expect("test manifest must parse")
+    }
+
+    #[test]
+    fn manifest_lint_policy_accepts_workspace_lints() {
+        assert_eq!(
+            manifest_lint_policy(&manifest("[lints]\nworkspace = true")),
+            ManifestLintPolicy::Compliant
+        );
+    }
+
+    #[test]
+    fn manifest_lint_policy_rejects_missing_lints() {
+        assert_eq!(
+            manifest_lint_policy(&manifest("[package]\nname = 'fixture'")),
+            ManifestLintPolicy::MissingLints
+        );
+    }
+
+    #[test]
+    fn manifest_lint_policy_rejects_disabled_workspace_lints() {
+        assert_eq!(
+            manifest_lint_policy(&manifest("[lints]\nworkspace = false")),
+            ManifestLintPolicy::WorkspaceLintsDisabled
+        );
+    }
+
+    #[test]
+    fn manifest_lint_policy_rejects_malformed_workspace_lints() {
+        assert_eq!(
+            manifest_lint_policy(&manifest("[lints]\nworkspace = 'true'")),
+            ManifestLintPolicy::MalformedWorkspaceLints
+        );
     }
 }
