@@ -1,11 +1,14 @@
 use config::{
-    ConfigError, MAX_INGESTION_QUEUE_CAPACITY, MAX_REQUEST_TIMEOUT_SECONDS, Overrides, load, schema,
+    ConfigError, MAX_CONCURRENT_REQUESTS, MAX_INGESTION_QUEUE_CAPACITY, MAX_REQUEST_BYTES,
+    MAX_REQUEST_TIMEOUT_SECONDS, MAX_SHUTDOWN_GRACE_SECONDS, Overrides, load, schema,
 };
-use std::{fs, path::Path};
+use std::{fs, io::Write as _, path::Path};
 use tempfile::TempDir;
 
 fn fixture_root() -> TempDir {
     let root = tempfile::tempdir().expect("temporary root");
+    fs::create_dir(root.path().join("data")).expect("data root is writable");
+    fs::create_dir(root.path().join("logs")).expect("log root is writable");
     fs::write(root.path().join("fixture.jsonl"), "{}\n").expect("fixture is writable");
     root
 }
@@ -70,8 +73,7 @@ fn only_keychain_credential_references_are_accepted() {
     assert_eq!(
         effective
             .config
-            .credential_ref
-            .as_ref()
+            .credential_ref()
             .expect("credential reference")
             .service(),
         "cmti.binance"
@@ -122,6 +124,105 @@ fn binding_and_resource_limits_fail_closed() {
     }
 }
 
+#[test]
+fn runtime_binding_matches_the_exact_schema_rule() {
+    let root = fixture_root();
+    let other_loopback = valid_config().replace("127.0.0.1:0", "127.0.0.2:0");
+
+    assert!(matches!(
+        load_valid(&other_loopback, root.path()),
+        Err(ConfigError::NonLoopbackBind)
+    ));
+}
+
+#[test]
+fn every_configured_limit_accepts_bounds_and_rejects_outside_values() {
+    let root = fixture_root();
+    let limits = [
+        ("session_secret_fd = 3", 3_u64, u64::from(u32::MAX)),
+        (
+            "ingestion_queue_capacity = 1024",
+            1,
+            u64::try_from(MAX_INGESTION_QUEUE_CAPACITY).expect("capacity fits u64"),
+        ),
+        (
+            "maximum_request_bytes = 8388608",
+            1,
+            u64::try_from(MAX_REQUEST_BYTES).expect("request bytes fit u64"),
+        ),
+        (
+            "maximum_concurrent_requests = 128",
+            1,
+            u64::try_from(MAX_CONCURRENT_REQUESTS).expect("request count fits u64"),
+        ),
+        (
+            "request_timeout_seconds = 30",
+            1,
+            MAX_REQUEST_TIMEOUT_SECONDS,
+        ),
+        ("shutdown_grace_seconds = 5", 1, MAX_SHUTDOWN_GRACE_SECONDS),
+    ];
+
+    for (field, minimum, maximum) in limits {
+        for accepted in [minimum, maximum] {
+            let text = valid_config().replace(field, &format_field(field, accepted));
+            load_valid(&text, root.path())
+                .unwrap_or_else(|error| panic!("{field}={accepted} must be accepted: {error}"));
+        }
+
+        let below = minimum - 1;
+        let text = valid_config().replace(field, &format_field(field, below));
+        assert!(
+            matches!(
+                load_valid(&text, root.path()),
+                Err(ConfigError::OutOfRange { .. })
+            ),
+            "{field}={below} must be rejected"
+        );
+
+        if maximum < u64::from(u32::MAX) {
+            let above = maximum + 1;
+            let text = valid_config().replace(field, &format_field(field, above));
+            assert!(
+                matches!(
+                    load_valid(&text, root.path()),
+                    Err(ConfigError::OutOfRange { .. })
+                ),
+                "{field}={above} must be rejected"
+            );
+        }
+    }
+}
+
+#[test]
+fn each_remote_capability_flag_is_rejected_independently() {
+    let root = fixture_root();
+    for field in ["remote_export", "remote_telemetry"] {
+        let text = valid_config().replace(&format!("{field} = false"), &format!("{field} = true"));
+        assert!(
+            matches!(
+                load_valid(&text, root.path()),
+                Err(ConfigError::RemoteCapabilityEnabled)
+            ),
+            "{field}=true must fail closed"
+        );
+    }
+}
+
+#[test]
+fn writable_roots_must_already_exist() {
+    let root = fixture_root();
+    fs::remove_dir(root.path().join("data")).expect("remove data root");
+
+    assert!(matches!(
+        load_valid(&valid_config(), root.path()),
+        Err(ConfigError::Filesystem {
+            field: "data_root",
+            ..
+        })
+    ));
+}
+
 #[cfg(unix)]
 #[test]
 fn writable_roots_cannot_escape_through_symlinks() {
@@ -136,6 +237,42 @@ fn writable_roots_cannot_escape_through_symlinks() {
         load_valid(&escaped, approved.path()),
         Err(ConfigError::PathEscape { field: "data_root" })
     ));
+}
+
+#[cfg(unix)]
+#[test]
+fn validated_directory_handle_survives_path_replacement() {
+    use std::os::unix::fs::symlink;
+
+    let root = fixture_root();
+    let outside = tempfile::tempdir().expect("outside root");
+    let effective =
+        load_valid(&valid_config(), root.path()).expect("configuration must validate first");
+    let retained_data_root = effective.paths.data_root.clone();
+
+    fs::rename(root.path().join("data"), root.path().join("moved-data"))
+        .expect("move validated directory");
+    symlink(outside.path(), root.path().join("data")).expect("replace path with outside symlink");
+
+    let mut file = retained_data_root
+        .create_new_file("sentinel")
+        .expect("retained descriptor remains authoritative");
+    file.write_all(b"retained").expect("write through handle");
+
+    assert_eq!(
+        fs::read(root.path().join("moved-data/sentinel"))
+            .expect("original directory receives file"),
+        b"retained"
+    );
+    assert!(
+        !outside.path().join("sentinel").exists(),
+        "runtime access must not follow the replacement symlink"
+    );
+}
+
+fn format_field(field: &str, value: u64) -> String {
+    let name = field.split_once(" = ").expect("field assignment").0;
+    format!("{name} = {value}")
 }
 
 #[test]
@@ -165,7 +302,7 @@ fn layering_and_fingerprint_are_deterministic() {
     )
     .expect("second layered config");
 
-    assert_eq!(first.config.request_timeout_seconds, 10);
+    assert_eq!(first.config.request_timeout_seconds(), 10);
     assert_eq!(first.fingerprint, second.fingerprint);
     assert_eq!(first.sources, ["default", "user", "overrides"]);
 }
@@ -186,7 +323,7 @@ fn checked_in_default_and_schema_match_the_canonical_generators() {
         workspace,
     )
     .expect("checked-in default validates");
-    assert_eq!(effective.config.ingestion_queue_capacity, 1024);
+    assert_eq!(effective.config.ingestion_queue_capacity(), 1024);
     assert!(!effective.fingerprint.is_empty());
 
     let checked_in =

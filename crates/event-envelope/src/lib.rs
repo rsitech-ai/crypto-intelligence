@@ -2,7 +2,7 @@
 
 use domain::{InstrumentId, SourceId, SourceKind, UnixNanos, VenueId};
 use fixed_decimal::{FixedDecimal, Price, Quantity};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de::Error as _};
 use std::fmt;
 use thiserror::Error;
 
@@ -53,7 +53,7 @@ impl QualityFlags {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct EventMetadata {
+pub struct UncheckedEventMetadata {
     pub schema_version: u32,
     pub source: SourceId,
     pub venue: Option<VenueId>,
@@ -73,8 +73,8 @@ pub struct EventMetadata {
     pub quality_flags: QualityFlags,
 }
 
-impl EventMetadata {
-    pub fn validate(&self) -> Result<(), EventError> {
+impl UncheckedEventMetadata {
+    fn validate(&self) -> Result<(), EventError> {
         if self.schema_version == 0 {
             return Err(EventError::InvalidMetadata("schema_version"));
         }
@@ -105,6 +105,17 @@ impl EventMetadata {
             return Err(EventError::InvalidMetadata("instrument_id"));
         }
         Ok(())
+    }
+}
+
+/// Event metadata that has passed the complete envelope contract.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(transparent)]
+pub struct EventMetadata(UncheckedEventMetadata);
+
+impl EventMetadata {
+    pub const fn as_unchecked(&self) -> &UncheckedEventMetadata {
+        &self.0
     }
 }
 
@@ -152,14 +163,14 @@ pub struct BookDelta {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
-pub enum EventPayload {
+pub enum UncheckedEventPayload {
     Trade(Trade),
     BookSnapshot(BookSnapshot),
     BookDelta(BookDelta),
 }
 
-impl EventPayload {
-    fn validate(&self, metadata: &EventMetadata) -> Result<(), EventError> {
+impl UncheckedEventPayload {
+    fn validate(&self, metadata: &UncheckedEventMetadata) -> Result<(), EventError> {
         metadata.validate()?;
         if metadata.venue.is_none() || metadata.instrument_id.is_none() {
             return Err(EventError::InvalidMetadata("instrument identity"));
@@ -196,6 +207,17 @@ impl EventPayload {
     }
 }
 
+/// Event payload that has been validated together with its metadata.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(transparent)]
+pub struct EventPayload(UncheckedEventPayload);
+
+impl EventPayload {
+    pub const fn as_unchecked(&self) -> &UncheckedEventPayload {
+        &self.0
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct EventId([u8; 32]);
@@ -220,13 +242,16 @@ pub struct EventEnvelope {
 }
 
 impl EventEnvelope {
-    pub fn new(metadata: EventMetadata, payload: EventPayload) -> Result<Self, EventError> {
+    pub fn new(
+        metadata: UncheckedEventMetadata,
+        payload: UncheckedEventPayload,
+    ) -> Result<Self, EventError> {
         payload.validate(&metadata)?;
-        let id = canonical_event_id(&metadata, &payload)?;
+        let id = canonical_event_id_unchecked(&metadata, &payload)?;
         Ok(Self {
             id,
-            metadata,
-            payload,
+            metadata: EventMetadata(metadata),
+            payload: EventPayload(payload),
         })
     }
 
@@ -243,7 +268,7 @@ impl EventEnvelope {
     }
 
     pub fn verify(&self) -> Result<(), EventError> {
-        if canonical_event_id(&self.metadata, &self.payload)? == self.id {
+        if canonical_event_id_unchecked(&self.metadata.0, &self.payload.0)? == self.id {
             Ok(())
         } else {
             Err(EventError::IdentityMismatch)
@@ -251,12 +276,36 @@ impl EventEnvelope {
     }
 }
 
+impl<'de> Deserialize<'de> for EventEnvelope {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct WireEnvelope {
+            id: EventId,
+            metadata: UncheckedEventMetadata,
+            payload: UncheckedEventPayload,
+        }
+
+        let wire = WireEnvelope::deserialize(deserializer)?;
+        let envelope = Self::new(wire.metadata, wire.payload).map_err(D::Error::custom)?;
+        if envelope.id == wire.id {
+            Ok(envelope)
+        } else {
+            Err(D::Error::custom(EventError::IdentityMismatch))
+        }
+    }
+}
+
 /// Computes the versioned canonical identity over every metadata and payload
-/// field. Validation is separate so mutation-sensitivity can be tested field by
-/// field, including mutations that would make an envelope invalid.
-pub fn canonical_event_id(
-    metadata: &EventMetadata,
-    payload: &EventPayload,
+/// field. This deliberately accepts unchecked wire components so mutation
+/// sensitivity can be audited, including mutations that make an envelope
+/// invalid. Runtime code should construct [`EventEnvelope`] instead.
+pub fn canonical_event_id_unchecked(
+    metadata: &UncheckedEventMetadata,
+    payload: &UncheckedEventPayload,
 ) -> Result<EventId, EventError> {
     let mut writer = CanonicalWriter::new();
     encode_metadata(&mut writer, metadata)?;
@@ -301,7 +350,7 @@ fn validate_book(
 
 fn encode_metadata(
     writer: &mut CanonicalWriter,
-    metadata: &EventMetadata,
+    metadata: &UncheckedEventMetadata,
 ) -> Result<(), EventError> {
     writer.u32(metadata.schema_version);
     writer.u8(metadata.source.kind() as u8);
@@ -340,22 +389,25 @@ fn encode_metadata(
     Ok(())
 }
 
-fn encode_payload(writer: &mut CanonicalWriter, payload: &EventPayload) -> Result<(), EventError> {
+fn encode_payload(
+    writer: &mut CanonicalWriter,
+    payload: &UncheckedEventPayload,
+) -> Result<(), EventError> {
     match payload {
-        EventPayload::Trade(trade) => {
+        UncheckedEventPayload::Trade(trade) => {
             writer.u8(0);
             writer.string(&trade.trade_id)?;
             writer.decimal(trade.price.value())?;
             writer.decimal(trade.quantity.value())?;
             writer.u8(trade.side as u8);
         }
-        EventPayload::BookSnapshot(snapshot) => {
+        UncheckedEventPayload::BookSnapshot(snapshot) => {
             writer.u8(1);
             writer.levels(&snapshot.bids)?;
             writer.levels(&snapshot.asks)?;
             writer.u64(snapshot.last_sequence);
         }
-        EventPayload::BookDelta(delta) => {
+        UncheckedEventPayload::BookDelta(delta) => {
             writer.u8(2);
             writer.levels(&delta.bids)?;
             writer.levels(&delta.asks)?;
