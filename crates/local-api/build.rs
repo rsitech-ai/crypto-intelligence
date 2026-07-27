@@ -6,6 +6,9 @@ use std::{
     path::{Path, PathBuf},
 };
 
+#[path = "../../build-support/protoc_toolchain.rs"]
+mod protoc_toolchain;
+
 const PROTO_FILES: [&str; 3] = [
     "common/v1/common.proto",
     "health/v1/health.proto",
@@ -27,6 +30,20 @@ fn main() -> Result<(), Box<dyn Error>> {
         .and_then(Path::parent)
         .ok_or_else(|| io::Error::other("local-api must be nested in the workspace"))?;
     let proto_root = workspace_root.join("proto");
+    let toolchain_path = proto_root.join("toolchain.toml");
+    println!("cargo:rerun-if-changed={}", toolchain_path.display());
+    println!(
+        "cargo:rerun-if-changed={}",
+        workspace_root
+            .join("build-support/protoc_toolchain.rs")
+            .display()
+    );
+    println!("cargo:rerun-if-env-changed=PATH");
+    println!("cargo:rerun-if-env-changed=PROTOC");
+    let toolchain = protoc_toolchain::read_contract(workspace_root)
+        .map_err(|error| io::Error::other(error.to_string()))?;
+    let protoc = protoc_toolchain::resolve_and_validate(&toolchain)
+        .map_err(|error| io::Error::other(error.to_string()))?;
     let proto_files = PROTO_FILES
         .map(|relative| proto_root.join(relative))
         .to_vec();
@@ -53,10 +70,12 @@ fn main() -> Result<(), Box<dyn Error>> {
         proto_root.join("buf.gen.yaml").display()
     );
 
+    let mut prost_config = prost_build::Config::new();
+    prost_config.protoc_executable(protoc.path());
     tonic_prost_build::configure()
         .build_client(true)
         .build_server(true)
-        .compile_protos(&proto_files, &[proto_root])?;
+        .compile_with_config(prost_config, &proto_files, &[proto_root])?;
 
     let output_dir = PathBuf::from(
         env::var_os("OUT_DIR")

@@ -14,6 +14,9 @@ use prost_types::compiler::{CodeGeneratorRequest, CodeGeneratorResponse, code_ge
 use serde::Deserialize;
 use thiserror::Error;
 
+#[path = "../../build-support/protoc_toolchain.rs"]
+mod protoc_toolchain;
+
 const UNKNOWN_COMMAND_EXIT_CODE: u8 = 2;
 const PROTO_FILES: [&str; 3] = [
     "common/v1/common.proto",
@@ -83,17 +86,10 @@ enum XtaskError {
         #[source]
         source: io::Error,
     },
-    #[error("could not read protobuf toolchain contract {path}: {source}")]
-    ProtoToolchainRead {
-        path: PathBuf,
+    #[error("invalid protoc toolchain: {source}")]
+    ProtocToolchain {
         #[source]
-        source: io::Error,
-    },
-    #[error("could not parse protobuf toolchain contract {path}: {source}")]
-    ProtoToolchainParse {
-        path: PathBuf,
-        #[source]
-        source: toml::de::Error,
+        source: protoc_toolchain::ProtocToolchainError,
     },
     #[error("protobuf tool {tool} version mismatch: expected {expected:?}, got {actual:?}")]
     ProtoToolVersionMismatch {
@@ -167,12 +163,6 @@ struct CargoMetadata {
 struct MetadataPackage {
     id: String,
     manifest_path: PathBuf,
-}
-
-#[derive(Debug, Deserialize)]
-struct ProtoToolchainContract {
-    buf: String,
-    protoc: String,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -285,24 +275,21 @@ fn generate_proto_command(options: &[OsString]) -> Result<(), XtaskError> {
 fn proto_check() -> Result<(), XtaskError> {
     let toolchain = read_proto_toolchain_contract()?;
     ensure_proto_tool("buf", &toolchain.buf)?;
-    ensure_proto_tool("protoc", &toolchain.protoc)?;
+    let protoc = resolve_protoc(&toolchain)?;
     run_proto_tool("buf lint proto", "buf", &["lint", "proto"])?;
     run_proto_tool("buf build proto", "buf", &["build", "proto"])?;
-    generate_proto_with_toolchain(true, &toolchain)?;
+    generate_proto_with_protoc(true, protoc.path())?;
     println!("proto-check: ok");
     Ok(())
 }
 
 fn generate_proto(check: bool) -> Result<(), XtaskError> {
     let toolchain = read_proto_toolchain_contract()?;
-    ensure_proto_tool("protoc", &toolchain.protoc)?;
-    generate_proto_with_toolchain(check, &toolchain)
+    let protoc = resolve_protoc(&toolchain)?;
+    generate_proto_with_protoc(check, protoc.path())
 }
 
-fn generate_proto_with_toolchain(
-    check: bool,
-    _toolchain: &ProtoToolchainContract,
-) -> Result<(), XtaskError> {
+fn generate_proto_with_protoc(check: bool, protoc: &Path) -> Result<(), XtaskError> {
     if check {
         let first = tempfile::Builder::new()
             .prefix("cmti-proto-first-")
@@ -318,8 +305,8 @@ fn generate_proto_with_toolchain(
                 path: env::temp_dir(),
                 source,
             })?;
-        generate_proto_into(first.path())?;
-        generate_proto_into(second.path())?;
+        generate_proto_into(first.path(), protoc)?;
+        generate_proto_into(second.path(), protoc)?;
         compare_generated_outputs(first.path(), second.path())?;
         println!(
             "generate-proto: reproducible ({} files)",
@@ -333,18 +320,21 @@ fn generate_proto_with_toolchain(
         path: output.clone(),
         source,
     })?;
-    generate_proto_into(&output)?;
+    generate_proto_into(&output, protoc)?;
     println!("generate-proto: wrote {}", output.display());
     Ok(())
 }
 
-fn read_proto_toolchain_contract() -> Result<ProtoToolchainContract, XtaskError> {
-    let path = workspace_root().join("proto/toolchain.toml");
-    let source = fs::read_to_string(&path).map_err(|source| XtaskError::ProtoToolchainRead {
-        path: path.clone(),
-        source,
-    })?;
-    toml::from_str(&source).map_err(|source| XtaskError::ProtoToolchainParse { path, source })
+fn read_proto_toolchain_contract() -> Result<protoc_toolchain::ProtoToolchainContract, XtaskError> {
+    protoc_toolchain::read_contract(workspace_root())
+        .map_err(|source| XtaskError::ProtocToolchain { source })
+}
+
+fn resolve_protoc(
+    toolchain: &protoc_toolchain::ProtoToolchainContract,
+) -> Result<protoc_toolchain::ValidatedProtoc, XtaskError> {
+    protoc_toolchain::resolve_and_validate(toolchain)
+        .map_err(|source| XtaskError::ProtocToolchain { source })
 }
 
 fn ensure_proto_tool(tool: &'static str, expected: &str) -> Result<(), XtaskError> {
@@ -393,7 +383,7 @@ fn run_proto_tool(
     }
 }
 
-fn generate_proto_into(output: &Path) -> Result<(), XtaskError> {
+fn generate_proto_into(output: &Path, protoc: &Path) -> Result<(), XtaskError> {
     let proto_root = workspace_root().join("proto");
     let proto_files = PROTO_FILES
         .map(|relative| proto_root.join(relative))
@@ -407,11 +397,13 @@ fn generate_proto_into(output: &Path) -> Result<(), XtaskError> {
         }
     }
 
+    let mut prost_config = prost_build::Config::new();
+    prost_config.protoc_executable(protoc);
     tonic_prost_build::configure()
         .build_client(true)
         .build_server(true)
         .out_dir(output)
-        .compile_protos(&proto_files, &[proto_root])
+        .compile_with_config(prost_config, &proto_files, &[proto_root])
         .map_err(|source| XtaskError::ProtoGenerate {
             path: output.to_path_buf(),
             reason: source.to_string(),
@@ -758,15 +750,16 @@ mod tests {
         assert_eq!(contract.protoc, "libprotoc 33.4");
         assert!(validate_proto_tool_version("buf", &contract.buf, b"1.72.0\n").is_ok());
         assert!(
-            validate_proto_tool_version("protoc", &contract.protoc, b"libprotoc 33.4\n").is_ok()
+            protoc_toolchain::validate_version_output(&contract.protoc, b"libprotoc 33.4\n")
+                .is_ok()
         );
         assert!(matches!(
             validate_proto_tool_version("buf", &contract.buf, b"1.71.0\n"),
             Err(XtaskError::ProtoToolVersionMismatch { .. })
         ));
         assert!(matches!(
-            validate_proto_tool_version("protoc", &contract.protoc, b"libprotoc 33.3\n"),
-            Err(XtaskError::ProtoToolVersionMismatch { .. })
+            protoc_toolchain::validate_version_output(&contract.protoc, b"libprotoc 33.3\n"),
+            Err(protoc_toolchain::ProtocToolchainError::VersionMismatch { .. })
         ));
     }
 }
