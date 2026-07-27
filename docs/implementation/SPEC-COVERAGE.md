@@ -5,18 +5,20 @@ Every top-level section of the approved specification is assigned to one or more
 ## Current executable coverage status
 
 Plan assignment is not implementation proof. At clean commit
-`ee36e78d8790c1394a91dc8de0fe1607269b841c`, Task 6 proves only the bounded
+`488adc502bbf3f3ae8caf5cafbf278f92e32bdb0`, Task 6 proves only the bounded
 foundation vertical slice:
 
 - an explicit no-execution boundary across production dependencies, Cargo
-  features, active RPCs, CLI/configuration, outbound declarations, and Rust
-  identifiers;
+  features, active RPCs, CLI/configuration, positively owned network
+  capabilities, and Rust identifiers; the only approved production network
+  owner is the exact guarded loopback listener in `crates/local-api`;
 - canonical fixed-point BTCUSDT fixture ingestion, order-book state, WAL,
   authenticated loopback RPC, and deterministic recovery;
 - native app supervision with controlled quit, forced parent loss, exact
   watcher ownership, relaunch, and 35/35 native unit tests; and
 - commit-bound build/test/generation, secret, structured-log, process, and
-  clean-tree evidence.
+  clean-tree evidence; plus a schema-v2 promotion policy in which the parent
+  wrapper owns both private invocations and their SHA-256 receipt.
 
 This is partial executable coverage of the foundation concerns in sections 4,
 7–13, 16, 24, 26, 29–31, 33, and 34. It is not complete coverage of any later

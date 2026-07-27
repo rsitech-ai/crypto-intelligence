@@ -1,7 +1,7 @@
 # Implementation progress
 
 Status updated from the exact clean Task 6 verification at commit
-`ee36e78d8790c1394a91dc8de0fe1607269b841c`. Path existence is not
+`488adc502bbf3f3ae8caf5cafbf278f92e32bdb0`. Path existence is not
 implementation evidence.
 
 Current foundation-gate label: **`blocked:repo+external`**.
@@ -14,9 +14,9 @@ Current foundation-gate label: **`blocked:repo+external`**.
 | 03 Cusp | Partial dense prototype, not integrated | No model/runtime release evidence | Model integration and scientific validation remain unimplemented |
 | 04 Risk/alerts | Partial dense prototypes, not integrated | None | No complete risk, applicability, forecast, or alert service pipeline |
 | 05 Slow sources | Not implemented | None | Options, chain, event, language-model, and macro sources remain incomplete |
-| 06 macOS | Foundation overview/runtime proven; full product phase incomplete | Native unit 35/35; controlled quit, supervisor SIGKILL cleanup, exact app-daemon-watcher topology, relaunch, and WAL recovery | Fresh XCUITest is blocked before product tests by disabled macOS automation authorization |
+| 06 macOS | Foundation overview/runtime proven; full product phase incomplete | Native unit 35/35; controlled quit, supervisor SIGKILL cleanup, exact app-daemon-watcher topology, relaunch, and WAL recovery | Fresh XCUITest is blocked by disabled macOS automation authorization; the exact rerun exited 65 with one failed UI test |
 | 07 Model host | Portable prototype only | Five narrow SwiftPM tests from the earlier audit; no Task 6 model claim | Native host/package implementations and model qualification remain scaffolded |
-| 08 Hardening/release | Fail-closed foundation verifier implemented; release phase incomplete | Commit-bound JSON evidence, structured runtime-log policy, secret scans, no-execution boundary, and clean-tree/process checks | Static audit 383; security audit 2 high vendored-fixture findings; no second clean invocation |
+| 08 Hardening/release | Fail-closed schema-v2 foundation verifier implemented; release phase incomplete | Commit-bound JSON evidence, wrapper-owned two-run policy, structured runtime-log policy, secret scans, positive network-capability ownership, and clean-tree/process checks | Static audit 383; security audit 2 high vendored-fixture findings; no second clean invocation |
 
 The independent audit's original static baseline remains **384 errors**. The
 current Task 6 audit reports **383 errors** after replacing the placeholder
@@ -34,6 +34,10 @@ The current evidence proves:
 - native controlled quit, forced supervisor loss, exact watcher topology,
   same-WAL relaunch, and complete owned-process cleanup;
 - native application unit tests 35/35; and
+- an exact authentication-failure detail record, not only a summary boolean;
+- rejection coverage for hostile readiness authorities, timestamp overflow,
+  forged/tampered promotion evidence, unbounded post-KILL cleanup, and eight
+  unreviewed network-capability families; and
 - no structured product-runtime Error/Fault or whole-word panic/crash/hang
   finding in the exact app-runtime PID/time window.
 
@@ -45,19 +49,28 @@ readiness, or production acceptance.
 The retained blockers are:
 
 - the upstream SwiftNIO `CNIOWindows` umbrella-header warning;
-- XCUITest exit 124 while macOS automation/Developer Mode is disabled, with an
-  incomplete result bundle classified as external;
+- XCUITest exit 65 with one failed UI test while macOS
+  automation/Developer Mode is disabled;
 - 383 current static-audit findings across later-phase scaffolds;
 - 2 high security-audit findings in exact vendored public test fixtures; and
 - the deliberately unattempted second full invocation, because the first was
   already blocked.
+
+The first post-fix wrapper attempt was discarded rather than treated as
+evidence after the native-unit path stalled before test-host execution against
+the stale recovered `testmanagerd` PID 4947. The bounded wrapper was stopped,
+its exact 946 MB temporary root was moved to Trash, and only that user-owned
+XCTest service was restarted. A focused rerun then produced an exact
+`Passed` 35/35 unit summary under the fresh service (PID 90968). The complete
+wrapper was rerun from unchanged commit `488adc5`; the machine evidence below
+comes only from that clean rerun.
 
 Operator procedure:
 `docs/implementation/FOUNDATION-RUNTIME-RUNBOOK.md`.
 
 Machine evidence:
 `release/evidence/foundation-runtime-verification.json` (SHA-256
-`3f0d795bec4913b6cdc7fdf5a08ac28e487e540ff3580445c3d6d09d92d84f31`).
+`24917ca8bed3025316643839639509bd87fb4e8c86df5bec2ba1f0fedc287660`).
 
 Candidate branch: `feat/andrzej_foundation_runtime`.
 
