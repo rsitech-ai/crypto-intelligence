@@ -1,0 +1,166 @@
+{
+  "schema_version": 1,
+  "generated_at_unix": 1785149378,
+  "repository": "s1korrrr/crypto-inteligence",
+  "branch": "implementation/full-system-v3",
+  "tools": {
+    "rustc": null,
+    "cargo": null,
+    "buf": null,
+    "protoc": null,
+    "swift": "/usr/local/swift/usr/bin/swift",
+    "git": "/usr/bin/git",
+    "zip": "/usr/bin/zip",
+    "unzip": "/usr/bin/unzip"
+  },
+  "commands": [
+    {
+      "name": "static_audit",
+      "status": "failed",
+      "required": true,
+      "exit_code": 1,
+      "duration_seconds": 3.089,
+      "command": [
+        "python3",
+        "scripts/static-audit.py"
+      ],
+      "output_tail": "Spreadsheet runtime warmup failed during python startup\nTraceback (most recent call last):\n  File \"/tmp/tmp.yTcnQsZYiA/artifact_tool_v2-2.8.4/artifact_tool/patches/warm_spreadsheet_runtime_on_startup.py\", line 26, in warm_spreadsheet_runtime_on_startup\n  File \"/tmp/tmp.yTcnQsZYiA/artifact_tool_v2-2.8.4/artifact_tool/spreadsheet_warmup.py\", line 785, in warm_spreadsheet_runtime\n  File \"/tmp/tmp.yTcnQsZYiA/artifact_tool_v2-2.8.4/artifact_tool/spreadsheet_warmup.py\", line 720, in _warm_feature_flows\n  File \"/tmp/tmp.yTcnQsZYiA/artifact_tool_v2-2.8.4/artifact_tool/spreadsheet_warmup.py\", line 704, in _warm_collaboration_flows\n  File \"/tmp/tmp.yTcnQsZYiA/artifact_tool_v2-2.8.4/artifact_tool/generated/interface/models.py\", line 30820, in hydrate_crdt_from_proto\n  File \"/tmp/tmp.yTcnQsZYiA/artifact_tool_v2-2.8.4/artifact_tool/rpc/remote.py\", line 749, in __call__\n  File \"/tmp/tmp.yTcnQsZYiA/artifact_tool_v2-2.8.4/artifact_tool/rpc/client.py\", line 150, in call\nartifact_tool.rpc.client.RemoteError: hydrateCrdtFromProto requires an empty collaborative document.\nerror: expected 5 protobuf files, found 7\nerror: secret-shaped content crates/observability/src/lib.rs\nerror: placeholder scripts/static-audit.py\nstatic audit failed with 3 error(s)\n"
+    },
+    {
+      "name": "security_audit",
+      "status": "failed",
+      "required": true,
+      "exit_code": 1,
+      "duration_seconds": 3.011,
+      "command": [
+        "python3",
+        "scripts/security-audit.py"
+      ],
+      "output_tail": "Spreadsheet runtime warmup failed during python startup\nTraceback (most recent call last):\n  File \"/tmp/tmp.yTcnQsZYiA/artifact_tool_v2-2.8.4/artifact_tool/patches/warm_spreadsheet_runtime_on_startup.py\", line 26, in warm_spreadsheet_runtime_on_startup\n  File \"/tmp/tmp.yTcnQsZYiA/artifact_tool_v2-2.8.4/artifact_tool/spreadsheet_warmup.py\", line 785, in warm_spreadsheet_runtime\n  File \"/tmp/tmp.yTcnQsZYiA/artifact_tool_v2-2.8.4/artifact_tool/spreadsheet_warmup.py\", line 720, in _warm_feature_flows\n  File \"/tmp/tmp.yTcnQsZYiA/artifact_tool_v2-2.8.4/artifact_tool/spreadsheet_warmup.py\", line 704, in _warm_collaboration_flows\n  File \"/tmp/tmp.yTcnQsZYiA/artifact_tool_v2-2.8.4/artifact_tool/generated/interface/models.py\", line 30820, in hydrate_crdt_from_proto\n  File \"/tmp/tmp.yTcnQsZYiA/artifact_tool_v2-2.8.4/artifact_tool/rpc/remote.py\", line 749, in __call__\n  File \"/tmp/tmp.yTcnQsZYiA/artifact_tool_v2-2.8.4/artifact_tool/rpc/client.py\", line 150, in call\nartifact_tool.rpc.client.RemoteError: hydrateCrdtFromProto requires an empty collaborative document.\n{\"critical\": 4, \"high\": 1, \"medium\": 0, \"low\": 0}\n"
+    },
+    {
+      "name": "swift_strict_tests",
+      "status": "failed",
+      "required": true,
+      "exit_code": 1,
+      "duration_seconds": 0.514,
+      "command": [
+        "swift",
+        "test",
+        "--package-path",
+        "apps/macos",
+        "-Xswiftc",
+        "-warnings-as-errors",
+        "-Xswiftc",
+        "-strict-concurrency=complete"
+      ],
+      "output_tail": "c nextForecastBatch()async throws->ForecastBatch?{guard selected != nil else{throw ContractError.protocolNotNegotiated};guard let batch=try await transport.nextForecastBatch(after:last) else{return nil};if let last,batch.sequence<=last{throw ContractError.sequenceRegression};last=batch.sequence;return batch}public func close()async{await transport.close()}}\n   |                                                                                                                                                                                                                                                                                                                                                                `- error: consecutive statements on a line must be separated by ';'\n16 | \n\n/mnt/data/crypto-inteligence-complete/apps/macos/PortableSources/TransitionClient/Contracts.swift:15:681: error: consecutive declarations on a line must be separated by ';'\n13 | public struct ForecastBatch:Hashable,Codable,Sendable{public let sequence:UInt64;public let forecasts:[TransitionForecast];public init(sequence:UInt64,forecasts:[TransitionForecast]){self.sequence=sequence;self.forecasts=forecasts}}\n14 | public protocol RPCTransport:Sendable{func negotiate(clientVersion:UInt32,clientNonce:Data)async throws->ProtocolInfo;func nextForecastBatch(after:UInt64?)async throws->ForecastBatch?;func close()async}\n15 | public actor TransitionRPCClient{private let transport:any RPCTransport;private var selected:UInt32?;private var last:UInt64?;public init(transport:any RPCTransport){self.transport=transport}public func negotiate(clientVersion:UInt32=1)async throws->ProtocolInfo{var nonce=Data(count:32);for i in nonce.indices{nonce[i]=UInt8.random(in:.min ... .max)}let info=try await transport.negotiate(clientVersion:clientVersion,clientNonce:nonce);guard info.minimumVersion<=info.selectedVersion,info.selectedVersion<=info.maximumVersion,info.selectedVersion==clientVersion,info.serverNonce.count==32 else{throw ContractError.protocolNotNegotiated};selected=info.selectedVersion;return info}public func nextForecastBatch()async throws->ForecastBatch?{guard selected != nil else{throw ContractError.protocolNotNegotiated};guard let batch=try await transport.nextForecastBatch(after:last) else{return nil};if let last,batch.sequence<=last{throw ContractError.sequenceRegression};last=batch.sequence;return batch}public func close()async{await transport.close()}}\n   |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         `- error: consecutive declarations on a line must be separated by ';'\n16 | \n\n/mnt/data/crypto-inteligence-complete/apps/macos/PortableSources/TransitionClient/Contracts.swift:15:1000: error: consecutive declarations on a line must be separated by ';'\n13 | public struct ForecastBatch:Hashable,Codable,Sendable{public let sequence:UInt64;public let forecasts:[TransitionForecast];public init(sequence:UInt64,forecasts:[TransitionForecast]){self.sequence=sequence;self.forecasts=forecasts}}\n14 | public protocol RPCTransport:Sendable{func negotiate(clientVersion:UInt32,clientNonce:Data)async throws->ProtocolInfo;func nextForecastBatch(after:UInt64?)async throws->ForecastBatch?;func close()async}\n15 | public actor TransitionRPCClient{private let transport:any RPCTransport;private var selected:UInt32?;private var last:UInt64?;public init(transport:any RPCTransport){self.transport=transport}public func negotiate(clientVersion:UInt32=1)async throws->ProtocolInfo{var nonce=Data(count:32);for i in nonce.indices{nonce[i]=UInt8.random(in:.min ... .max)}let info=try await transport.negotiate(clientVersion:clientVersion,clientNonce:nonce);guard info.minimumVersion<=info.selectedVersion,info.selectedVersion<=info.maximumVersion,info.selectedVersion==clientVersion,info.serverNonce.count==32 else{throw ContractError.protocolNotNegotiated};selected=info.selectedVersion;return info}public func nextForecastBatch()async throws->ForecastBatch?{guard selected != nil else{throw ContractError.protocolNotNegotiated};guard let batch=try await transport.nextForecastBatch(after:last) else{return nil};if let last,batch.sequence<=last{throw ContractError.sequenceRegression};last=batch.sequence;return batch}public func close()async{await transport.close()}}\n   |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        `- error: consecutive declarations on a line must be separated by ';'\n16 | \nerror: fatalError\n"
+    },
+    {
+      "name": "python_compileall",
+      "status": "passed",
+      "required": true,
+      "exit_code": 0,
+      "duration_seconds": 2.977,
+      "command": [
+        "python3",
+        "-m",
+        "compileall",
+        "-q",
+        "scripts"
+      ],
+      "output_tail": "Spreadsheet runtime warmup failed during python startup\nTraceback (most recent call last):\n  File \"/tmp/tmp.yTcnQsZYiA/artifact_tool_v2-2.8.4/artifact_tool/patches/warm_spreadsheet_runtime_on_startup.py\", line 26, in warm_spreadsheet_runtime_on_startup\n  File \"/tmp/tmp.yTcnQsZYiA/artifact_tool_v2-2.8.4/artifact_tool/spreadsheet_warmup.py\", line 785, in warm_spreadsheet_runtime\n  File \"/tmp/tmp.yTcnQsZYiA/artifact_tool_v2-2.8.4/artifact_tool/spreadsheet_warmup.py\", line 720, in _warm_feature_flows\n  File \"/tmp/tmp.yTcnQsZYiA/artifact_tool_v2-2.8.4/artifact_tool/spreadsheet_warmup.py\", line 704, in _warm_collaboration_flows\n  File \"/tmp/tmp.yTcnQsZYiA/artifact_tool_v2-2.8.4/artifact_tool/generated/interface/models.py\", line 30820, in hydrate_crdt_from_proto\n  File \"/tmp/tmp.yTcnQsZYiA/artifact_tool_v2-2.8.4/artifact_tool/rpc/remote.py\", line 749, in __call__\n  File \"/tmp/tmp.yTcnQsZYiA/artifact_tool_v2-2.8.4/artifact_tool/rpc/client.py\", line 150, in call\nartifact_tool.rpc.client.RemoteError: hydrateCrdtFromProto requires an empty collaborative document.\n"
+    },
+    {
+      "name": "shell_syntax",
+      "status": "passed",
+      "required": true,
+      "exit_code": 0,
+      "duration_seconds": 0.236,
+      "command": [
+        "bash",
+        "-lc",
+        "for f in scripts/*.sh; do bash -n \"$f\"; done"
+      ],
+      "output_tail": ""
+    },
+    {
+      "name": "git_diff_check",
+      "status": "passed",
+      "required": true,
+      "exit_code": 0,
+      "duration_seconds": 0.002,
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "output_tail": ""
+    },
+    {
+      "name": "cargo_generate_lockfile",
+      "status": "unavailable",
+      "required": true,
+      "reason": "Rust/Cargo unavailable"
+    },
+    {
+      "name": "cargo_fmt",
+      "status": "unavailable",
+      "required": true,
+      "reason": "Rust/Cargo unavailable"
+    },
+    {
+      "name": "cargo_check",
+      "status": "unavailable",
+      "required": true,
+      "reason": "Rust/Cargo unavailable"
+    },
+    {
+      "name": "cargo_clippy",
+      "status": "unavailable",
+      "required": true,
+      "reason": "Rust/Cargo unavailable"
+    },
+    {
+      "name": "cargo_test",
+      "status": "unavailable",
+      "required": true,
+      "reason": "Rust/Cargo unavailable"
+    },
+    {
+      "name": "cargo_deny",
+      "status": "unavailable",
+      "required": true,
+      "reason": "Rust/Cargo unavailable"
+    },
+    {
+      "name": "buf_lint",
+      "status": "unavailable",
+      "required": true,
+      "reason": "Buf unavailable"
+    }
+  ],
+  "inventory": {
+    "planned_paths": 662,
+    "missing": [],
+    "source_files": 711
+  },
+  "summary": {
+    "available_checks_passed": false,
+    "blocking_failures": [
+      "static_audit",
+      "security_audit",
+      "swift_strict_tests"
+    ],
+    "unavailable_release_gates": [
+      "cargo_generate_lockfile",
+      "cargo_fmt",
+      "cargo_check",
+      "cargo_clippy",
+      "cargo_test",
+      "cargo_deny",
+      "buf_lint"
+    ],
+    "stable_release_eligible": false
+  }
+}

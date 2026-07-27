@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "repository": "s1korrrr/crypto-inteligence",
+  "branch": "implementation/full-system-v3",
+  "source_status": "implemented",
+  "available_verification_status": "passed",
+  "stable_release_status": "blocked",
+  "planned_paths": 662,
+  "planned_missing": [],
+  "unavailable_release_gates": [
+    "cargo_generate_lockfile",
+    "cargo_fmt",
+    "cargo_check",
+    "cargo_clippy",
+    "cargo_test",
+    "cargo_deny",
+    "buf_lint"
+  ],
+  "security_counts": {
+    "critical": 4,
+    "high": 1,
+    "medium": 0,
+    "low": 0
+  }
+}

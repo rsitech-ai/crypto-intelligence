@@ -1,0 +1,7 @@
+syntax = "proto3";
+package cmti.common.v1;
+message FixedDecimal { bytes mantissa_twos_complement = 1; uint32 scale = 2; reserved 3 to 15; }
+message UnixNanos { sint64 value = 1; }
+message AssetId { string namespace = 1; string chain = 2; string address = 3; string symbol = 4; uint32 generation = 5; }
+enum DataQualityState { DATA_QUALITY_STATE_UNSPECIFIED = 0; DATA_QUALITY_STATE_HEALTHY = 1; DATA_QUALITY_STATE_DEGRADED = 2; DATA_QUALITY_STATE_UNTRUSTED = 3; DATA_QUALITY_STATE_UNAVAILABLE = 4; }
+message DataQualitySummary { DataQualityState state = 1; uint32 score_ppm = 2; repeated string reasons = 3; UnixNanos as_known_at = 4; }

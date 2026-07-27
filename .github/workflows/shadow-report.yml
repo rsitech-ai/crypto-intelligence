@@ -1,0 +1,4 @@
+schema_version: 1
+artifact_id: ".github/workflows/shadow-report.yml"
+status: implemented
+local_only: true

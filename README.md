@@ -1,31 +1,76 @@
-# Crypto Market Transition Intelligence — Approved Specification and Implementation Package
+# Crypto Intelligence
 
-This package contains the approved production specification and its implementation-ready work breakdown for the local-first Rust/Swift crypto market-transition observatory.
+A local-first Rust and native Swift system for estimating the probability,
+direction, mechanism, horizon, and severity of cryptocurrency market
+transitions.
 
-## Start here
+The project combines trusted multi-venue market data, deterministic replay,
+point-in-time features and event labels, stochastic and coupled cusp
+catastrophe models, calibrated competing-risk forecasts, options and on-chain
+evidence, explicit uncertainty and abstention, a native macOS workstation, and
+an isolated local model host.
 
-1. [`APPROVAL-RECORD.md`](docs/implementation/APPROVAL-RECORD.md)
-2. [`Approved specification`](crypto-market-transition-intelligence-production-spec-v1.0-approved.md)
-3. [`Master implementation roadmap`](docs/superpowers/plans/2026-07-24-transition-intelligence-master-plan.md)
-4. [`Plan index`](docs/implementation/PLAN-INDEX.md)
-5. [`Specification coverage`](docs/implementation/SPEC-COVERAGE.md)
-6. [`Task traceability`](docs/implementation/traceability.md)
-7. [`Plan self-review`](docs/implementation/PLAN-SELF-REVIEW.md)
+> Version 1 is research, monitoring, replay, scenario analysis, and alerting
+> software. It does not accept trading or withdrawal credentials, place orders,
+> mutate exchange accounts, or use hosted inference.
 
-## Execution order
+## Architecture
 
-Phase 00 freezes contracts and repository boundaries. Phase 01 establishes trusted market capture and replay. Phase 02 adds point-in-time features, labels, baselines, and model artifacts. Phase 03 implements the stochastic cusp engine. Phase 04 delivers coherent competing-risk probabilities, calibration, scenarios, evidence, and alerts. Phase 05 adds options, local blockchain data, attribution, stablecoin, and coupled-instability research. Phase 06 builds the native macOS product. Phase 07 isolates optional Apple model capabilities. Phase 08 completes hardening, continuous shadow validation, promotion governance, notarization, provenance, and stable release.
+```text
+public/read-only exchanges, nodes, macro and event sources
+                         │
+                  Rust collectors
+                         │
+             append-only WAL and replay
+                         │
+       exact books and point-in-time features
+                         │
+  cusp/regime/changepoint/competing-risk ensemble
+                         │
+        calibration, scenarios, evidence, alerts
+                         │
+       authenticated loopback gRPC contracts
+                         │
+        native SwiftUI macOS research client
+```
 
-## Frozen product boundaries
+Rust owns authoritative numerical state, probabilities, evidence, persistence,
+and audit. Swift owns presentation and Apple-platform integration. Local language
+models may extract structured events and draft evidence-grounded text; they
+cannot create or alter probabilities.
 
-- Local-first storage, training, inference, explanations, and audit.
-- Rust is the sole numerical authority for production probabilities.
-- SwiftUI is the native macOS client.
-- Forecasts are calibrated probabilities with uncertainty and abstention, never deterministic crash claims.
-- Stochastic cusp features are released only when they add stable out-of-sample value.
-- No order placement, trading credentials, withdrawals, or automated execution in v1.
-- No hosted inference or remote telemetry by default.
+## Repository status
 
-## Package integrity
+The source tree implements every Phase 00–08 path in the approved implementation
+plans. The portable Swift package is verified under Swift 6 complete concurrency
+checking with warnings denied. Rust, Buf, Xcode, Core AI, signing, notarization,
+long-running soak/recovery, connector certification, and sufficient live-shadow
+model evidence remain fail-closed release gates until run on their required
+platforms.
 
-The package-level `MANIFEST.sha256` lists every distributed content file other than the manifest itself. The approved specification SHA-256 is `893a7add81b9c3a6f529e87b3a41238a32d840e612748811dd0ae5aea02f66be`.
+See:
+
+- `crypto-market-transition-intelligence-production-spec-v1.0-approved.md`
+- `docs/superpowers/plans/2026-07-24-transition-intelligence-master-plan.md`
+- `docs/implementation/IMPLEMENTATION-GOAL.md`
+- `docs/implementation/FINAL-AUDIT.md`
+- `SECURITY.md`
+
+## Available verification
+
+```bash
+python3 scripts/static-audit.py
+python3 scripts/security-audit.py
+swift test --package-path apps/macos \
+  -Xswiftc -warnings-as-errors \
+  -Xswiftc -strict-concurrency=complete
+```
+
+On a pinned Rust/macOS release machine, also run the commands documented in
+`docs/implementation/VERIFICATION-DEBT.md`.
+
+## License
+
+Source code is available under MIT or Apache-2.0 at your option. Datasets,
+address labels, model weights, news corpora, and generated artifacts require
+their own provenance and license manifests.

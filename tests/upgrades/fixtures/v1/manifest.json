@@ -1,0 +1,6 @@
+{
+  "schema_version": 1,
+  "artifact_id": "tests/upgrades/fixtures/v1/manifest.json",
+  "status": "implemented",
+  "local_only": true
+}

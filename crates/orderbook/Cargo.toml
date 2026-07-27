@@ -1,0 +1,16 @@
+[package]
+name = "orderbook"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+event-envelope = { path = "../event-envelope" }
+fixed-decimal = { path = "../fixed-decimal" }
+serde.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true

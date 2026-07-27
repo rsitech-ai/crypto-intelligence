@@ -1,0 +1,4 @@
+schema_version: 1
+artifact_id: "proto/buf.yaml"
+status: implemented
+local_only: true

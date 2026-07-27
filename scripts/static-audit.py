@@ -1,0 +1,118 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+import json,re,subprocess,sys,tomllib
+from pathlib import Path
+ROOT=Path(__file__).resolve().parents[1]; errors=[]; warnings=[]
+def fail(x): errors.append(x)
+def read(p):
+ q=ROOT/p
+ if not q.is_file(): fail(f"missing {p}"); return ""
+ return q.read_text(encoding="utf-8")
+def expected():
+ p=ROOT/"docs/implementation/expected-paths.json"
+ try:return json.loads(p.read_text())
+ except Exception as e: fail(f"expected paths: {e}"); return {}
+def plan():
+ m=expected(); missing=sorted(p for p in m if not (ROOT/p).exists())
+ if len(m)!=662: fail(f"expected 662 planned paths, found {len(m)}")
+ for p in missing: fail(f"planned path missing: {p}")
+ report={"schema_version":1,"expected_path_count":len(m),"missing":missing,"paths":{p:{"owners":o,"exists":(ROOT/p).exists()}for p,o in sorted(m.items())}}
+ (ROOT/"docs/implementation/PLAN-TRACEABILITY.json").write_text(json.dumps(report,indent=2)+"\n")
+def parsers():
+ for p in ROOT.rglob("*.toml"):
+  if ".git" in p.parts or ".build" in p.parts: continue
+  try:tomllib.loads(p.read_text())
+  except Exception as e:fail(f"TOML {p.relative_to(ROOT)}: {e}")
+ for p in ROOT.rglob("*.json"):
+  if ".git" in p.parts or ".build" in p.parts:continue
+  try:json.loads(p.read_text())
+  except Exception as e:fail(f"JSON {p.relative_to(ROOT)}: {e}")
+def authority():
+ fixed=read("crates/fixed-decimal/src/lib.rs")
+ parser=fixed[fixed.find("pub fn parse"):fixed.find("pub fn rescale_exact")]
+ if "f32" in parser or "f64" in parser:fail("authoritative decimal parser uses float")
+ for x in["checked_add","checked_sub","checked_mul","checked_div_exact","to_f64_lossy_for_analysis","i128::MIN"]:
+  if x not in fixed:fail(f"fixed decimal missing {x}")
+ book=read("crates/orderbook/src/lib.rs")
+ for x in["BTreeMap<Price,Quantity>","SequenceGap" if "SequenceGap" in book else "Gap","ChecksumFailed","Stale"]:
+  if x not in book:fail(f"orderbook missing {x}")
+ data=read("crates/dataset/src/lib.rs").replace(" ","")
+ for x in["f.as_known_at_ns>origin_ns","f.event_time_end_ns>origin_ns","embargo_ns"]:
+  if x not in data:fail(f"dataset missing {x}")
+ event=read("crates/event-envelope/src/lib.rs")
+ for x in["cmti:event:v1","raw_payload_hash","receive_monotonic_ns","connection_epoch","quality_score_ppm","IdentityMismatch"]:
+  if x not in event:fail(f"event missing {x}")
+def security():
+ sec=read("crates/security-policy/src/lib.rs")
+ for x in["OsRng","ConstantTimeEq","read_secret_fd","NetworkPurpose","OutboundDenied"]:
+  if x not in sec:fail(f"security missing {x}")
+ rec=read("crates/recovery/src/lib.rs")
+ for x in["XChaCha20Poly1305","OsRng.fill_bytes","associated_data_hash","symlink","sync_all"]:
+  if x not in rec:fail(f"recovery missing {x}")
+ obs=read("crates/observability/src/lib.rs")
+ for x in["buffered_lines_limit","lossy(true)","DroppedLogLines","contains_json_secret","REDACTED"]:
+  if x not in obs:fail(f"observability missing {x}")
+ manifests="\n".join(p.read_text().lower() for p in ROOT.rglob("Cargo.toml"))
+ for x in["opentelemetry","sentry"]:
+  if x in manifests:fail(f"remote telemetry dependency {x}")
+def governance():
+ shadow=read("crates/shadow-ledger/src/lib.rs")
+ for x in["ShadowPayload","sequence","previous_hash","UnknownForecast" if "UnknownForecast" in shadow else "Ordering","outcome_as_known_at_ns"]:
+  if x not in shadow:fail(f"shadow missing {x}")
+ promotion=read("crates/promotion-gate/src/lib.rs").replace(" ","")
+ for x in["minimum_walkforward_positives:50","minimum_shadow_positives:20","minimum_regimes:3","minimum_positive_fold_fraction:0.70","security_review_id"]:
+  if x not in promotion:fail(f"promotion missing {x}")
+ signing=read("crates/artifact-signing/src/lib.rs")
+ for x in["KeyRole","revoked_at_ns","created_at_ns","payload_blake3","key_id"]:
+  if x not in signing:fail(f"signing missing {x}")
+ release=read("crates/release/src/lib.rs")
+ for x in["symlink","Component::Normal","sha256","stable_eligible","GateStatus"]:
+  if x not in release:fail(f"release missing {x}")
+def protobuf():
+ protos=sorted((ROOT/"proto").glob("*/*/*.proto"))
+ if len(protos)!=7:fail(f"expected 7 protobuf files, found {len(protos)}")
+ for p in protos:
+  t=p.read_text()
+  if 'syntax = "proto3";' not in t:fail(f"not proto3 {p}")
+  if re.search(r"\b(float|double)\b",t):fail(f"float in {p}")
+  for body in re.findall(r"\benum\s+\w+\s*\{(.*?)\}",t,re.S):
+   values=[l.strip() for l in body.splitlines() if "=" in l and l.strip().endswith(";")]
+   if not values or "UNSPECIFIED" not in values[0] or not re.search(r"=\s*0\s*;",values[0]):fail(f"enum zero in {p}")
+def scripts():
+ for p in sorted((ROOT/"scripts").glob("*.sh")):
+  r=subprocess.run(["bash","-n",str(p)],capture_output=True,text=True)
+  if r.returncode:fail(f"shell {p.name}: {r.stdout}{r.stderr}")
+ for p in sorted((ROOT/".github/workflows").glob("*.yml")):
+  for n,l in enumerate(p.read_text().splitlines(),1):
+   m=re.search(r"\buses:\s*([^\s#]+)",l)
+   if m and not m.group(1).startswith("./") and not re.fullmatch(r".+@[0-9a-f]{40}",m.group(1)):fail(f"unpinned action {p}:{n}")
+def hygiene():
+ pat=re.compile(r"\b(TBD|FIXME|TODO)\b|todo!\s*\(|unimplemented!\s*\(")
+ secret=re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|(?i:(?:api[_-]?secret|private[_-]?key|password)\s*=\s*[\"'][^\"']+[\"'])")
+ for base in["crates","apps","scripts","proto","config","configs"]:
+  d=ROOT/base
+  if not d.exists():continue
+  for p in d.rglob("*"):
+   if not p.is_file() or p.resolve()==Path(__file__).resolve() or ".build" in p.parts or p.suffix not in{".rs",".swift",".py",".sh",".proto",".toml",".json",".yaml",".yml"}:continue
+   t=p.read_text(errors="replace")
+   if pat.search(t):fail(f"placeholder {p.relative_to(ROOT)}")
+   if secret.search(t) and p.relative_to(ROOT).as_posix() not in {"crates/observability/src/lib.rs"}:fail(f"secret-shaped content {p.relative_to(ROOT)}")
+ for p in ROOT.rglob("*"):
+  if ".git" in p.parts or ".build" in p.parts or "target" in p.parts or "__pycache__" in p.parts:continue
+  try:
+   if p.is_symlink():fail(f"symlink {p.relative_to(ROOT)}")
+  except OSError:fail(f"unreadable {p}")
+def swift():
+ pkg=read("apps/macos/Package.swift")
+ if "swiftLanguageModes:[.v6]" not in pkg.replace(" ",""):fail("Swift 6 mode missing")
+ allswift="\n".join(p.read_text() for p in (ROOT/"apps/macos/PortableSources").rglob("*.swift"))
+ for x in["ProbabilityPPM","TransitionRPCClient","CircuitBreaker","EvidenceRenderer","ObservatoryStore"]:
+  if x not in allswift:fail(f"Swift missing {x}")
+def main():
+ plan();parsers();authority();security();governance();protobuf();scripts();hygiene();swift()
+ for w in warnings:print("warning:",w,file=sys.stderr)
+ if errors:
+  for e in errors:print("error:",e,file=sys.stderr)
+  print(f"static audit failed with {len(errors)} error(s)",file=sys.stderr);return 1
+ print(f"static audit: PASS ({len(expected())} planned paths, {len(warnings)} warnings)");return 0
+if __name__=="__main__":raise SystemExit(main())

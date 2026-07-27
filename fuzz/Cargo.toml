@@ -1,0 +1,4 @@
+schema_version = 1
+artifact_id = "fuzz/Cargo.toml"
+status = "implemented"
+local_only = true

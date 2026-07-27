@@ -1,0 +1,4032 @@
+{
+  "schema_version": 1,
+  "expected_path_count": 662,
+  "missing": [],
+  "paths": {
+    ".cargo/config.toml": {
+      "owners": [
+        "2026-07-24-phase-00-foundations-contracts.md:task-1:Bootstrap the pinned Rust workspace and developer command surface"
+      ],
+      "exists": true
+    },
+    ".github/workflows/ci.yml": {
+      "owners": [
+        "2026-07-24-phase-00-foundations-contracts.md:task-10:Create the contract CI pipeline and Phase 0 traceability gate"
+      ],
+      "exists": true
+    },
+    ".github/workflows/hardening.yml": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-4:Add deterministic concurrency, cancellation, and shutdown verification"
+      ],
+      "exists": true
+    },
+    ".github/workflows/nightly-fuzz.yml": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-3:Harden every network parser with shared limits and continuous fuzzing"
+      ],
+      "exists": true
+    },
+    ".github/workflows/nightly-soak.yml": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-10:Establish reference-load benchmarks, latency regression gates, profiling, and 24-hour soak testing"
+      ],
+      "exists": true
+    },
+    ".github/workflows/release.yml": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-14:Build signed macOS packaging plus fresh-install, upgrade, interruption, and rollback tests",
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-16:Produce SBOM, provenance, acceptance evidence, preview release, and stable release gate"
+      ],
+      "exists": true
+    },
+    ".github/workflows/shadow-report.yml": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-12:Generate drift, calibration, subgroup, alert-outcome, and offline/live consistency reports"
+      ],
+      "exists": true
+    },
+    "CODE_OF_CONDUCT.md": {
+      "owners": [
+        "2026-07-24-phase-00-foundations-contracts.md:task-2:Record licenses, governance, threat boundary, and foundational ADRs",
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-15:Publish operator, incident, vulnerability, contribution, and data-license governance"
+      ],
+      "exists": true
+    },
+    "CONTRIBUTING.md": {
+      "owners": [
+        "2026-07-24-phase-00-foundations-contracts.md:task-2:Record licenses, governance, threat boundary, and foundational ADRs",
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-15:Publish operator, incident, vulnerability, contribution, and data-license governance"
+      ],
+      "exists": true
+    },
+    "Cargo.toml": {
+      "owners": [
+        "2026-07-24-phase-00-foundations-contracts.md:task-1:Bootstrap the pinned Rust workspace and developer command surface",
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-9:Create signed model and release artifact tooling with offline key separation",
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-10:Establish reference-load benchmarks, latency regression gates, profiling, and 24-hour soak testing",
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-12:Generate drift, calibration, subgroup, alert-outcome, and offline/live consistency reports"
+      ],
+      "exists": true
+    },
+    "GOVERNANCE.md": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-15:Publish operator, incident, vulnerability, contribution, and data-license governance"
+      ],
+      "exists": true
+    },
+    "LICENSE-APACHE": {
+      "owners": [
+        "2026-07-24-phase-00-foundations-contracts.md:task-2:Record licenses, governance, threat boundary, and foundational ADRs",
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-15:Publish operator, incident, vulnerability, contribution, and data-license governance"
+      ],
+      "exists": true
+    },
+    "LICENSE-MIT": {
+      "owners": [
+        "2026-07-24-phase-00-foundations-contracts.md:task-2:Record licenses, governance, threat boundary, and foundational ADRs",
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-15:Publish operator, incident, vulnerability, contribution, and data-license governance"
+      ],
+      "exists": true
+    },
+    "SECURITY.md": {
+      "owners": [
+        "2026-07-24-phase-00-foundations-contracts.md:task-2:Record licenses, governance, threat boundary, and foundational ADRs",
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-15:Publish operator, incident, vulnerability, contribution, and data-license governance"
+      ],
+      "exists": true
+    },
+    "apps/connector-certify/Cargo.toml": {
+      "owners": [
+        "2026-07-24-phase-01-market-data-foundation.md:task-12:Deliver deterministic replay and the connector certification CLI"
+      ],
+      "exists": true
+    },
+    "apps/connector-certify/src/main.rs": {
+      "owners": [
+        "2026-07-24-phase-01-market-data-foundation.md:task-12:Deliver deterministic replay and the connector certification CLI"
+      ],
+      "exists": true
+    },
+    "apps/crypto-evaluate/Cargo.toml": {
+      "owners": [
+        "2026-07-24-phase-02-features-labels-baselines.md:task-15:Create calibration, signed model packages, registry states, and evaluation reports"
+      ],
+      "exists": true
+    },
+    "apps/crypto-evaluate/src/capacity.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-2:Implement the hardware-aware capacity planner and source admission controller"
+      ],
+      "exists": true
+    },
+    "apps/crypto-evaluate/src/cusp_report.rs": {
+      "owners": [
+        "2026-07-24-phase-03-stochastic-cusp.md:task-10:Expose cusp RPC data and automate the production-inclusion ablation gate"
+      ],
+      "exists": true
+    },
+    "apps/crypto-evaluate/src/main.rs": {
+      "owners": [
+        "2026-07-24-phase-02-features-labels-baselines.md:task-15:Create calibration, signed model packages, registry states, and evaluation reports",
+        "2026-07-24-phase-05-options-onchain-coupling.md:task-10:Integrate slow-source revisions, capacity isolation, evaluation, and Phase 5 gates",
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-2:Implement the hardware-aware capacity planner and source admission controller",
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-6:Complete WAL/checkpoint recovery, encrypted backup, restore, and disaster-recovery verification",
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-8:Enforce local security, privacy, audit-chain, and outbound-network policy"
+      ],
+      "exists": true
+    },
+    "apps/crypto-evaluate/src/recovery.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-6:Complete WAL/checkpoint recovery, encrypted backup, restore, and disaster-recovery verification"
+      ],
+      "exists": true
+    },
+    "apps/crypto-evaluate/src/security.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-8:Enforce local security, privacy, audit-chain, and outbound-network policy"
+      ],
+      "exists": true
+    },
+    "apps/crypto-replay/Cargo.toml": {
+      "owners": [
+        "2026-07-24-phase-01-market-data-foundation.md:task-12:Deliver deterministic replay and the connector certification CLI"
+      ],
+      "exists": true
+    },
+    "apps/crypto-replay/src/chaos.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-5:Build the fault-injection and chaos scenario runner"
+      ],
+      "exists": true
+    },
+    "apps/crypto-replay/src/main.rs": {
+      "owners": [
+        "2026-07-24-phase-01-market-data-foundation.md:task-12:Deliver deterministic replay and the connector certification CLI",
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-5:Build the fault-injection and chaos scenario runner"
+      ],
+      "exists": true
+    },
+    "apps/cryptoriskd/Cargo.toml": {
+      "owners": [
+        "2026-07-24-phase-00-foundations-contracts.md:task-9:Implement authenticated loopback session bootstrap and compatibility handshake"
+      ],
+      "exists": true
+    },
+    "apps/cryptoriskd/src/forecast_pipeline.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-11:Persist immutable live shadow forecasts and point-in-time outcome joins"
+      ],
+      "exists": true
+    },
+    "apps/cryptoriskd/src/main.rs": {
+      "owners": [
+        "2026-07-24-phase-00-foundations-contracts.md:task-9:Implement authenticated loopback session bootstrap and compatibility handshake",
+        "2026-07-24-phase-01-market-data-foundation.md:task-11:Supervise collectors with explicit backpressure, quality states, and admission control",
+        "2026-07-24-phase-04-risk-calibration-alerts.md:task-12:Wire the production risk pipeline and persist-evaluate-publish ordering",
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-1:Implement local observability, stable telemetry fields, log redaction, and SLO snapshots",
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-8:Enforce local security, privacy, audit-chain, and outbound-network policy"
+      ],
+      "exists": true
+    },
+    "apps/cryptoriskd/src/runtime_health.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-7:Implement disk, clock, sleep/wake, and network failure state machines"
+      ],
+      "exists": true
+    },
+    "apps/cryptoriskd/src/startup.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-6:Complete WAL/checkpoint recovery, encrypted backup, restore, and disaster-recovery verification"
+      ],
+      "exists": true
+    },
+    "apps/cryptoriskd/src/supervisor.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-4:Add deterministic concurrency, cancellation, and shutdown verification"
+      ],
+      "exists": true
+    },
+    "apps/load-generator/Cargo.toml": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-10:Establish reference-load benchmarks, latency regression gates, profiling, and 24-hour soak testing"
+      ],
+      "exists": true
+    },
+    "apps/load-generator/src/main.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-10:Establish reference-load benchmarks, latency regression gates, profiling, and 24-hour soak testing"
+      ],
+      "exists": true
+    },
+    "apps/load-generator/src/profile.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-10:Establish reference-load benchmarks, latency regression gates, profiling, and 24-hour soak testing"
+      ],
+      "exists": true
+    },
+    "apps/macos/CuspObservatory.xcodeproj": {
+      "owners": [
+        "2026-07-24-phase-06-macos-rpc-product.md:task-1:Create the Swift 6.3 macOS workspace, client package, design tokens, and strict-concurrency test target"
+      ],
+      "exists": true
+    },
+    "apps/macos/CuspObservatory.xcodeproj/project.pbxproj": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-14:Build signed macOS packaging plus fresh-install, upgrade, interruption, and rollback tests"
+      ],
+      "exists": true
+    },
+    "apps/macos/CuspObservatory/Accessibility/AccessibilitySummaries.swift": {
+      "owners": [
+        "2026-07-24-phase-06-macos-rpc-product.md:task-12:Complete accessibility, localization, reduced motion, large-data, and daemon-failure end-to-end QA"
+      ],
+      "exists": true
+    },
+    "apps/macos/CuspObservatory/App/AppEnvironment.swift": {
+      "owners": [
+        "2026-07-24-phase-06-macos-rpc-product.md:task-1:Create the Swift 6.3 macOS workspace, client package, design tokens, and strict-concurrency test target"
+      ],
+      "exists": true
+    },
+    "apps/macos/CuspObservatory/App/AppModel.swift": {
+      "owners": [
+        "2026-07-24-phase-06-macos-rpc-product.md:task-4:Create the observable app model, navigation, subscription coordinator, and stale-state policy"
+      ],
+      "exists": true
+    },
+    "apps/macos/CuspObservatory/App/CuspObservatoryApp.swift": {
+      "owners": [
+        "2026-07-24-phase-06-macos-rpc-product.md:task-1:Create the Swift 6.3 macOS workspace, client package, design tokens, and strict-concurrency test target"
+      ],
+      "exists": true
+    },
+    "apps/macos/CuspObservatory/App/NavigationRoute.swift": {
+      "owners": [
+        "2026-07-24-phase-06-macos-rpc-product.md:task-4:Create the observable app model, navigation, subscription coordinator, and stale-state policy"
+      ],
+      "exists": true
+    },
+    "apps/macos/CuspObservatory/App/StalenessPolicy.swift": {
+      "owners": [
+        "2026-07-24-phase-06-macos-rpc-product.md:task-4:Create the observable app model, navigation, subscription coordinator, and stale-state policy"
+      ],
+      "exists": true
+    },
+    "apps/macos/CuspObservatory/App/SubscriptionCoordinator.swift": {
+      "owners": [
+        "2026-07-24-phase-06-macos-rpc-product.md:task-4:Create the observable app model, navigation, subscription coordinator, and stale-state policy"
+      ],
+      "exists": true
+    },
+    "apps/macos/CuspObservatory/CuspObservatory.entitlements": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-14:Build signed macOS packaging plus fresh-install, upgrade, interruption, and rollback tests"
+      ],
+      "exists": true
+    },
+    "apps/macos/CuspObservatory/Daemon/ContinuousModeController.swift": {
+      "owners": [
+        "2026-07-24-phase-06-macos-rpc-product.md:task-3:Implement daemon launch, inherited-descriptor session bootstrap, supervision, and user-controlled continuous mode"
+      ],
+      "exists": true
+    },
+    "apps/macos/CuspObservatory/Daemon/DaemonState.swift": {
+      "owners": [
+        "2026-07-24-phase-06-macos-rpc-product.md:task-3:Implement daemon launch, inherited-descriptor session bootstrap, supervision, and user-controlled continuous mode"
+      ],
+      "exists": true
+    },
+    "apps/macos/CuspObservatory/Daemon/DaemonSupervisor.swift": {
+      "owners": [
+        "2026-07-24-phase-06-macos-rpc-product.md:task-3:Implement daemon launch, inherited-descriptor session bootstrap, supervision, and user-controlled continuous mode",
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-8:Enforce local security, privacy, audit-chain, and outbound-network policy"
+      ],
+      "exists": true
+    },
+    "apps/macos/CuspObservatory/Daemon/SessionBootstrap.swift": {
+      "owners": [
+        "2026-07-24-phase-06-macos-rpc-product.md:task-3:Implement daemon launch, inherited-descriptor session bootstrap, supervision, and user-controlled continuous mode"
+      ],
+      "exists": true
+    },
+    "apps/macos/CuspObservatory/Design/DesignTokens.swift": {
+      "owners": [
+        "2026-07-24-phase-06-macos-rpc-product.md:task-1:Create the Swift 6.3 macOS workspace, client package, design tokens, and strict-concurrency test target"
+      ],
+      "exists": true
+    },
+    "apps/macos/CuspObservatory/Export/ExportCoordinator.swift": {
+      "owners": [
+        "2026-07-24-phase-06-macos-rpc-product.md:task-11:Build Model Lab, Data Health, Settings, network activity, and local export"
+      ],
+      "exists": true
+    },
+    "apps/macos/CuspObservatory/Features/Alerts/AlertRuleEditor.swift": {
+      "owners": [
+        "2026-07-24-phase-06-macos-rpc-product.md:task-9:Build alert rule editing, lifecycle history, acknowledgment, and local notification routing"
+      ],
+      "exists": true
+    },
+    "apps/macos/CuspObservatory/Features/Alerts/AlertsModel.swift": {
+      "owners": [
+        "2026-07-24-phase-06-macos-rpc-product.md:task-9:Build alert rule editing, lifecycle history, acknowledgment, and local notification routing"
+      ],
+      "exists": true
+    },
+    "apps/macos/CuspObservatory/Features/Alerts/AlertsView.swift": {
+      "owners": [
+        "2026-07-24-phase-06-macos-rpc-product.md:task-9:Build alert rule editing, lifecycle history, acknowledgment, and local notification routing"
+      ],
+      "exists": true
+    },
+    "apps/macos/CuspObservatory/Features/Asset/AssetDetailModel.swift": {
+      "owners": [
+        "2026-07-24-phase-06-macos-rpc-product.md:task-6:Build Asset Detail, forecast curves, evidence, and scenario views"
+      ],
+      "exists": true
+    },
+    "apps/macos/CuspObservatory/Features/Asset/AssetDetailView.swift": {
+      "owners": [
+        "2026-07-24-phase-06-macos-rpc-product.md:task-6:Build Asset Detail, forecast curves, evidence, and scenario views"
+      ],
+      "exists": true
+    },
+    "apps/macos/CuspObservatory/Features/Asset/EvidencePanel.swift": {
+      "owners": [
+        "2026-07-24-phase-06-macos-rpc-product.md:task-6:Build Asset Detail, forecast curves, evidence, and scenario views"
+      ],
+      "exists": true
+    },
+    "apps/macos/CuspObservatory/Features/Asset/ForecastCurveChart.swift": {
+      "owners": [
+        "2026-07-24-phase-06-macos-rpc-product.md:task-6:Build Asset Detail, forecast curves, evidence, and scenario views"
+      ],
+      "exists": true
+    },
+    "apps/macos/CuspObservatory/Features/Asset/ScenarioFanChart.swift": {
+      "owners": [
+        "2026-07-24-phase-06-macos-rpc-product.md:task-6:Build Asset Detail, forecast curves, evidence, and scenario views"
+      ],
+      "exists": true
+    },
+    "apps/macos/CuspObservatory/Features/Contagion/ContagionGraphView.swift": {
+      "owners": [
+        "2026-07-24-phase-06-macos-rpc-product.md:task-8:Build the Contagion workspace with source uncertainty and stablecoin state"
+      ],
+      "exists": true
+    },
+    "apps/macos/CuspObservatory/Features/Contagion/ContagionModel.swift": {
+      "owners": [
+        "2026-07-24-phase-06-macos-rpc-product.md:task-8:Build the Contagion workspace with source uncertainty and stablecoin state"
+      ],
+      "exists": true
+    },
+    "apps/macos/CuspObservatory/Features/Contagion/ContagionView.swift": {
+      "owners": [
+        "2026-07-24-phase-06-macos-rpc-product.md:task-8:Build the Contagion workspace with source uncertainty and stablecoin state"
+      ],
+      "exists": true
+    },
+    "apps/macos/CuspObservatory/Features/Cusp/CuspControlPlaneChart.swift": {
+      "owners": [
+        "2026-07-24-phase-06-macos-rpc-product.md:task-7:Build Cusp & Regime and Liquidity & Leverage analytical workspaces"
+      ],
+      "exists": true
+    },
+    "apps/macos/CuspObservatory/Features/Cusp/CuspRegimeModel.swift": {
+      "owners": [
+        "2026-07-24-phase-06-macos-rpc-product.md:task-7:Build Cusp & Regime and Liquidity & Leverage analytical workspaces"
+      ],
+      "exists": true
+    },
+    "apps/macos/CuspObservatory/Features/Cusp/CuspRegimeView.swift": {
+      "owners": [
+        "2026-07-24-phase-06-macos-rpc-product.md:task-7:Build Cusp & Regime and Liquidity & Leverage analytical workspaces"
+      ],
+      "exists": true
+    },
+    "apps/macos/CuspObservatory/Features/Health/DataHealthView.swift": {
+      "owners": [
+        "2026-07-24-phase-06-macos-rpc-product.md:task-11:Build Model Lab, Data Health, Settings, network activity, and local export"
+      ],
+      "exists": true
+    },
+    "apps/macos/CuspObservatory/Features/Liquidity/LiquidityLeverageModel.swift": {
+      "owners": [
+        "2026-07-24-phase-06-macos-rpc-product.md:task-7:Build Cusp & Regime and Liquidity & Leverage analytical workspaces"
+      ],
+      "exists": true
+    },
+    "apps/macos/CuspObservatory/Features/Liquidity/LiquidityLeverageView.swift": {
+      "owners": [
+        "2026-07-24-phase-06-macos-rpc-product.md:task-7:Build Cusp & Regime and Liquidity & Leverage analytical workspaces"
+      ],
+      "exists": true
+    },
+    "apps/macos/CuspObservatory/Features/ModelLab/ModelLabView.swift": {
+      "owners": [
+        "2026-07-24-phase-06-macos-rpc-product.md:task-11:Build Model Lab, Data Health, Settings, network activity, and local export"
+      ],
+      "exists": true
+    },
+    "apps/macos/CuspObservatory/Features/Overview/AssetRiskRow.swift": {
+      "owners": [
+        "2026-07-24-phase-06-macos-rpc-product.md:task-5:Build the Market Overview screener and probability/quality heatmap"
+      ],
+      "exists": true
+    },
+    "apps/macos/CuspObservatory/Features/Overview/MarketOverviewModel.swift": {
+      "owners": [
+        "2026-07-24-phase-06-macos-rpc-product.md:task-5:Build the Market Overview screener and probability/quality heatmap"
+      ],
+      "exists": true
+    },
+    "apps/macos/CuspObservatory/Features/Overview/MarketOverviewView.swift": {
+      "owners": [
+        "2026-07-24-phase-06-macos-rpc-product.md:task-5:Build the Market Overview screener and probability/quality heatmap"
+      ],
+      "exists": true
+    },
+    "apps/macos/CuspObservatory/Features/Replay/ReplayModel.swift": {
+      "owners": [
+        "2026-07-24-phase-06-macos-rpc-product.md:task-10:Build deterministic replay controls and isolated replay workspace"
+      ],
+      "exists": true
+    },
+    "apps/macos/CuspObservatory/Features/Replay/ReplayTimeline.swift": {
+      "owners": [
+        "2026-07-24-phase-06-macos-rpc-product.md:task-10:Build deterministic replay controls and isolated replay workspace"
+      ],
+      "exists": true
+    },
+    "apps/macos/CuspObservatory/Features/Replay/ReplayView.swift": {
+      "owners": [
+        "2026-07-24-phase-06-macos-rpc-product.md:task-10:Build deterministic replay controls and isolated replay workspace"
+      ],
+      "exists": true
+    },
+    "apps/macos/CuspObservatory/Features/Settings/LocalModelsSettingsView.swift": {
+      "owners": [
+        "2026-07-24-phase-07-local-apple-models.md:task-8:Integrate model-host capabilities into the daemon/app with fallback, budgets, parity, and failure isolation"
+      ],
+      "exists": true
+    },
+    "apps/macos/CuspObservatory/Features/Settings/NetworkActivityView.swift": {
+      "owners": [
+        "2026-07-24-phase-06-macos-rpc-product.md:task-11:Build Model Lab, Data Health, Settings, network activity, and local export"
+      ],
+      "exists": true
+    },
+    "apps/macos/CuspObservatory/Features/Settings/SettingsView.swift": {
+      "owners": [
+        "2026-07-24-phase-06-macos-rpc-product.md:task-11:Build Model Lab, Data Health, Settings, network activity, and local export"
+      ],
+      "exists": true
+    },
+    "apps/macos/CuspObservatory/Notifications/NotificationRouter.swift": {
+      "owners": [
+        "2026-07-24-phase-06-macos-rpc-product.md:task-9:Build alert rule editing, lifecycle history, acknowledgment, and local notification routing"
+      ],
+      "exists": true
+    },
+    "apps/macos/CuspObservatory/Resources/Localizable.xcstrings": {
+      "owners": [
+        "2026-07-24-phase-06-macos-rpc-product.md:task-12:Complete accessibility, localization, reduced motion, large-data, and daemon-failure end-to-end QA"
+      ],
+      "exists": true
+    },
+    "apps/macos/CuspObservatoryTests/AlertsModelTests.swift": {
+      "owners": [
+        "2026-07-24-phase-06-macos-rpc-product.md:task-9:Build alert rule editing, lifecycle history, acknowledgment, and local notification routing"
+      ],
+      "exists": true
+    },
+    "apps/macos/CuspObservatoryTests/AppModelTests.swift": {
+      "owners": [
+        "2026-07-24-phase-06-macos-rpc-product.md:task-4:Create the observable app model, navigation, subscription coordinator, and stale-state policy"
+      ],
+      "exists": true
+    },
+    "apps/macos/CuspObservatoryTests/AssetDetailModelTests.swift": {
+      "owners": [
+        "2026-07-24-phase-06-macos-rpc-product.md:task-6:Build Asset Detail, forecast curves, evidence, and scenario views"
+      ],
+      "exists": true
+    },
+    "apps/macos/CuspObservatoryTests/ContagionModelTests.swift": {
+      "owners": [
+        "2026-07-24-phase-06-macos-rpc-product.md:task-8:Build the Contagion workspace with source uncertainty and stablecoin state"
+      ],
+      "exists": true
+    },
+    "apps/macos/CuspObservatoryTests/DaemonSupervisorTests.swift": {
+      "owners": [
+        "2026-07-24-phase-06-macos-rpc-product.md:task-3:Implement daemon launch, inherited-descriptor session bootstrap, supervision, and user-controlled continuous mode"
+      ],
+      "exists": true
+    },
+    "apps/macos/CuspObservatoryTests/LocalizationTests.swift": {
+      "owners": [
+        "2026-07-24-phase-06-macos-rpc-product.md:task-12:Complete accessibility, localization, reduced motion, large-data, and daemon-failure end-to-end QA"
+      ],
+      "exists": true
+    },
+    "apps/macos/CuspObservatoryTests/MarketOverviewModelTests.swift": {
+      "owners": [
+        "2026-07-24-phase-06-macos-rpc-product.md:task-5:Build the Market Overview screener and probability/quality heatmap"
+      ],
+      "exists": true
+    },
+    "apps/macos/CuspObservatoryTests/OperationsViewsTests.swift": {
+      "owners": [
+        "2026-07-24-phase-06-macos-rpc-product.md:task-11:Build Model Lab, Data Health, Settings, network activity, and local export"
+      ],
+      "exists": true
+    },
+    "apps/macos/CuspObservatoryTests/ReplayModelTests.swift": {
+      "owners": [
+        "2026-07-24-phase-06-macos-rpc-product.md:task-10:Build deterministic replay controls and isolated replay workspace"
+      ],
+      "exists": true
+    },
+    "apps/macos/CuspObservatoryTests/StructuralViewsTests.swift": {
+      "owners": [
+        "2026-07-24-phase-06-macos-rpc-product.md:task-7:Build Cusp & Regime and Liquidity & Leverage analytical workspaces"
+      ],
+      "exists": true
+    },
+    "apps/macos/CuspObservatoryUITests/AccessibilityUITests.swift": {
+      "owners": [
+        "2026-07-24-phase-06-macos-rpc-product.md:task-12:Complete accessibility, localization, reduced motion, large-data, and daemon-failure end-to-end QA"
+      ],
+      "exists": true
+    },
+    "apps/macos/CuspObservatoryUITests/FailureStateUITests.swift": {
+      "owners": [
+        "2026-07-24-phase-06-macos-rpc-product.md:task-12:Complete accessibility, localization, reduced motion, large-data, and daemon-failure end-to-end QA"
+      ],
+      "exists": true
+    },
+    "apps/macos/CuspObservatoryUITests/MarketOverviewUITests.swift": {
+      "owners": [
+        "2026-07-24-phase-06-macos-rpc-product.md:task-5:Build the Market Overview screener and probability/quality heatmap"
+      ],
+      "exists": true
+    },
+    "apps/macos/GeneratedProto": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-1:Implement local observability, stable telemetry fields, log redaction, and SLO snapshots",
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-2:Implement the hardware-aware capacity planner and source admission controller",
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-7:Implement disk, clock, sleep/wake, and network failure state machines"
+      ],
+      "exists": true
+    },
+    "apps/macos/Packages/LocalModelHost/Package.swift": {
+      "owners": [
+        "2026-07-24-phase-07-local-apple-models.md:task-1:Define the capability-based LocalModelHost contracts and deterministic fallback"
+      ],
+      "exists": true
+    },
+    "apps/macos/Packages/LocalModelHost/Sources/LocalModelHost/Audit/ModelHostAudit.swift": {
+      "owners": [
+        "2026-07-24-phase-07-local-apple-models.md:task-7:Version prompts, OS/model state, golden cases, and prompt-injection regression gates"
+      ],
+      "exists": true
+    },
+    "apps/macos/Packages/LocalModelHost/Sources/LocalModelHost/Audit/PromptTemplate.swift": {
+      "owners": [
+        "2026-07-24-phase-07-local-apple-models.md:task-7:Version prompts, OS/model state, golden cases, and prompt-injection regression gates"
+      ],
+      "exists": true
+    },
+    "apps/macos/Packages/LocalModelHost/Sources/LocalModelHost/Capabilities.swift": {
+      "owners": [
+        "2026-07-24-phase-07-local-apple-models.md:task-1:Define the capability-based LocalModelHost contracts and deterministic fallback"
+      ],
+      "exists": true
+    },
+    "apps/macos/Packages/LocalModelHost/Sources/LocalModelHost/CoreAI/CoreAIAvailability.swift": {
+      "owners": [
+        "2026-07-24-phase-07-local-apple-models.md:task-4:Implement capability-gated Core AI temporal inference with Core ML/reference fallback"
+      ],
+      "exists": true
+    },
+    "apps/macos/Packages/LocalModelHost/Sources/LocalModelHost/CoreAI/CoreAIModelHost.swift": {
+      "owners": [
+        "2026-07-24-phase-07-local-apple-models.md:task-4:Implement capability-gated Core AI temporal inference with Core ML/reference fallback"
+      ],
+      "exists": true
+    },
+    "apps/macos/Packages/LocalModelHost/Sources/LocalModelHost/CoreML/CoreMLArtifact.swift": {
+      "owners": [
+        "2026-07-24-phase-07-local-apple-models.md:task-3:Implement signed Core ML temporal-model loading, batching, state, and parity checks"
+      ],
+      "exists": true
+    },
+    "apps/macos/Packages/LocalModelHost/Sources/LocalModelHost/CoreML/CoreMLModelHost.swift": {
+      "owners": [
+        "2026-07-24-phase-07-local-apple-models.md:task-3:Implement signed Core ML temporal-model loading, batching, state, and parity checks"
+      ],
+      "exists": true
+    },
+    "apps/macos/Packages/LocalModelHost/Sources/LocalModelHost/CoreML/CoreMLTensor.swift": {
+      "owners": [
+        "2026-07-24-phase-07-local-apple-models.md:task-3:Implement signed Core ML temporal-model loading, batching, state, and parity checks"
+      ],
+      "exists": true
+    },
+    "apps/macos/Packages/LocalModelHost/Sources/LocalModelHost/Explanation/DeterministicTemplates.swift": {
+      "owners": [
+        "2026-07-24-phase-07-local-apple-models.md:task-6:Implement evidence-only explanation drafting and deterministic numeric insertion"
+      ],
+      "exists": true
+    },
+    "apps/macos/Packages/LocalModelHost/Sources/LocalModelHost/Explanation/ExplanationValidator.swift": {
+      "owners": [
+        "2026-07-24-phase-07-local-apple-models.md:task-6:Implement evidence-only explanation drafting and deterministic numeric insertion"
+      ],
+      "exists": true
+    },
+    "apps/macos/Packages/LocalModelHost/Sources/LocalModelHost/Explanation/NumericRenderer.swift": {
+      "owners": [
+        "2026-07-24-phase-07-local-apple-models.md:task-6:Implement evidence-only explanation drafting and deterministic numeric insertion"
+      ],
+      "exists": true
+    },
+    "apps/macos/Packages/LocalModelHost/Sources/LocalModelHost/Foundation/EventExtractionHost.swift": {
+      "owners": [
+        "2026-07-24-phase-07-local-apple-models.md:task-5:Implement schema-constrained Foundation Models event extraction"
+      ],
+      "exists": true
+    },
+    "apps/macos/Packages/LocalModelHost/Sources/LocalModelHost/Foundation/ExplanationHost.swift": {
+      "owners": [
+        "2026-07-24-phase-07-local-apple-models.md:task-6:Implement evidence-only explanation drafting and deterministic numeric insertion"
+      ],
+      "exists": true
+    },
+    "apps/macos/Packages/LocalModelHost/Sources/LocalModelHost/Foundation/SourceSanitizer.swift": {
+      "owners": [
+        "2026-07-24-phase-07-local-apple-models.md:task-5:Implement schema-constrained Foundation Models event extraction"
+      ],
+      "exists": true
+    },
+    "apps/macos/Packages/LocalModelHost/Sources/LocalModelHost/Foundation/StructuredEventSchema.swift": {
+      "owners": [
+        "2026-07-24-phase-07-local-apple-models.md:task-5:Implement schema-constrained Foundation Models event extraction"
+      ],
+      "exists": true
+    },
+    "apps/macos/Packages/LocalModelHost/Sources/LocalModelHost/LocalModelHost.swift": {
+      "owners": [
+        "2026-07-24-phase-07-local-apple-models.md:task-1:Define the capability-based LocalModelHost contracts and deterministic fallback"
+      ],
+      "exists": true
+    },
+    "apps/macos/Packages/LocalModelHost/Sources/LocalModelHost/NoLanguageModelHost.swift": {
+      "owners": [
+        "2026-07-24-phase-07-local-apple-models.md:task-1:Define the capability-based LocalModelHost contracts and deterministic fallback"
+      ],
+      "exists": true
+    },
+    "apps/macos/Packages/LocalModelHost/Tests/LocalModelHostTests/CapabilityTests.swift": {
+      "owners": [
+        "2026-07-24-phase-07-local-apple-models.md:task-1:Define the capability-based LocalModelHost contracts and deterministic fallback"
+      ],
+      "exists": true
+    },
+    "apps/macos/Packages/LocalModelHost/Tests/LocalModelHostTests/CoreAIModelHostTests.swift": {
+      "owners": [
+        "2026-07-24-phase-07-local-apple-models.md:task-4:Implement capability-gated Core AI temporal inference with Core ML/reference fallback"
+      ],
+      "exists": true
+    },
+    "apps/macos/Packages/LocalModelHost/Tests/LocalModelHostTests/CoreMLModelHostTests.swift": {
+      "owners": [
+        "2026-07-24-phase-07-local-apple-models.md:task-3:Implement signed Core ML temporal-model loading, batching, state, and parity checks"
+      ],
+      "exists": true
+    },
+    "apps/macos/Packages/LocalModelHost/Tests/LocalModelHostTests/EventExtractionTests.swift": {
+      "owners": [
+        "2026-07-24-phase-07-local-apple-models.md:task-5:Implement schema-constrained Foundation Models event extraction"
+      ],
+      "exists": true
+    },
+    "apps/macos/Packages/LocalModelHost/Tests/LocalModelHostTests/ExplanationTests.swift": {
+      "owners": [
+        "2026-07-24-phase-07-local-apple-models.md:task-6:Implement evidence-only explanation drafting and deterministic numeric insertion"
+      ],
+      "exists": true
+    },
+    "apps/macos/Packages/LocalModelHost/Tests/LocalModelHostTests/GoldenPromptTests.swift": {
+      "owners": [
+        "2026-07-24-phase-07-local-apple-models.md:task-7:Version prompts, OS/model state, golden cases, and prompt-injection regression gates"
+      ],
+      "exists": true
+    },
+    "apps/macos/Packages/TransitionClient/Package.swift": {
+      "owners": [
+        "2026-07-24-phase-06-macos-rpc-product.md:task-1:Create the Swift 6.3 macOS workspace, client package, design tokens, and strict-concurrency test target"
+      ],
+      "exists": true
+    },
+    "apps/macos/Packages/TransitionClient/Sources/TransitionClient/Domain/Capacity.swift": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-2:Implement the hardware-aware capacity planner and source admission controller"
+      ],
+      "exists": true
+    },
+    "apps/macos/Packages/TransitionClient/Sources/TransitionClient/RPC/Compatibility.swift": {
+      "owners": [
+        "2026-07-24-phase-06-macos-rpc-product.md:task-2:Generate Swift protobufs and implement the actor-isolated gRPC transport"
+      ],
+      "exists": true
+    },
+    "apps/macos/Packages/TransitionClient/Sources/TransitionClient/RPC/GRPCTransport.swift": {
+      "owners": [
+        "2026-07-24-phase-06-macos-rpc-product.md:task-2:Generate Swift protobufs and implement the actor-isolated gRPC transport"
+      ],
+      "exists": true
+    },
+    "apps/macos/Packages/TransitionClient/Sources/TransitionClient/RPC/RPCTransport.swift": {
+      "owners": [
+        "2026-07-24-phase-06-macos-rpc-product.md:task-2:Generate Swift protobufs and implement the actor-isolated gRPC transport"
+      ],
+      "exists": true
+    },
+    "apps/macos/Packages/TransitionClient/Sources/TransitionClient/TransitionClient.swift": {
+      "owners": [
+        "2026-07-24-phase-06-macos-rpc-product.md:task-1:Create the Swift 6.3 macOS workspace, client package, design tokens, and strict-concurrency test target"
+      ],
+      "exists": true
+    },
+    "apps/macos/Packages/TransitionClient/Tests/TransitionClientTests/PackageContractTests.swift": {
+      "owners": [
+        "2026-07-24-phase-06-macos-rpc-product.md:task-1:Create the Swift 6.3 macOS workspace, client package, design tokens, and strict-concurrency test target"
+      ],
+      "exists": true
+    },
+    "apps/macos/Packages/TransitionClient/Tests/TransitionClientTests/RPCTransportTests.swift": {
+      "owners": [
+        "2026-07-24-phase-06-macos-rpc-product.md:task-2:Generate Swift protobufs and implement the actor-isolated gRPC transport"
+      ],
+      "exists": true
+    },
+    "apps/macos/Resources/cryptoriskd.entitlements": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-14:Build signed macOS packaging plus fresh-install, upgrade, interruption, and rollback tests"
+      ],
+      "exists": true
+    },
+    "apps/macos/TransitionModelHost/HostSessionBootstrap.swift": {
+      "owners": [
+        "2026-07-24-phase-07-local-apple-models.md:task-2:Create the isolated Swift model-host process and authenticated ModelHostService bridge"
+      ],
+      "exists": true
+    },
+    "apps/macos/TransitionModelHost/ModelHostServer.swift": {
+      "owners": [
+        "2026-07-24-phase-07-local-apple-models.md:task-2:Create the isolated Swift model-host process and authenticated ModelHostService bridge"
+      ],
+      "exists": true
+    },
+    "apps/macos/TransitionModelHost/TransitionModelHost.entitlements": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-14:Build signed macOS packaging plus fresh-install, upgrade, interruption, and rollback tests"
+      ],
+      "exists": true
+    },
+    "apps/macos/TransitionModelHost/TransitionModelHostMain.swift": {
+      "owners": [
+        "2026-07-24-phase-07-local-apple-models.md:task-2:Create the isolated Swift model-host process and authenticated ModelHostService bridge"
+      ],
+      "exists": true
+    },
+    "apps/macos/TransitionModelHostTests/ModelHostServerTests.swift": {
+      "owners": [
+        "2026-07-24-phase-07-local-apple-models.md:task-2:Create the isolated Swift model-host process and authenticated ModelHostService bridge"
+      ],
+      "exists": true
+    },
+    "apps/release-cli/Cargo.toml": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-9:Create signed model and release artifact tooling with offline key separation"
+      ],
+      "exists": true
+    },
+    "apps/release-cli/src/acceptance.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-16:Produce SBOM, provenance, acceptance evidence, preview release, and stable release gate"
+      ],
+      "exists": true
+    },
+    "apps/release-cli/src/main.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-9:Create signed model and release artifact tooling with offline key separation",
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-13:Automate evidence-based model promotion with independent approval and revocation",
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-16:Produce SBOM, provenance, acceptance evidence, preview release, and stable release gate"
+      ],
+      "exists": true
+    },
+    "apps/release-cli/src/manifest.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-16:Produce SBOM, provenance, acceptance evidence, preview release, and stable release gate"
+      ],
+      "exists": true
+    },
+    "apps/release-cli/src/promote.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-13:Automate evidence-based model promotion with independent approval and revocation"
+      ],
+      "exists": true
+    },
+    "apps/release-cli/src/sign.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-9:Create signed model and release artifact tooling with offline key separation"
+      ],
+      "exists": true
+    },
+    "apps/shadow-reporter/Cargo.toml": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-12:Generate drift, calibration, subgroup, alert-outcome, and offline/live consistency reports"
+      ],
+      "exists": true
+    },
+    "apps/shadow-reporter/src/main.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-12:Generate drift, calibration, subgroup, alert-outcome, and offline/live consistency reports"
+      ],
+      "exists": true
+    },
+    "configs/default.toml": {
+      "owners": [
+        "2026-07-24-phase-00-foundations-contracts.md:task-7:Implement layered configuration with generated JSON Schema and safe validation"
+      ],
+      "exists": true
+    },
+    "configs/schema.json": {
+      "owners": [
+        "2026-07-24-phase-00-foundations-contracts.md:task-7:Implement layered configuration with generated JSON Schema and safe validation"
+      ],
+      "exists": true
+    },
+    "crates/alerts/Cargo.toml": {
+      "owners": [
+        "2026-07-24-phase-04-risk-calibration-alerts.md:task-10:Implement a safe typed alert-rule language and validator"
+      ],
+      "exists": true
+    },
+    "crates/alerts/src/ast.rs": {
+      "owners": [
+        "2026-07-24-phase-04-risk-calibration-alerts.md:task-10:Implement a safe typed alert-rule language and validator"
+      ],
+      "exists": true
+    },
+    "crates/alerts/src/budget.rs": {
+      "owners": [
+        "2026-07-24-phase-04-risk-calibration-alerts.md:task-11:Implement alert lifecycle, persistence budget, recovery, and local delivery events"
+      ],
+      "exists": true
+    },
+    "crates/alerts/src/evaluate.rs": {
+      "owners": [
+        "2026-07-24-phase-04-risk-calibration-alerts.md:task-10:Implement a safe typed alert-rule language and validator"
+      ],
+      "exists": true
+    },
+    "crates/alerts/src/lib.rs": {
+      "owners": [
+        "2026-07-24-phase-04-risk-calibration-alerts.md:task-10:Implement a safe typed alert-rule language and validator"
+      ],
+      "exists": true
+    },
+    "crates/alerts/src/lifecycle.rs": {
+      "owners": [
+        "2026-07-24-phase-04-risk-calibration-alerts.md:task-11:Implement alert lifecycle, persistence budget, recovery, and local delivery events"
+      ],
+      "exists": true
+    },
+    "crates/alerts/src/parser.rs": {
+      "owners": [
+        "2026-07-24-phase-04-risk-calibration-alerts.md:task-10:Implement a safe typed alert-rule language and validator"
+      ],
+      "exists": true
+    },
+    "crates/alerts/src/store.rs": {
+      "owners": [
+        "2026-07-24-phase-04-risk-calibration-alerts.md:task-11:Implement alert lifecycle, persistence budget, recovery, and local delivery events"
+      ],
+      "exists": true
+    },
+    "crates/alerts/tests/lifecycle.rs": {
+      "owners": [
+        "2026-07-24-phase-04-risk-calibration-alerts.md:task-11:Implement alert lifecycle, persistence budget, recovery, and local delivery events"
+      ],
+      "exists": true
+    },
+    "crates/alerts/tests/rule_language.rs": {
+      "owners": [
+        "2026-07-24-phase-04-risk-calibration-alerts.md:task-10:Implement a safe typed alert-rule language and validator"
+      ],
+      "exists": true
+    },
+    "crates/applicability/Cargo.toml": {
+      "owners": [
+        "2026-07-24-phase-04-risk-calibration-alerts.md:task-7:Implement applicability, out-of-distribution detection, and abstention"
+      ],
+      "exists": true
+    },
+    "crates/applicability/src/lib.rs": {
+      "owners": [
+        "2026-07-24-phase-04-risk-calibration-alerts.md:task-7:Implement applicability, out-of-distribution detection, and abstention"
+      ],
+      "exists": true
+    },
+    "crates/applicability/src/mahalanobis.rs": {
+      "owners": [
+        "2026-07-24-phase-04-risk-calibration-alerts.md:task-7:Implement applicability, out-of-distribution detection, and abstention"
+      ],
+      "exists": true
+    },
+    "crates/applicability/src/novelty.rs": {
+      "owners": [
+        "2026-07-24-phase-04-risk-calibration-alerts.md:task-7:Implement applicability, out-of-distribution detection, and abstention"
+      ],
+      "exists": true
+    },
+    "crates/applicability/src/policy.rs": {
+      "owners": [
+        "2026-07-24-phase-04-risk-calibration-alerts.md:task-7:Implement applicability, out-of-distribution detection, and abstention"
+      ],
+      "exists": true
+    },
+    "crates/applicability/tests/abstention.rs": {
+      "owners": [
+        "2026-07-24-phase-04-risk-calibration-alerts.md:task-7:Implement applicability, out-of-distribution detection, and abstention"
+      ],
+      "exists": true
+    },
+    "crates/artifact-signing/Cargo.toml": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-9:Create signed model and release artifact tooling with offline key separation"
+      ],
+      "exists": true
+    },
+    "crates/artifact-signing/src/canonical.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-9:Create signed model and release artifact tooling with offline key separation"
+      ],
+      "exists": true
+    },
+    "crates/artifact-signing/src/lib.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-9:Create signed model and release artifact tooling with offline key separation"
+      ],
+      "exists": true
+    },
+    "crates/artifact-signing/src/verify.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-9:Create signed model and release artifact tooling with offline key separation"
+      ],
+      "exists": true
+    },
+    "crates/artifact-signing/tests/signature_contract.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-9:Create signed model and release artifact tooling with offline key separation"
+      ],
+      "exists": true
+    },
+    "crates/attribution/Cargo.toml": {
+      "owners": [
+        "2026-07-24-phase-05-options-onchain-coupling.md:task-7:Create the point-in-time attribution and protocol-label registry"
+      ],
+      "exists": true
+    },
+    "crates/attribution/src/label.rs": {
+      "owners": [
+        "2026-07-24-phase-05-options-onchain-coupling.md:task-7:Create the point-in-time attribution and protocol-label registry"
+      ],
+      "exists": true
+    },
+    "crates/attribution/src/lib.rs": {
+      "owners": [
+        "2026-07-24-phase-05-options-onchain-coupling.md:task-7:Create the point-in-time attribution and protocol-label registry"
+      ],
+      "exists": true
+    },
+    "crates/attribution/src/revision.rs": {
+      "owners": [
+        "2026-07-24-phase-05-options-onchain-coupling.md:task-7:Create the point-in-time attribution and protocol-label registry"
+      ],
+      "exists": true
+    },
+    "crates/attribution/tests/as_known_at.rs": {
+      "owners": [
+        "2026-07-24-phase-05-options-onchain-coupling.md:task-7:Create the point-in-time attribution and protocol-label registry"
+      ],
+      "exists": true
+    },
+    "crates/baselines/Cargo.toml": {
+      "owners": [
+        "2026-07-24-phase-02-features-labels-baselines.md:task-10:Implement historical, seasonal, and rolling base-rate forecasters"
+      ],
+      "exists": true
+    },
+    "crates/baselines/src/base_rate.rs": {
+      "owners": [
+        "2026-07-24-phase-02-features-labels-baselines.md:task-10:Implement historical, seasonal, and rolling base-rate forecasters"
+      ],
+      "exists": true
+    },
+    "crates/baselines/src/lib.rs": {
+      "owners": [
+        "2026-07-24-phase-02-features-labels-baselines.md:task-10:Implement historical, seasonal, and rolling base-rate forecasters"
+      ],
+      "exists": true
+    },
+    "crates/baselines/tests/base_rate.rs": {
+      "owners": [
+        "2026-07-24-phase-02-features-labels-baselines.md:task-10:Implement historical, seasonal, and rolling base-rate forecasters"
+      ],
+      "exists": true
+    },
+    "crates/calibration/Cargo.toml": {
+      "owners": [
+        "2026-07-24-phase-02-features-labels-baselines.md:task-15:Create calibration, signed model packages, registry states, and evaluation reports"
+      ],
+      "exists": true
+    },
+    "crates/calibration/src/beta.rs": {
+      "owners": [
+        "2026-07-24-phase-04-risk-calibration-alerts.md:task-6:Fit and select per-event/horizon calibrators on a separate validation segment"
+      ],
+      "exists": true
+    },
+    "crates/calibration/src/isotonic.rs": {
+      "owners": [
+        "2026-07-24-phase-04-risk-calibration-alerts.md:task-6:Fit and select per-event/horizon calibrators on a separate validation segment"
+      ],
+      "exists": true
+    },
+    "crates/calibration/src/lib.rs": {
+      "owners": [
+        "2026-07-24-phase-02-features-labels-baselines.md:task-15:Create calibration, signed model packages, registry states, and evaluation reports"
+      ],
+      "exists": true
+    },
+    "crates/calibration/src/platt.rs": {
+      "owners": [
+        "2026-07-24-phase-04-risk-calibration-alerts.md:task-6:Fit and select per-event/horizon calibrators on a separate validation segment"
+      ],
+      "exists": true
+    },
+    "crates/calibration/src/select.rs": {
+      "owners": [
+        "2026-07-24-phase-04-risk-calibration-alerts.md:task-6:Fit and select per-event/horizon calibrators on a separate validation segment"
+      ],
+      "exists": true
+    },
+    "crates/calibration/tests/reference.rs": {
+      "owners": [
+        "2026-07-24-phase-04-risk-calibration-alerts.md:task-6:Fit and select per-event/horizon calibrators on a separate validation segment"
+      ],
+      "exists": true
+    },
+    "crates/capacity/Cargo.toml": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-2:Implement the hardware-aware capacity planner and source admission controller"
+      ],
+      "exists": true
+    },
+    "crates/capacity/src/admission.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-2:Implement the hardware-aware capacity planner and source admission controller"
+      ],
+      "exists": true
+    },
+    "crates/capacity/src/estimate.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-2:Implement the hardware-aware capacity planner and source admission controller"
+      ],
+      "exists": true
+    },
+    "crates/capacity/src/lib.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-2:Implement the hardware-aware capacity planner and source admission controller"
+      ],
+      "exists": true
+    },
+    "crates/capacity/src/profile.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-2:Implement the hardware-aware capacity planner and source admission controller"
+      ],
+      "exists": true
+    },
+    "crates/capacity/tests/reference_profiles.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-2:Implement the hardware-aware capacity planner and source admission controller"
+      ],
+      "exists": true
+    },
+    "crates/chain-bitcoin/Cargo.toml": {
+      "owners": [
+        "2026-07-24-phase-05-options-onchain-coupling.md:task-3:Implement local Bitcoin Core RPC ingestion with confirmation and reorg semantics"
+      ],
+      "exists": true
+    },
+    "crates/chain-bitcoin/src/features.rs": {
+      "owners": [
+        "2026-07-24-phase-05-options-onchain-coupling.md:task-4:Implement Bitcoin mempool, network, UTXO-age, realized-value, and flow features"
+      ],
+      "exists": true
+    },
+    "crates/chain-bitcoin/src/lib.rs": {
+      "owners": [
+        "2026-07-24-phase-05-options-onchain-coupling.md:task-3:Implement local Bitcoin Core RPC ingestion with confirmation and reorg semantics"
+      ],
+      "exists": true
+    },
+    "crates/chain-bitcoin/src/rpc.rs": {
+      "owners": [
+        "2026-07-24-phase-05-options-onchain-coupling.md:task-3:Implement local Bitcoin Core RPC ingestion with confirmation and reorg semantics"
+      ],
+      "exists": true
+    },
+    "crates/chain-bitcoin/src/sync.rs": {
+      "owners": [
+        "2026-07-24-phase-05-options-onchain-coupling.md:task-3:Implement local Bitcoin Core RPC ingestion with confirmation and reorg semantics"
+      ],
+      "exists": true
+    },
+    "crates/chain-bitcoin/src/utxo.rs": {
+      "owners": [
+        "2026-07-24-phase-05-options-onchain-coupling.md:task-4:Implement Bitcoin mempool, network, UTXO-age, realized-value, and flow features"
+      ],
+      "exists": true
+    },
+    "crates/chain-bitcoin/tests/features.rs": {
+      "owners": [
+        "2026-07-24-phase-05-options-onchain-coupling.md:task-4:Implement Bitcoin mempool, network, UTXO-age, realized-value, and flow features"
+      ],
+      "exists": true
+    },
+    "crates/chain-bitcoin/tests/reorg.rs": {
+      "owners": [
+        "2026-07-24-phase-05-options-onchain-coupling.md:task-3:Implement local Bitcoin Core RPC ingestion with confirmation and reorg semantics"
+      ],
+      "exists": true
+    },
+    "crates/chain-core/Cargo.toml": {
+      "owners": [
+        "2026-07-24-phase-05-options-onchain-coupling.md:task-3:Implement local Bitcoin Core RPC ingestion with confirmation and reorg semantics"
+      ],
+      "exists": true
+    },
+    "crates/chain-core/src/lib.rs": {
+      "owners": [
+        "2026-07-24-phase-05-options-onchain-coupling.md:task-3:Implement local Bitcoin Core RPC ingestion with confirmation and reorg semantics"
+      ],
+      "exists": true
+    },
+    "crates/chain-ethereum/Cargo.toml": {
+      "owners": [
+        "2026-07-24-phase-05-options-onchain-coupling.md:task-5:Implement Ethereum execution and consensus clients with finality/reorg tracking"
+      ],
+      "exists": true
+    },
+    "crates/chain-ethereum/src/consensus.rs": {
+      "owners": [
+        "2026-07-24-phase-05-options-onchain-coupling.md:task-5:Implement Ethereum execution and consensus clients with finality/reorg tracking"
+      ],
+      "exists": true
+    },
+    "crates/chain-ethereum/src/execution.rs": {
+      "owners": [
+        "2026-07-24-phase-05-options-onchain-coupling.md:task-5:Implement Ethereum execution and consensus clients with finality/reorg tracking"
+      ],
+      "exists": true
+    },
+    "crates/chain-ethereum/src/features.rs": {
+      "owners": [
+        "2026-07-24-phase-05-options-onchain-coupling.md:task-6:Implement Ethereum fee/burn/staking/stablecoin/DEX/bridge features"
+      ],
+      "exists": true
+    },
+    "crates/chain-ethereum/src/lib.rs": {
+      "owners": [
+        "2026-07-24-phase-05-options-onchain-coupling.md:task-5:Implement Ethereum execution and consensus clients with finality/reorg tracking"
+      ],
+      "exists": true
+    },
+    "crates/chain-ethereum/src/stablecoins.rs": {
+      "owners": [
+        "2026-07-24-phase-05-options-onchain-coupling.md:task-6:Implement Ethereum fee/burn/staking/stablecoin/DEX/bridge features"
+      ],
+      "exists": true
+    },
+    "crates/chain-ethereum/src/staking.rs": {
+      "owners": [
+        "2026-07-24-phase-05-options-onchain-coupling.md:task-6:Implement Ethereum fee/burn/staking/stablecoin/DEX/bridge features"
+      ],
+      "exists": true
+    },
+    "crates/chain-ethereum/src/sync.rs": {
+      "owners": [
+        "2026-07-24-phase-05-options-onchain-coupling.md:task-5:Implement Ethereum execution and consensus clients with finality/reorg tracking"
+      ],
+      "exists": true
+    },
+    "crates/chain-ethereum/tests/features.rs": {
+      "owners": [
+        "2026-07-24-phase-05-options-onchain-coupling.md:task-6:Implement Ethereum fee/burn/staking/stablecoin/DEX/bridge features"
+      ],
+      "exists": true
+    },
+    "crates/chain-ethereum/tests/finality.rs": {
+      "owners": [
+        "2026-07-24-phase-05-options-onchain-coupling.md:task-5:Implement Ethereum execution and consensus clients with finality/reorg tracking"
+      ],
+      "exists": true
+    },
+    "crates/changepoint/Cargo.toml": {
+      "owners": [
+        "2026-07-24-phase-02-features-labels-baselines.md:task-12:Implement Bayesian online changepoint detection with versioned hazard and truncation"
+      ],
+      "exists": true
+    },
+    "crates/changepoint/src/bocpd.rs": {
+      "owners": [
+        "2026-07-24-phase-02-features-labels-baselines.md:task-12:Implement Bayesian online changepoint detection with versioned hazard and truncation"
+      ],
+      "exists": true
+    },
+    "crates/changepoint/src/lib.rs": {
+      "owners": [
+        "2026-07-24-phase-02-features-labels-baselines.md:task-12:Implement Bayesian online changepoint detection with versioned hazard and truncation"
+      ],
+      "exists": true
+    },
+    "crates/changepoint/src/nig.rs": {
+      "owners": [
+        "2026-07-24-phase-02-features-labels-baselines.md:task-12:Implement Bayesian online changepoint detection with versioned hazard and truncation"
+      ],
+      "exists": true
+    },
+    "crates/changepoint/tests/reference.rs": {
+      "owners": [
+        "2026-07-24-phase-02-features-labels-baselines.md:task-12:Implement Bayesian online changepoint detection with versioned hazard and truncation"
+      ],
+      "exists": true
+    },
+    "crates/chaos/Cargo.toml": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-5:Build the fault-injection and chaos scenario runner"
+      ],
+      "exists": true
+    },
+    "crates/chaos/src/injector.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-5:Build the fault-injection and chaos scenario runner"
+      ],
+      "exists": true
+    },
+    "crates/chaos/src/lib.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-5:Build the fault-injection and chaos scenario runner"
+      ],
+      "exists": true
+    },
+    "crates/chaos/src/oracle.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-5:Build the fault-injection and chaos scenario runner"
+      ],
+      "exists": true
+    },
+    "crates/chaos/src/scenario.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-5:Build the fault-injection and chaos scenario runner"
+      ],
+      "exists": true
+    },
+    "crates/collector-runtime/Cargo.toml": {
+      "owners": [
+        "2026-07-24-phase-01-market-data-foundation.md:task-11:Supervise collectors with explicit backpressure, quality states, and admission control"
+      ],
+      "exists": true
+    },
+    "crates/collector-runtime/src/lib.rs": {
+      "owners": [
+        "2026-07-24-phase-01-market-data-foundation.md:task-11:Supervise collectors with explicit backpressure, quality states, and admission control"
+      ],
+      "exists": true
+    },
+    "crates/collector-runtime/src/supervisor.rs": {
+      "owners": [
+        "2026-07-24-phase-01-market-data-foundation.md:task-11:Supervise collectors with explicit backpressure, quality states, and admission control"
+      ],
+      "exists": true
+    },
+    "crates/collector-runtime/tests/backpressure.rs": {
+      "owners": [
+        "2026-07-24-phase-01-market-data-foundation.md:task-11:Supervise collectors with explicit backpressure, quality states, and admission control"
+      ],
+      "exists": true
+    },
+    "crates/concurrency-testkit/Cargo.toml": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-4:Add deterministic concurrency, cancellation, and shutdown verification"
+      ],
+      "exists": true
+    },
+    "crates/concurrency-testkit/src/bounded.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-4:Add deterministic concurrency, cancellation, and shutdown verification"
+      ],
+      "exists": true
+    },
+    "crates/concurrency-testkit/src/lib.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-4:Add deterministic concurrency, cancellation, and shutdown verification"
+      ],
+      "exists": true
+    },
+    "crates/concurrency-testkit/src/shutdown.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-4:Add deterministic concurrency, cancellation, and shutdown verification"
+      ],
+      "exists": true
+    },
+    "crates/concurrency-testkit/tests/shutdown_order.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-4:Add deterministic concurrency, cancellation, and shutdown verification"
+      ],
+      "exists": true
+    },
+    "crates/config/Cargo.toml": {
+      "owners": [
+        "2026-07-24-phase-00-foundations-contracts.md:task-7:Implement layered configuration with generated JSON Schema and safe validation"
+      ],
+      "exists": true
+    },
+    "crates/config/src/lib.rs": {
+      "owners": [
+        "2026-07-24-phase-00-foundations-contracts.md:task-7:Implement layered configuration with generated JSON Schema and safe validation"
+      ],
+      "exists": true
+    },
+    "crates/config/src/schema.rs": {
+      "owners": [
+        "2026-07-24-phase-00-foundations-contracts.md:task-7:Implement layered configuration with generated JSON Schema and safe validation"
+      ],
+      "exists": true
+    },
+    "crates/config/tests/config_validation.rs": {
+      "owners": [
+        "2026-07-24-phase-00-foundations-contracts.md:task-7:Implement layered configuration with generated JSON Schema and safe validation"
+      ],
+      "exists": true
+    },
+    "crates/connector-binance/Cargo.toml": {
+      "owners": [
+        "2026-07-24-phase-01-market-data-foundation.md:task-7:Implement and certify the Binance spot and USD-margined derivatives adapter"
+      ],
+      "exists": true
+    },
+    "crates/connector-binance/src/book_sync.rs": {
+      "owners": [
+        "2026-07-24-phase-01-market-data-foundation.md:task-7:Implement and certify the Binance spot and USD-margined derivatives adapter"
+      ],
+      "exists": true
+    },
+    "crates/connector-binance/src/lib.rs": {
+      "owners": [
+        "2026-07-24-phase-01-market-data-foundation.md:task-7:Implement and certify the Binance spot and USD-margined derivatives adapter"
+      ],
+      "exists": true
+    },
+    "crates/connector-binance/src/metadata.rs": {
+      "owners": [
+        "2026-07-24-phase-01-market-data-foundation.md:task-7:Implement and certify the Binance spot and USD-margined derivatives adapter"
+      ],
+      "exists": true
+    },
+    "crates/connector-binance/src/parser.rs": {
+      "owners": [
+        "2026-07-24-phase-01-market-data-foundation.md:task-7:Implement and certify the Binance spot and USD-margined derivatives adapter"
+      ],
+      "exists": true
+    },
+    "crates/connector-binance/tests/fixtures.rs": {
+      "owners": [
+        "2026-07-24-phase-01-market-data-foundation.md:task-7:Implement and certify the Binance spot and USD-margined derivatives adapter"
+      ],
+      "exists": true
+    },
+    "crates/connector-bybit/Cargo.toml": {
+      "owners": [
+        "2026-07-24-phase-01-market-data-foundation.md:task-8:Implement and certify the Bybit spot and linear-derivatives adapter"
+      ],
+      "exists": true
+    },
+    "crates/connector-bybit/src/book_sync.rs": {
+      "owners": [
+        "2026-07-24-phase-01-market-data-foundation.md:task-8:Implement and certify the Bybit spot and linear-derivatives adapter"
+      ],
+      "exists": true
+    },
+    "crates/connector-bybit/src/lib.rs": {
+      "owners": [
+        "2026-07-24-phase-01-market-data-foundation.md:task-8:Implement and certify the Bybit spot and linear-derivatives adapter"
+      ],
+      "exists": true
+    },
+    "crates/connector-bybit/src/parser.rs": {
+      "owners": [
+        "2026-07-24-phase-01-market-data-foundation.md:task-8:Implement and certify the Bybit spot and linear-derivatives adapter"
+      ],
+      "exists": true
+    },
+    "crates/connector-bybit/tests/fixtures.rs": {
+      "owners": [
+        "2026-07-24-phase-01-market-data-foundation.md:task-8:Implement and certify the Bybit spot and linear-derivatives adapter"
+      ],
+      "exists": true
+    },
+    "crates/connector-core/Cargo.toml": {
+      "owners": [
+        "2026-07-24-phase-01-market-data-foundation.md:task-1:Define the connector lifecycle, source capabilities, and bounded output contract"
+      ],
+      "exists": true
+    },
+    "crates/connector-core/src/capabilities.rs": {
+      "owners": [
+        "2026-07-24-phase-01-market-data-foundation.md:task-1:Define the connector lifecycle, source capabilities, and bounded output contract"
+      ],
+      "exists": true
+    },
+    "crates/connector-core/src/lib.rs": {
+      "owners": [
+        "2026-07-24-phase-01-market-data-foundation.md:task-1:Define the connector lifecycle, source capabilities, and bounded output contract"
+      ],
+      "exists": true
+    },
+    "crates/connector-core/src/lifecycle.rs": {
+      "owners": [
+        "2026-07-24-phase-01-market-data-foundation.md:task-1:Define the connector lifecycle, source capabilities, and bounded output contract"
+      ],
+      "exists": true
+    },
+    "crates/connector-core/src/parser.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-3:Harden every network parser with shared limits and continuous fuzzing"
+      ],
+      "exists": true
+    },
+    "crates/connector-core/tests/connector_contract.rs": {
+      "owners": [
+        "2026-07-24-phase-01-market-data-foundation.md:task-1:Define the connector lifecycle, source capabilities, and bounded output contract"
+      ],
+      "exists": true
+    },
+    "crates/connector-deribit/Cargo.toml": {
+      "owners": [
+        "2026-07-24-phase-01-market-data-foundation.md:task-10:Implement and certify the Deribit futures, perpetuals, and options adapter"
+      ],
+      "exists": true
+    },
+    "crates/connector-deribit/src/lib.rs": {
+      "owners": [
+        "2026-07-24-phase-01-market-data-foundation.md:task-10:Implement and certify the Deribit futures, perpetuals, and options adapter"
+      ],
+      "exists": true
+    },
+    "crates/connector-deribit/src/options.rs": {
+      "owners": [
+        "2026-07-24-phase-01-market-data-foundation.md:task-10:Implement and certify the Deribit futures, perpetuals, and options adapter"
+      ],
+      "exists": true
+    },
+    "crates/connector-deribit/src/parser.rs": {
+      "owners": [
+        "2026-07-24-phase-01-market-data-foundation.md:task-10:Implement and certify the Deribit futures, perpetuals, and options adapter"
+      ],
+      "exists": true
+    },
+    "crates/connector-deribit/tests/fixtures.rs": {
+      "owners": [
+        "2026-07-24-phase-01-market-data-foundation.md:task-10:Implement and certify the Deribit futures, perpetuals, and options adapter"
+      ],
+      "exists": true
+    },
+    "crates/connector-kraken/Cargo.toml": {
+      "owners": [
+        "2026-07-24-phase-01-market-data-foundation.md:task-9:Implement and certify the Kraken spot/derivatives adapter with checksum and selected L3 support"
+      ],
+      "exists": true
+    },
+    "crates/connector-kraken/src/checksum.rs": {
+      "owners": [
+        "2026-07-24-phase-01-market-data-foundation.md:task-9:Implement and certify the Kraken spot/derivatives adapter with checksum and selected L3 support"
+      ],
+      "exists": true
+    },
+    "crates/connector-kraken/src/l3.rs": {
+      "owners": [
+        "2026-07-24-phase-01-market-data-foundation.md:task-9:Implement and certify the Kraken spot/derivatives adapter with checksum and selected L3 support"
+      ],
+      "exists": true
+    },
+    "crates/connector-kraken/src/lib.rs": {
+      "owners": [
+        "2026-07-24-phase-01-market-data-foundation.md:task-9:Implement and certify the Kraken spot/derivatives adapter with checksum and selected L3 support"
+      ],
+      "exists": true
+    },
+    "crates/connector-kraken/src/parser.rs": {
+      "owners": [
+        "2026-07-24-phase-01-market-data-foundation.md:task-9:Implement and certify the Kraken spot/derivatives adapter with checksum and selected L3 support"
+      ],
+      "exists": true
+    },
+    "crates/connector-kraken/tests/checksum.rs": {
+      "owners": [
+        "2026-07-24-phase-01-market-data-foundation.md:task-9:Implement and certify the Kraken spot/derivatives adapter with checksum and selected L3 support"
+      ],
+      "exists": true
+    },
+    "crates/consolidated-market/Cargo.toml": {
+      "owners": [
+        "2026-07-24-phase-02-features-labels-baselines.md:task-3:Build consolidated fair price and venue inclusion state"
+      ],
+      "exists": true
+    },
+    "crates/consolidated-market/src/fair_price.rs": {
+      "owners": [
+        "2026-07-24-phase-02-features-labels-baselines.md:task-3:Build consolidated fair price and venue inclusion state"
+      ],
+      "exists": true
+    },
+    "crates/consolidated-market/src/lib.rs": {
+      "owners": [
+        "2026-07-24-phase-02-features-labels-baselines.md:task-3:Build consolidated fair price and venue inclusion state"
+      ],
+      "exists": true
+    },
+    "crates/consolidated-market/src/stablecoin.rs": {
+      "owners": [
+        "2026-07-24-phase-02-features-labels-baselines.md:task-3:Build consolidated fair price and venue inclusion state"
+      ],
+      "exists": true
+    },
+    "crates/consolidated-market/tests/fair_price.rs": {
+      "owners": [
+        "2026-07-24-phase-02-features-labels-baselines.md:task-3:Build consolidated fair price and venue inclusion state"
+      ],
+      "exists": true
+    },
+    "crates/contagion/Cargo.toml": {
+      "owners": [
+        "2026-07-24-phase-05-options-onchain-coupling.md:task-9:Implement stablecoin dislocation and cross-asset contagion labels/features"
+      ],
+      "exists": true
+    },
+    "crates/contagion/src/labels.rs": {
+      "owners": [
+        "2026-07-24-phase-05-options-onchain-coupling.md:task-9:Implement stablecoin dislocation and cross-asset contagion labels/features"
+      ],
+      "exists": true
+    },
+    "crates/contagion/src/lib.rs": {
+      "owners": [
+        "2026-07-24-phase-05-options-onchain-coupling.md:task-9:Implement stablecoin dislocation and cross-asset contagion labels/features"
+      ],
+      "exists": true
+    },
+    "crates/contagion/src/network.rs": {
+      "owners": [
+        "2026-07-24-phase-05-options-onchain-coupling.md:task-9:Implement stablecoin dislocation and cross-asset contagion labels/features"
+      ],
+      "exists": true
+    },
+    "crates/contagion/src/stablecoin.rs": {
+      "owners": [
+        "2026-07-24-phase-05-options-onchain-coupling.md:task-9:Implement stablecoin dislocation and cross-asset contagion labels/features"
+      ],
+      "exists": true
+    },
+    "crates/contagion/tests/reference.rs": {
+      "owners": [
+        "2026-07-24-phase-05-options-onchain-coupling.md:task-9:Implement stablecoin dislocation and cross-asset contagion labels/features"
+      ],
+      "exists": true
+    },
+    "crates/coupled-cusp/Cargo.toml": {
+      "owners": [
+        "2026-07-24-phase-05-options-onchain-coupling.md:task-8:Implement the BTC\u2013ETH coupled cusp mathematical and inference engine"
+      ],
+      "exists": true
+    },
+    "crates/coupled-cusp/src/equilibrium.rs": {
+      "owners": [
+        "2026-07-24-phase-05-options-onchain-coupling.md:task-8:Implement the BTC\u2013ETH coupled cusp mathematical and inference engine"
+      ],
+      "exists": true
+    },
+    "crates/coupled-cusp/src/fit.rs": {
+      "owners": [
+        "2026-07-24-phase-05-options-onchain-coupling.md:task-8:Implement the BTC\u2013ETH coupled cusp mathematical and inference engine"
+      ],
+      "exists": true
+    },
+    "crates/coupled-cusp/src/lib.rs": {
+      "owners": [
+        "2026-07-24-phase-05-options-onchain-coupling.md:task-8:Implement the BTC\u2013ETH coupled cusp mathematical and inference engine"
+      ],
+      "exists": true
+    },
+    "crates/coupled-cusp/src/online.rs": {
+      "owners": [
+        "2026-07-24-phase-05-options-onchain-coupling.md:task-8:Implement the BTC\u2013ETH coupled cusp mathematical and inference engine"
+      ],
+      "exists": true
+    },
+    "crates/coupled-cusp/src/potential.rs": {
+      "owners": [
+        "2026-07-24-phase-05-options-onchain-coupling.md:task-8:Implement the BTC\u2013ETH coupled cusp mathematical and inference engine"
+      ],
+      "exists": true
+    },
+    "crates/coupled-cusp/tests/reference.rs": {
+      "owners": [
+        "2026-07-24-phase-05-options-onchain-coupling.md:task-8:Implement the BTC\u2013ETH coupled cusp mathematical and inference engine"
+      ],
+      "exists": true
+    },
+    "crates/cusp/Cargo.toml": {
+      "owners": [
+        "2026-07-24-phase-03-stochastic-cusp.md:task-2:Freeze the cusp sign convention, potential, derivatives, controls, and state contract"
+      ],
+      "exists": true
+    },
+    "crates/cusp/src/ablation.rs": {
+      "owners": [
+        "2026-07-24-phase-03-stochastic-cusp.md:task-10:Expose cusp RPC data and automate the production-inclusion ablation gate"
+      ],
+      "exists": true
+    },
+    "crates/cusp/src/barrier.rs": {
+      "owners": [
+        "2026-07-24-phase-03-stochastic-cusp.md:task-4:Calculate stability, branch topology, barrier height, and restoring force"
+      ],
+      "exists": true
+    },
+    "crates/cusp/src/bootstrap.rs": {
+      "owners": [
+        "2026-07-24-phase-03-stochastic-cusp.md:task-8:Add Laplace parameter uncertainty and blocked bootstrap validation"
+      ],
+      "exists": true
+    },
+    "crates/cusp/src/branch_tracker.rs": {
+      "owners": [
+        "2026-07-24-phase-03-stochastic-cusp.md:task-9:Implement online structural inference, posterior branch tracking, and hysteresis state"
+      ],
+      "exists": true
+    },
+    "crates/cusp/src/control_schema.rs": {
+      "owners": [
+        "2026-07-24-phase-03-stochastic-cusp.md:task-6:Define hierarchical alpha/beta control mappings and constrained feature groups"
+      ],
+      "exists": true
+    },
+    "crates/cusp/src/controls.rs": {
+      "owners": [
+        "2026-07-24-phase-03-stochastic-cusp.md:task-6:Define hierarchical alpha/beta control mappings and constrained feature groups"
+      ],
+      "exists": true
+    },
+    "crates/cusp/src/equilibria.rs": {
+      "owners": [
+        "2026-07-24-phase-03-stochastic-cusp.md:task-4:Calculate stability, branch topology, barrier height, and restoring force"
+      ],
+      "exists": true
+    },
+    "crates/cusp/src/evidence.rs": {
+      "owners": [
+        "2026-07-24-phase-03-stochastic-cusp.md:task-9:Implement online structural inference, posterior branch tracking, and hysteresis state"
+      ],
+      "exists": true
+    },
+    "crates/cusp/src/fit/mod.rs": {
+      "owners": [
+        "2026-07-24-phase-03-stochastic-cusp.md:task-7:Implement offline stationary-density replication and Student-t transition pseudo-likelihood estimators"
+      ],
+      "exists": true
+    },
+    "crates/cusp/src/fit/optimizer.rs": {
+      "owners": [
+        "2026-07-24-phase-03-stochastic-cusp.md:task-7:Implement offline stationary-density replication and Student-t transition pseudo-likelihood estimators"
+      ],
+      "exists": true
+    },
+    "crates/cusp/src/fit/penalty.rs": {
+      "owners": [
+        "2026-07-24-phase-03-stochastic-cusp.md:task-7:Implement offline stationary-density replication and Student-t transition pseudo-likelihood estimators"
+      ],
+      "exists": true
+    },
+    "crates/cusp/src/fit/stationary.rs": {
+      "owners": [
+        "2026-07-24-phase-03-stochastic-cusp.md:task-7:Implement offline stationary-density replication and Student-t transition pseudo-likelihood estimators"
+      ],
+      "exists": true
+    },
+    "crates/cusp/src/fit/transition.rs": {
+      "owners": [
+        "2026-07-24-phase-03-stochastic-cusp.md:task-7:Implement offline stationary-density replication and Student-t transition pseudo-likelihood estimators"
+      ],
+      "exists": true
+    },
+    "crates/cusp/src/fold_distance.rs": {
+      "owners": [
+        "2026-07-24-phase-03-stochastic-cusp.md:task-5:Implement nearest-fold distance in whitened control space"
+      ],
+      "exists": true
+    },
+    "crates/cusp/src/lib.rs": {
+      "owners": [
+        "2026-07-24-phase-03-stochastic-cusp.md:task-2:Freeze the cusp sign convention, potential, derivatives, controls, and state contract"
+      ],
+      "exists": true
+    },
+    "crates/cusp/src/online.rs": {
+      "owners": [
+        "2026-07-24-phase-03-stochastic-cusp.md:task-9:Implement online structural inference, posterior branch tracking, and hysteresis state"
+      ],
+      "exists": true
+    },
+    "crates/cusp/src/potential.rs": {
+      "owners": [
+        "2026-07-24-phase-03-stochastic-cusp.md:task-2:Freeze the cusp sign convention, potential, derivatives, controls, and state contract"
+      ],
+      "exists": true
+    },
+    "crates/cusp/src/roots.rs": {
+      "owners": [
+        "2026-07-24-phase-03-stochastic-cusp.md:task-3:Implement stable real cubic roots at ordinary, near-fold, and repeated-root points"
+      ],
+      "exists": true
+    },
+    "crates/cusp/src/types.rs": {
+      "owners": [
+        "2026-07-24-phase-03-stochastic-cusp.md:task-2:Freeze the cusp sign convention, potential, derivatives, controls, and state contract"
+      ],
+      "exists": true
+    },
+    "crates/cusp/src/uncertainty.rs": {
+      "owners": [
+        "2026-07-24-phase-03-stochastic-cusp.md:task-8:Add Laplace parameter uncertainty and blocked bootstrap validation"
+      ],
+      "exists": true
+    },
+    "crates/cusp/tests/ablation_gate.rs": {
+      "owners": [
+        "2026-07-24-phase-03-stochastic-cusp.md:task-10:Expose cusp RPC data and automate the production-inclusion ablation gate"
+      ],
+      "exists": true
+    },
+    "crates/cusp/tests/control_mapping.rs": {
+      "owners": [
+        "2026-07-24-phase-03-stochastic-cusp.md:task-6:Define hierarchical alpha/beta control mappings and constrained feature groups"
+      ],
+      "exists": true
+    },
+    "crates/cusp/tests/cubic_roots.rs": {
+      "owners": [
+        "2026-07-24-phase-03-stochastic-cusp.md:task-3:Implement stable real cubic roots at ordinary, near-fold, and repeated-root points"
+      ],
+      "exists": true
+    },
+    "crates/cusp/tests/equilibria_barrier.rs": {
+      "owners": [
+        "2026-07-24-phase-03-stochastic-cusp.md:task-4:Calculate stability, branch topology, barrier height, and restoring force"
+      ],
+      "exists": true
+    },
+    "crates/cusp/tests/estimation_synthetic.rs": {
+      "owners": [
+        "2026-07-24-phase-03-stochastic-cusp.md:task-7:Implement offline stationary-density replication and Student-t transition pseudo-likelihood estimators"
+      ],
+      "exists": true
+    },
+    "crates/cusp/tests/fold_distance.rs": {
+      "owners": [
+        "2026-07-24-phase-03-stochastic-cusp.md:task-5:Implement nearest-fold distance in whitened control space"
+      ],
+      "exists": true
+    },
+    "crates/cusp/tests/online_branch_tracking.rs": {
+      "owners": [
+        "2026-07-24-phase-03-stochastic-cusp.md:task-9:Implement online structural inference, posterior branch tracking, and hysteresis state"
+      ],
+      "exists": true
+    },
+    "crates/cusp/tests/sign_convention.rs": {
+      "owners": [
+        "2026-07-24-phase-03-stochastic-cusp.md:task-2:Freeze the cusp sign convention, potential, derivatives, controls, and state contract"
+      ],
+      "exists": true
+    },
+    "crates/cusp/tests/uncertainty.rs": {
+      "owners": [
+        "2026-07-24-phase-03-stochastic-cusp.md:task-8:Add Laplace parameter uncertainty and blocked bootstrap validation"
+      ],
+      "exists": true
+    },
+    "crates/dataset/Cargo.toml": {
+      "owners": [
+        "2026-07-24-phase-02-features-labels-baselines.md:task-9:Build dataset manifests and purged nested walk-forward folds"
+      ],
+      "exists": true
+    },
+    "crates/dataset/src/folds.rs": {
+      "owners": [
+        "2026-07-24-phase-02-features-labels-baselines.md:task-9:Build dataset manifests and purged nested walk-forward folds"
+      ],
+      "exists": true
+    },
+    "crates/dataset/src/lib.rs": {
+      "owners": [
+        "2026-07-24-phase-02-features-labels-baselines.md:task-9:Build dataset manifests and purged nested walk-forward folds"
+      ],
+      "exists": true
+    },
+    "crates/dataset/src/manifest.rs": {
+      "owners": [
+        "2026-07-24-phase-02-features-labels-baselines.md:task-9:Build dataset manifests and purged nested walk-forward folds"
+      ],
+      "exists": true
+    },
+    "crates/dataset/tests/no_leakage.rs": {
+      "owners": [
+        "2026-07-24-phase-02-features-labels-baselines.md:task-9:Build dataset manifests and purged nested walk-forward folds"
+      ],
+      "exists": true
+    },
+    "crates/domain/Cargo.toml": {
+      "owners": [
+        "2026-07-24-phase-00-foundations-contracts.md:task-1:Bootstrap the pinned Rust workspace and developer command surface"
+      ],
+      "exists": true
+    },
+    "crates/domain/src/id.rs": {
+      "owners": [
+        "2026-07-24-phase-00-foundations-contracts.md:task-4:Define canonical asset, instrument, venue, and generation identities"
+      ],
+      "exists": true
+    },
+    "crates/domain/src/instrument.rs": {
+      "owners": [
+        "2026-07-24-phase-00-foundations-contracts.md:task-4:Define canonical asset, instrument, venue, and generation identities"
+      ],
+      "exists": true
+    },
+    "crates/domain/src/lib.rs": {
+      "owners": [
+        "2026-07-24-phase-00-foundations-contracts.md:task-1:Bootstrap the pinned Rust workspace and developer command surface",
+        "2026-07-24-phase-00-foundations-contracts.md:task-4:Define canonical asset, instrument, venue, and generation identities"
+      ],
+      "exists": true
+    },
+    "crates/domain/src/source.rs": {
+      "owners": [
+        "2026-07-24-phase-00-foundations-contracts.md:task-4:Define canonical asset, instrument, venue, and generation identities"
+      ],
+      "exists": true
+    },
+    "crates/domain/tests/identifiers.rs": {
+      "owners": [
+        "2026-07-24-phase-00-foundations-contracts.md:task-4:Define canonical asset, instrument, venue, and generation identities"
+      ],
+      "exists": true
+    },
+    "crates/ensemble/Cargo.toml": {
+      "owners": [
+        "2026-07-24-phase-04-risk-calibration-alerts.md:task-4:Build the out-of-fold module matrix and leakage-safe model input contract"
+      ],
+      "exists": true
+    },
+    "crates/ensemble/src/ablation.rs": {
+      "owners": [
+        "2026-07-24-phase-04-risk-calibration-alerts.md:task-5:Implement the regularized constrained meta-model and module ablations"
+      ],
+      "exists": true
+    },
+    "crates/ensemble/src/constraints.rs": {
+      "owners": [
+        "2026-07-24-phase-04-risk-calibration-alerts.md:task-5:Implement the regularized constrained meta-model and module ablations"
+      ],
+      "exists": true
+    },
+    "crates/ensemble/src/lib.rs": {
+      "owners": [
+        "2026-07-24-phase-04-risk-calibration-alerts.md:task-4:Build the out-of-fold module matrix and leakage-safe model input contract"
+      ],
+      "exists": true
+    },
+    "crates/ensemble/src/module_output.rs": {
+      "owners": [
+        "2026-07-24-phase-04-risk-calibration-alerts.md:task-4:Build the out-of-fold module matrix and leakage-safe model input contract"
+      ],
+      "exists": true
+    },
+    "crates/ensemble/src/oof_matrix.rs": {
+      "owners": [
+        "2026-07-24-phase-04-risk-calibration-alerts.md:task-4:Build the out-of-fold module matrix and leakage-safe model input contract"
+      ],
+      "exists": true
+    },
+    "crates/ensemble/src/stacker.rs": {
+      "owners": [
+        "2026-07-24-phase-04-risk-calibration-alerts.md:task-5:Implement the regularized constrained meta-model and module ablations"
+      ],
+      "exists": true
+    },
+    "crates/ensemble/tests/oof_only.rs": {
+      "owners": [
+        "2026-07-24-phase-04-risk-calibration-alerts.md:task-4:Build the out-of-fold module matrix and leakage-safe model input contract"
+      ],
+      "exists": true
+    },
+    "crates/ensemble/tests/stacker.rs": {
+      "owners": [
+        "2026-07-24-phase-04-risk-calibration-alerts.md:task-5:Implement the regularized constrained meta-model and module ablations"
+      ],
+      "exists": true
+    },
+    "crates/event-envelope/Cargo.toml": {
+      "owners": [
+        "2026-07-24-phase-00-foundations-contracts.md:task-5:Implement canonical event envelopes and deterministic event identities"
+      ],
+      "exists": true
+    },
+    "crates/event-envelope/src/lib.rs": {
+      "owners": [
+        "2026-07-24-phase-00-foundations-contracts.md:task-5:Implement canonical event envelopes and deterministic event identities"
+      ],
+      "exists": true
+    },
+    "crates/event-envelope/src/payload.rs": {
+      "owners": [
+        "2026-07-24-phase-00-foundations-contracts.md:task-5:Implement canonical event envelopes and deterministic event identities"
+      ],
+      "exists": true
+    },
+    "crates/event-envelope/src/quality.rs": {
+      "owners": [
+        "2026-07-24-phase-00-foundations-contracts.md:task-5:Implement canonical event envelopes and deterministic event identities"
+      ],
+      "exists": true
+    },
+    "crates/event-envelope/tests/envelope.rs": {
+      "owners": [
+        "2026-07-24-phase-00-foundations-contracts.md:task-5:Implement canonical event envelopes and deterministic event identities"
+      ],
+      "exists": true
+    },
+    "crates/fast-state/Cargo.toml": {
+      "owners": [
+        "2026-07-24-phase-04-risk-calibration-alerts.md:task-1:Create the 100 ms/1 s fast-state scheduler and immutable feature snapshots"
+      ],
+      "exists": true
+    },
+    "crates/fast-state/src/features.rs": {
+      "owners": [
+        "2026-07-24-phase-04-risk-calibration-alerts.md:task-2:Add fast liquidity, flow, liquidation, and trigger-state aggregations"
+      ],
+      "exists": true
+    },
+    "crates/fast-state/src/lib.rs": {
+      "owners": [
+        "2026-07-24-phase-04-risk-calibration-alerts.md:task-1:Create the 100 ms/1 s fast-state scheduler and immutable feature snapshots"
+      ],
+      "exists": true
+    },
+    "crates/fast-state/src/scheduler.rs": {
+      "owners": [
+        "2026-07-24-phase-04-risk-calibration-alerts.md:task-1:Create the 100 ms/1 s fast-state scheduler and immutable feature snapshots"
+      ],
+      "exists": true
+    },
+    "crates/fast-state/src/snapshot.rs": {
+      "owners": [
+        "2026-07-24-phase-04-risk-calibration-alerts.md:task-1:Create the 100 ms/1 s fast-state scheduler and immutable feature snapshots"
+      ],
+      "exists": true
+    },
+    "crates/fast-state/src/trigger_state.rs": {
+      "owners": [
+        "2026-07-24-phase-04-risk-calibration-alerts.md:task-2:Add fast liquidity, flow, liquidation, and trigger-state aggregations"
+      ],
+      "exists": true
+    },
+    "crates/fast-state/tests/cadence.rs": {
+      "owners": [
+        "2026-07-24-phase-04-risk-calibration-alerts.md:task-1:Create the 100 ms/1 s fast-state scheduler and immutable feature snapshots"
+      ],
+      "exists": true
+    },
+    "crates/fast-state/tests/trigger_features.rs": {
+      "owners": [
+        "2026-07-24-phase-04-risk-calibration-alerts.md:task-2:Add fast liquidity, flow, liquidation, and trigger-state aggregations"
+      ],
+      "exists": true
+    },
+    "crates/feature-engine/Cargo.toml": {
+      "owners": [
+        "2026-07-24-phase-02-features-labels-baselines.md:task-2:Implement event-time watermarks, windowing, lateness, and deterministic timers"
+      ],
+      "exists": true
+    },
+    "crates/feature-engine/src/clock.rs": {
+      "owners": [
+        "2026-07-24-phase-02-features-labels-baselines.md:task-2:Implement event-time watermarks, windowing, lateness, and deterministic timers"
+      ],
+      "exists": true
+    },
+    "crates/feature-engine/src/features/cross_venue.rs": {
+      "owners": [
+        "2026-07-24-phase-02-features-labels-baselines.md:task-6:Implement cross-venue, derivatives, leverage, and operational-quality features"
+      ],
+      "exists": true
+    },
+    "crates/feature-engine/src/features/derivatives.rs": {
+      "owners": [
+        "2026-07-24-phase-02-features-labels-baselines.md:task-6:Implement cross-venue, derivatives, leverage, and operational-quality features"
+      ],
+      "exists": true
+    },
+    "crates/feature-engine/src/features/mod.rs": {
+      "owners": [
+        "2026-07-24-phase-02-features-labels-baselines.md:task-4:Implement price, return, volatility, semivariance, and jump features"
+      ],
+      "exists": true
+    },
+    "crates/feature-engine/src/features/orderbook.rs": {
+      "owners": [
+        "2026-07-24-phase-02-features-labels-baselines.md:task-5:Implement order-book and order-flow feature families"
+      ],
+      "exists": true
+    },
+    "crates/feature-engine/src/features/orderflow.rs": {
+      "owners": [
+        "2026-07-24-phase-02-features-labels-baselines.md:task-5:Implement order-book and order-flow feature families"
+      ],
+      "exists": true
+    },
+    "crates/feature-engine/src/features/price.rs": {
+      "owners": [
+        "2026-07-24-phase-02-features-labels-baselines.md:task-4:Implement price, return, volatility, semivariance, and jump features"
+      ],
+      "exists": true
+    },
+    "crates/feature-engine/src/features/quality.rs": {
+      "owners": [
+        "2026-07-24-phase-02-features-labels-baselines.md:task-6:Implement cross-venue, derivatives, leverage, and operational-quality features"
+      ],
+      "exists": true
+    },
+    "crates/feature-engine/src/features/volatility.rs": {
+      "owners": [
+        "2026-07-24-phase-02-features-labels-baselines.md:task-4:Implement price, return, volatility, semivariance, and jump features"
+      ],
+      "exists": true
+    },
+    "crates/feature-engine/src/lib.rs": {
+      "owners": [
+        "2026-07-24-phase-02-features-labels-baselines.md:task-2:Implement event-time watermarks, windowing, lateness, and deterministic timers"
+      ],
+      "exists": true
+    },
+    "crates/feature-engine/src/lineage.rs": {
+      "owners": [
+        "2026-07-24-phase-02-features-labels-baselines.md:task-7:Persist point-in-time feature datasets and prove stream/batch parity"
+      ],
+      "exists": true
+    },
+    "crates/feature-engine/src/materialize.rs": {
+      "owners": [
+        "2026-07-24-phase-02-features-labels-baselines.md:task-7:Persist point-in-time feature datasets and prove stream/batch parity"
+      ],
+      "exists": true
+    },
+    "crates/feature-engine/src/watermark.rs": {
+      "owners": [
+        "2026-07-24-phase-02-features-labels-baselines.md:task-2:Implement event-time watermarks, windowing, lateness, and deterministic timers"
+      ],
+      "exists": true
+    },
+    "crates/feature-engine/src/window.rs": {
+      "owners": [
+        "2026-07-24-phase-02-features-labels-baselines.md:task-2:Implement event-time watermarks, windowing, lateness, and deterministic timers"
+      ],
+      "exists": true
+    },
+    "crates/feature-engine/tests/cross_venue_derivatives.rs": {
+      "owners": [
+        "2026-07-24-phase-02-features-labels-baselines.md:task-6:Implement cross-venue, derivatives, leverage, and operational-quality features"
+      ],
+      "exists": true
+    },
+    "crates/feature-engine/tests/microstructure_features.rs": {
+      "owners": [
+        "2026-07-24-phase-02-features-labels-baselines.md:task-5:Implement order-book and order-flow feature families"
+      ],
+      "exists": true
+    },
+    "crates/feature-engine/tests/stream_batch_parity.rs": {
+      "owners": [
+        "2026-07-24-phase-02-features-labels-baselines.md:task-7:Persist point-in-time feature datasets and prove stream/batch parity"
+      ],
+      "exists": true
+    },
+    "crates/feature-engine/tests/watermarks.rs": {
+      "owners": [
+        "2026-07-24-phase-02-features-labels-baselines.md:task-2:Implement event-time watermarks, windowing, lateness, and deterministic timers"
+      ],
+      "exists": true
+    },
+    "crates/feature-registry/Cargo.toml": {
+      "owners": [
+        "2026-07-24-phase-02-features-labels-baselines.md:task-1:Define the feature registry, observation record, and documentation contract"
+      ],
+      "exists": true
+    },
+    "crates/feature-registry/src/definition.rs": {
+      "owners": [
+        "2026-07-24-phase-02-features-labels-baselines.md:task-1:Define the feature registry, observation record, and documentation contract"
+      ],
+      "exists": true
+    },
+    "crates/feature-registry/src/lib.rs": {
+      "owners": [
+        "2026-07-24-phase-02-features-labels-baselines.md:task-1:Define the feature registry, observation record, and documentation contract"
+      ],
+      "exists": true
+    },
+    "crates/feature-registry/src/observation.rs": {
+      "owners": [
+        "2026-07-24-phase-02-features-labels-baselines.md:task-1:Define the feature registry, observation record, and documentation contract"
+      ],
+      "exists": true
+    },
+    "crates/feature-registry/tests/registry.rs": {
+      "owners": [
+        "2026-07-24-phase-02-features-labels-baselines.md:task-1:Define the feature registry, observation record, and documentation contract"
+      ],
+      "exists": true
+    },
+    "crates/fixed-decimal/Cargo.toml": {
+      "owners": [
+        "2026-07-24-phase-00-foundations-contracts.md:task-3:Implement checked canonical fixed-decimal arithmetic"
+      ],
+      "exists": true
+    },
+    "crates/fixed-decimal/src/error.rs": {
+      "owners": [
+        "2026-07-24-phase-00-foundations-contracts.md:task-3:Implement checked canonical fixed-decimal arithmetic"
+      ],
+      "exists": true
+    },
+    "crates/fixed-decimal/src/lib.rs": {
+      "owners": [
+        "2026-07-24-phase-00-foundations-contracts.md:task-3:Implement checked canonical fixed-decimal arithmetic"
+      ],
+      "exists": true
+    },
+    "crates/fixed-decimal/tests/fixed_decimal.rs": {
+      "owners": [
+        "2026-07-24-phase-00-foundations-contracts.md:task-3:Implement checked canonical fixed-decimal arithmetic"
+      ],
+      "exists": true
+    },
+    "crates/forecast-ledger/Cargo.toml": {
+      "owners": [
+        "2026-07-24-phase-04-risk-calibration-alerts.md:task-9:Persist immutable forecast and evidence bundles before publication"
+      ],
+      "exists": true
+    },
+    "crates/forecast-ledger/src/evidence.rs": {
+      "owners": [
+        "2026-07-24-phase-04-risk-calibration-alerts.md:task-9:Persist immutable forecast and evidence bundles before publication"
+      ],
+      "exists": true
+    },
+    "crates/forecast-ledger/src/forecast.rs": {
+      "owners": [
+        "2026-07-24-phase-04-risk-calibration-alerts.md:task-9:Persist immutable forecast and evidence bundles before publication"
+      ],
+      "exists": true
+    },
+    "crates/forecast-ledger/src/lib.rs": {
+      "owners": [
+        "2026-07-24-phase-04-risk-calibration-alerts.md:task-9:Persist immutable forecast and evidence bundles before publication"
+      ],
+      "exists": true
+    },
+    "crates/forecast-ledger/src/writer.rs": {
+      "owners": [
+        "2026-07-24-phase-04-risk-calibration-alerts.md:task-9:Persist immutable forecast and evidence bundles before publication"
+      ],
+      "exists": true
+    },
+    "crates/forecast-ledger/tests/persist_before_publish.rs": {
+      "owners": [
+        "2026-07-24-phase-04-risk-calibration-alerts.md:task-9:Persist immutable forecast and evidence bundles before publication"
+      ],
+      "exists": true
+    },
+    "crates/hazard/Cargo.toml": {
+      "owners": [
+        "2026-07-24-phase-02-features-labels-baselines.md:task-14:Implement an elastic-net discrete-time competing-risk baseline"
+      ],
+      "exists": true
+    },
+    "crates/hazard/src/buckets.rs": {
+      "owners": [
+        "2026-07-24-phase-04-risk-calibration-alerts.md:task-3:Define production hazard buckets and cumulative-incidence conversion"
+      ],
+      "exists": true
+    },
+    "crates/hazard/src/design.rs": {
+      "owners": [
+        "2026-07-24-phase-02-features-labels-baselines.md:task-14:Implement an elastic-net discrete-time competing-risk baseline"
+      ],
+      "exists": true
+    },
+    "crates/hazard/src/elastic_net.rs": {
+      "owners": [
+        "2026-07-24-phase-02-features-labels-baselines.md:task-14:Implement an elastic-net discrete-time competing-risk baseline"
+      ],
+      "exists": true
+    },
+    "crates/hazard/src/incidence.rs": {
+      "owners": [
+        "2026-07-24-phase-04-risk-calibration-alerts.md:task-3:Define production hazard buckets and cumulative-incidence conversion"
+      ],
+      "exists": true
+    },
+    "crates/hazard/src/lib.rs": {
+      "owners": [
+        "2026-07-24-phase-02-features-labels-baselines.md:task-14:Implement an elastic-net discrete-time competing-risk baseline"
+      ],
+      "exists": true
+    },
+    "crates/hazard/src/softmax.rs": {
+      "owners": [
+        "2026-07-24-phase-02-features-labels-baselines.md:task-14:Implement an elastic-net discrete-time competing-risk baseline"
+      ],
+      "exists": true
+    },
+    "crates/hazard/tests/cumulative_incidence.rs": {
+      "owners": [
+        "2026-07-24-phase-04-risk-calibration-alerts.md:task-3:Define production hazard buckets and cumulative-incidence conversion"
+      ],
+      "exists": true
+    },
+    "crates/hazard/tests/probability_contract.rs": {
+      "owners": [
+        "2026-07-24-phase-02-features-labels-baselines.md:task-14:Implement an elastic-net discrete-time competing-risk baseline"
+      ],
+      "exists": true
+    },
+    "crates/instrument-registry/Cargo.toml": {
+      "owners": [
+        "2026-07-24-phase-01-market-data-foundation.md:task-2:Build the point-in-time instrument registry and generation resolver"
+      ],
+      "exists": true
+    },
+    "crates/instrument-registry/src/history.rs": {
+      "owners": [
+        "2026-07-24-phase-01-market-data-foundation.md:task-2:Build the point-in-time instrument registry and generation resolver"
+      ],
+      "exists": true
+    },
+    "crates/instrument-registry/src/lib.rs": {
+      "owners": [
+        "2026-07-24-phase-01-market-data-foundation.md:task-2:Build the point-in-time instrument registry and generation resolver"
+      ],
+      "exists": true
+    },
+    "crates/instrument-registry/src/resolve.rs": {
+      "owners": [
+        "2026-07-24-phase-01-market-data-foundation.md:task-2:Build the point-in-time instrument registry and generation resolver"
+      ],
+      "exists": true
+    },
+    "crates/instrument-registry/tests/generation_history.rs": {
+      "owners": [
+        "2026-07-24-phase-01-market-data-foundation.md:task-2:Build the point-in-time instrument registry and generation resolver"
+      ],
+      "exists": true
+    },
+    "crates/labels/Cargo.toml": {
+      "owners": [
+        "2026-07-24-phase-02-features-labels-baselines.md:task-8:Implement versioned event labels, competing outcomes, censoring, and exclusions"
+      ],
+      "exists": true
+    },
+    "crates/labels/src/definitions.rs": {
+      "owners": [
+        "2026-07-24-phase-02-features-labels-baselines.md:task-8:Implement versioned event labels, competing outcomes, censoring, and exclusions"
+      ],
+      "exists": true
+    },
+    "crates/labels/src/first_passage.rs": {
+      "owners": [
+        "2026-07-24-phase-02-features-labels-baselines.md:task-8:Implement versioned event labels, competing outcomes, censoring, and exclusions"
+      ],
+      "exists": true
+    },
+    "crates/labels/src/lib.rs": {
+      "owners": [
+        "2026-07-24-phase-02-features-labels-baselines.md:task-8:Implement versioned event labels, competing outcomes, censoring, and exclusions"
+      ],
+      "exists": true
+    },
+    "crates/labels/tests/reference_labels.rs": {
+      "owners": [
+        "2026-07-24-phase-02-features-labels-baselines.md:task-8:Implement versioned event labels, competing outcomes, censoring, and exclusions"
+      ],
+      "exists": true
+    },
+    "crates/local-api/Cargo.toml": {
+      "owners": [
+        "2026-07-24-phase-00-foundations-contracts.md:task-9:Implement authenticated loopback session bootstrap and compatibility handshake"
+      ],
+      "exists": true
+    },
+    "crates/local-api/build.rs": {
+      "owners": [
+        "2026-07-24-phase-00-foundations-contracts.md:task-6:Create versioned protobuf contracts and reproducible code generation"
+      ],
+      "exists": true
+    },
+    "crates/local-api/src/alert_service.rs": {
+      "owners": [
+        "2026-07-24-phase-04-risk-calibration-alerts.md:task-13:Expose forecast/evidence/scenario/alert services and prove latency/coherence under load"
+      ],
+      "exists": true
+    },
+    "crates/local-api/src/auth.rs": {
+      "owners": [
+        "2026-07-24-phase-00-foundations-contracts.md:task-9:Implement authenticated loopback session bootstrap and compatibility handshake"
+      ],
+      "exists": true
+    },
+    "crates/local-api/src/compatibility.rs": {
+      "owners": [
+        "2026-07-24-phase-00-foundations-contracts.md:task-9:Implement authenticated loopback session bootstrap and compatibility handshake"
+      ],
+      "exists": true
+    },
+    "crates/local-api/src/cusp_service.rs": {
+      "owners": [
+        "2026-07-24-phase-03-stochastic-cusp.md:task-10:Expose cusp RPC data and automate the production-inclusion ablation gate"
+      ],
+      "exists": true
+    },
+    "crates/local-api/src/forecast_service.rs": {
+      "owners": [
+        "2026-07-24-phase-04-risk-calibration-alerts.md:task-13:Expose forecast/evidence/scenario/alert services and prove latency/coherence under load"
+      ],
+      "exists": true
+    },
+    "crates/local-api/src/generated.rs": {
+      "owners": [
+        "2026-07-24-phase-00-foundations-contracts.md:task-6:Create versioned protobuf contracts and reproducible code generation",
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-1:Implement local observability, stable telemetry fields, log redaction, and SLO snapshots",
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-2:Implement the hardware-aware capacity planner and source admission controller",
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-7:Implement disk, clock, sleep/wake, and network failure state machines"
+      ],
+      "exists": true
+    },
+    "crates/local-api/src/lib.rs": {
+      "owners": [
+        "2026-07-24-phase-00-foundations-contracts.md:task-9:Implement authenticated loopback session bootstrap and compatibility handshake"
+      ],
+      "exists": true
+    },
+    "crates/local-api/src/model_host_client.rs": {
+      "owners": [
+        "2026-07-24-phase-07-local-apple-models.md:task-2:Create the isolated Swift model-host process and authenticated ModelHostService bridge"
+      ],
+      "exists": true
+    },
+    "crates/local-api/src/stream_buffer.rs": {
+      "owners": [
+        "2026-07-24-phase-04-risk-calibration-alerts.md:task-13:Expose forecast/evidence/scenario/alert services and prove latency/coherence under load"
+      ],
+      "exists": true
+    },
+    "crates/local-api/tests/forecast_stream.rs": {
+      "owners": [
+        "2026-07-24-phase-04-risk-calibration-alerts.md:task-13:Expose forecast/evidence/scenario/alert services and prove latency/coherence under load"
+      ],
+      "exists": true
+    },
+    "crates/local-api/tests/session_auth.rs": {
+      "owners": [
+        "2026-07-24-phase-00-foundations-contracts.md:task-9:Implement authenticated loopback session bootstrap and compatibility handshake"
+      ],
+      "exists": true
+    },
+    "crates/metadata-store/Cargo.toml": {
+      "owners": [
+        "2026-07-24-phase-01-market-data-foundation.md:task-4:Create the single-writer SQLite metadata and audit store"
+      ],
+      "exists": true
+    },
+    "crates/metadata-store/migrations/0001_initial.sql": {
+      "owners": [
+        "2026-07-24-phase-01-market-data-foundation.md:task-4:Create the single-writer SQLite metadata and audit store"
+      ],
+      "exists": true
+    },
+    "crates/metadata-store/src/lib.rs": {
+      "owners": [
+        "2026-07-24-phase-01-market-data-foundation.md:task-4:Create the single-writer SQLite metadata and audit store"
+      ],
+      "exists": true
+    },
+    "crates/metadata-store/src/migrations.rs": {
+      "owners": [
+        "2026-07-24-phase-01-market-data-foundation.md:task-4:Create the single-writer SQLite metadata and audit store"
+      ],
+      "exists": true
+    },
+    "crates/metadata-store/tests/migration_and_integrity.rs": {
+      "owners": [
+        "2026-07-24-phase-01-market-data-foundation.md:task-4:Create the single-writer SQLite metadata and audit store"
+      ],
+      "exists": true
+    },
+    "crates/model-host-runtime/Cargo.toml": {
+      "owners": [
+        "2026-07-24-phase-07-local-apple-models.md:task-8:Integrate model-host capabilities into the daemon/app with fallback, budgets, parity, and failure isolation"
+      ],
+      "exists": true
+    },
+    "crates/model-host-runtime/src/circuit_breaker.rs": {
+      "owners": [
+        "2026-07-24-phase-07-local-apple-models.md:task-8:Integrate model-host capabilities into the daemon/app with fallback, budgets, parity, and failure isolation"
+      ],
+      "exists": true
+    },
+    "crates/model-host-runtime/src/lib.rs": {
+      "owners": [
+        "2026-07-24-phase-07-local-apple-models.md:task-8:Integrate model-host capabilities into the daemon/app with fallback, budgets, parity, and failure isolation"
+      ],
+      "exists": true
+    },
+    "crates/model-host-runtime/src/parity.rs": {
+      "owners": [
+        "2026-07-24-phase-07-local-apple-models.md:task-8:Integrate model-host capabilities into the daemon/app with fallback, budgets, parity, and failure isolation"
+      ],
+      "exists": true
+    },
+    "crates/model-host-runtime/tests/fallback.rs": {
+      "owners": [
+        "2026-07-24-phase-07-local-apple-models.md:task-8:Integrate model-host capabilities into the daemon/app with fallback, budgets, parity, and failure isolation"
+      ],
+      "exists": true
+    },
+    "crates/model-monitor/Cargo.toml": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-12:Generate drift, calibration, subgroup, alert-outcome, and offline/live consistency reports"
+      ],
+      "exists": true
+    },
+    "crates/model-monitor/src/alerts.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-12:Generate drift, calibration, subgroup, alert-outcome, and offline/live consistency reports"
+      ],
+      "exists": true
+    },
+    "crates/model-monitor/src/calibration.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-12:Generate drift, calibration, subgroup, alert-outcome, and offline/live consistency reports"
+      ],
+      "exists": true
+    },
+    "crates/model-monitor/src/drift.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-12:Generate drift, calibration, subgroup, alert-outcome, and offline/live consistency reports"
+      ],
+      "exists": true
+    },
+    "crates/model-monitor/src/lib.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-12:Generate drift, calibration, subgroup, alert-outcome, and offline/live consistency reports"
+      ],
+      "exists": true
+    },
+    "crates/model-monitor/src/report.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-12:Generate drift, calibration, subgroup, alert-outcome, and offline/live consistency reports"
+      ],
+      "exists": true
+    },
+    "crates/model-monitor/tests/monitoring_metrics.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-12:Generate drift, calibration, subgroup, alert-outcome, and offline/live consistency reports"
+      ],
+      "exists": true
+    },
+    "crates/model-registry/Cargo.toml": {
+      "owners": [
+        "2026-07-24-phase-02-features-labels-baselines.md:task-15:Create calibration, signed model packages, registry states, and evaluation reports"
+      ],
+      "exists": true
+    },
+    "crates/model-registry/src/lib.rs": {
+      "owners": [
+        "2026-07-24-phase-02-features-labels-baselines.md:task-15:Create calibration, signed model packages, registry states, and evaluation reports"
+      ],
+      "exists": true
+    },
+    "crates/model-registry/src/package.rs": {
+      "owners": [
+        "2026-07-24-phase-02-features-labels-baselines.md:task-15:Create calibration, signed model packages, registry states, and evaluation reports"
+      ],
+      "exists": true
+    },
+    "crates/model-registry/src/state.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-13:Automate evidence-based model promotion with independent approval and revocation"
+      ],
+      "exists": true
+    },
+    "crates/model-registry/src/verification.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-9:Create signed model and release artifact tooling with offline key separation"
+      ],
+      "exists": true
+    },
+    "crates/model-registry/tests/lifecycle.rs": {
+      "owners": [
+        "2026-07-24-phase-02-features-labels-baselines.md:task-15:Create calibration, signed model packages, registry states, and evaluation reports"
+      ],
+      "exists": true
+    },
+    "crates/numerics/Cargo.toml": {
+      "owners": [
+        "2026-07-24-phase-03-stochastic-cusp.md:task-1:Create shared deterministic numerical primitives and optimizer diagnostics"
+      ],
+      "exists": true
+    },
+    "crates/numerics/src/brent.rs": {
+      "owners": [
+        "2026-07-24-phase-03-stochastic-cusp.md:task-1:Create shared deterministic numerical primitives and optimizer diagnostics"
+      ],
+      "exists": true
+    },
+    "crates/numerics/src/finite_difference.rs": {
+      "owners": [
+        "2026-07-24-phase-03-stochastic-cusp.md:task-1:Create shared deterministic numerical primitives and optimizer diagnostics"
+      ],
+      "exists": true
+    },
+    "crates/numerics/src/lib.rs": {
+      "owners": [
+        "2026-07-24-phase-03-stochastic-cusp.md:task-1:Create shared deterministic numerical primitives and optimizer diagnostics"
+      ],
+      "exists": true
+    },
+    "crates/numerics/src/logsumexp.rs": {
+      "owners": [
+        "2026-07-24-phase-03-stochastic-cusp.md:task-1:Create shared deterministic numerical primitives and optimizer diagnostics"
+      ],
+      "exists": true
+    },
+    "crates/numerics/tests/reference.rs": {
+      "owners": [
+        "2026-07-24-phase-03-stochastic-cusp.md:task-1:Create shared deterministic numerical primitives and optimizer diagnostics"
+      ],
+      "exists": true
+    },
+    "crates/observability/Cargo.toml": {
+      "owners": [
+        "2026-07-24-phase-00-foundations-contracts.md:task-8:Establish local structured observability without remote export",
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-1:Implement local observability, stable telemetry fields, log redaction, and SLO snapshots"
+      ],
+      "exists": true
+    },
+    "crates/observability/src/fields.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-1:Implement local observability, stable telemetry fields, log redaction, and SLO snapshots"
+      ],
+      "exists": true
+    },
+    "crates/observability/src/lib.rs": {
+      "owners": [
+        "2026-07-24-phase-00-foundations-contracts.md:task-8:Establish local structured observability without remote export",
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-1:Implement local observability, stable telemetry fields, log redaction, and SLO snapshots"
+      ],
+      "exists": true
+    },
+    "crates/observability/src/local_service.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-1:Implement local observability, stable telemetry fields, log redaction, and SLO snapshots"
+      ],
+      "exists": true
+    },
+    "crates/observability/src/metrics.rs": {
+      "owners": [
+        "2026-07-24-phase-00-foundations-contracts.md:task-8:Establish local structured observability without remote export",
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-1:Implement local observability, stable telemetry fields, log redaction, and SLO snapshots"
+      ],
+      "exists": true
+    },
+    "crates/observability/src/redaction.rs": {
+      "owners": [
+        "2026-07-24-phase-00-foundations-contracts.md:task-8:Establish local structured observability without remote export",
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-1:Implement local observability, stable telemetry fields, log redaction, and SLO snapshots"
+      ],
+      "exists": true
+    },
+    "crates/observability/tests/observability_contract.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-1:Implement local observability, stable telemetry fields, log redaction, and SLO snapshots"
+      ],
+      "exists": true
+    },
+    "crates/observability/tests/redaction.rs": {
+      "owners": [
+        "2026-07-24-phase-00-foundations-contracts.md:task-8:Establish local structured observability without remote export"
+      ],
+      "exists": true
+    },
+    "crates/options/Cargo.toml": {
+      "owners": [
+        "2026-07-24-phase-05-options-onchain-coupling.md:task-1:Build the Deribit option-chain snapshot and normalized surface input layer"
+      ],
+      "exists": true
+    },
+    "crates/options/src/chain.rs": {
+      "owners": [
+        "2026-07-24-phase-05-options-onchain-coupling.md:task-1:Build the Deribit option-chain snapshot and normalized surface input layer"
+      ],
+      "exists": true
+    },
+    "crates/options/src/clean.rs": {
+      "owners": [
+        "2026-07-24-phase-05-options-onchain-coupling.md:task-1:Build the Deribit option-chain snapshot and normalized surface input layer"
+      ],
+      "exists": true
+    },
+    "crates/options/src/features.rs": {
+      "owners": [
+        "2026-07-24-phase-05-options-onchain-coupling.md:task-2:Implement volatility-surface, skew, term, gamma, and downside-demand features"
+      ],
+      "exists": true
+    },
+    "crates/options/src/forward.rs": {
+      "owners": [
+        "2026-07-24-phase-05-options-onchain-coupling.md:task-1:Build the Deribit option-chain snapshot and normalized surface input layer"
+      ],
+      "exists": true
+    },
+    "crates/options/src/lib.rs": {
+      "owners": [
+        "2026-07-24-phase-05-options-onchain-coupling.md:task-1:Build the Deribit option-chain snapshot and normalized surface input layer"
+      ],
+      "exists": true
+    },
+    "crates/options/src/surface.rs": {
+      "owners": [
+        "2026-07-24-phase-05-options-onchain-coupling.md:task-2:Implement volatility-surface, skew, term, gamma, and downside-demand features"
+      ],
+      "exists": true
+    },
+    "crates/options/tests/chain_snapshot.rs": {
+      "owners": [
+        "2026-07-24-phase-05-options-onchain-coupling.md:task-1:Build the Deribit option-chain snapshot and normalized surface input layer"
+      ],
+      "exists": true
+    },
+    "crates/options/tests/surface_features.rs": {
+      "owners": [
+        "2026-07-24-phase-05-options-onchain-coupling.md:task-2:Implement volatility-surface, skew, term, gamma, and downside-demand features"
+      ],
+      "exists": true
+    },
+    "crates/orderbook/Cargo.toml": {
+      "owners": [
+        "2026-07-24-phase-01-market-data-foundation.md:task-6:Build the single-writer L2/L3 order-book state machine and recovery invariants"
+      ],
+      "exists": true
+    },
+    "crates/orderbook/src/book.rs": {
+      "owners": [
+        "2026-07-24-phase-01-market-data-foundation.md:task-6:Build the single-writer L2/L3 order-book state machine and recovery invariants"
+      ],
+      "exists": true
+    },
+    "crates/orderbook/src/checksum.rs": {
+      "owners": [
+        "2026-07-24-phase-01-market-data-foundation.md:task-6:Build the single-writer L2/L3 order-book state machine and recovery invariants"
+      ],
+      "exists": true
+    },
+    "crates/orderbook/src/lib.rs": {
+      "owners": [
+        "2026-07-24-phase-01-market-data-foundation.md:task-6:Build the single-writer L2/L3 order-book state machine and recovery invariants"
+      ],
+      "exists": true
+    },
+    "crates/orderbook/src/state.rs": {
+      "owners": [
+        "2026-07-24-phase-01-market-data-foundation.md:task-6:Build the single-writer L2/L3 order-book state machine and recovery invariants"
+      ],
+      "exists": true
+    },
+    "crates/orderbook/tests/properties.rs": {
+      "owners": [
+        "2026-07-24-phase-01-market-data-foundation.md:task-6:Build the single-writer L2/L3 order-book state machine and recovery invariants"
+      ],
+      "exists": true
+    },
+    "crates/orderbook/tests/state_machine.rs": {
+      "owners": [
+        "2026-07-24-phase-01-market-data-foundation.md:task-6:Build the single-writer L2/L3 order-book state machine and recovery invariants"
+      ],
+      "exists": true
+    },
+    "crates/parquet-store/Cargo.toml": {
+      "owners": [
+        "2026-07-24-phase-01-market-data-foundation.md:task-5:Implement immutable normalized Parquet datasets and atomic partition sealing"
+      ],
+      "exists": true
+    },
+    "crates/parquet-store/src/layout.rs": {
+      "owners": [
+        "2026-07-24-phase-01-market-data-foundation.md:task-5:Implement immutable normalized Parquet datasets and atomic partition sealing"
+      ],
+      "exists": true
+    },
+    "crates/parquet-store/src/lib.rs": {
+      "owners": [
+        "2026-07-24-phase-01-market-data-foundation.md:task-5:Implement immutable normalized Parquet datasets and atomic partition sealing"
+      ],
+      "exists": true
+    },
+    "crates/parquet-store/src/manifest.rs": {
+      "owners": [
+        "2026-07-24-phase-01-market-data-foundation.md:task-5:Implement immutable normalized Parquet datasets and atomic partition sealing"
+      ],
+      "exists": true
+    },
+    "crates/parquet-store/src/writer.rs": {
+      "owners": [
+        "2026-07-24-phase-01-market-data-foundation.md:task-5:Implement immutable normalized Parquet datasets and atomic partition sealing"
+      ],
+      "exists": true
+    },
+    "crates/parquet-store/tests/atomic_seal.rs": {
+      "owners": [
+        "2026-07-24-phase-01-market-data-foundation.md:task-5:Implement immutable normalized Parquet datasets and atomic partition sealing"
+      ],
+      "exists": true
+    },
+    "crates/parser-limits/Cargo.toml": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-3:Harden every network parser with shared limits and continuous fuzzing"
+      ],
+      "exists": true
+    },
+    "crates/parser-limits/src/compression.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-3:Harden every network parser with shared limits and continuous fuzzing"
+      ],
+      "exists": true
+    },
+    "crates/parser-limits/src/json.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-3:Harden every network parser with shared limits and continuous fuzzing"
+      ],
+      "exists": true
+    },
+    "crates/parser-limits/src/lib.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-3:Harden every network parser with shared limits and continuous fuzzing"
+      ],
+      "exists": true
+    },
+    "crates/parser-limits/tests/limit_contract.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-3:Harden every network parser with shared limits and continuous fuzzing"
+      ],
+      "exists": true
+    },
+    "crates/performance-testkit/Cargo.toml": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-10:Establish reference-load benchmarks, latency regression gates, profiling, and 24-hour soak testing"
+      ],
+      "exists": true
+    },
+    "crates/performance-testkit/benches/feature_pipeline.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-10:Establish reference-load benchmarks, latency regression gates, profiling, and 24-hour soak testing"
+      ],
+      "exists": true
+    },
+    "crates/performance-testkit/benches/forecast.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-10:Establish reference-load benchmarks, latency regression gates, profiling, and 24-hour soak testing"
+      ],
+      "exists": true
+    },
+    "crates/performance-testkit/benches/orderbook.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-10:Establish reference-load benchmarks, latency regression gates, profiling, and 24-hour soak testing"
+      ],
+      "exists": true
+    },
+    "crates/performance-testkit/src/lib.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-10:Establish reference-load benchmarks, latency regression gates, profiling, and 24-hour soak testing"
+      ],
+      "exists": true
+    },
+    "crates/promotion-gate/Cargo.toml": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-13:Automate evidence-based model promotion with independent approval and revocation"
+      ],
+      "exists": true
+    },
+    "crates/promotion-gate/src/approval.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-13:Automate evidence-based model promotion with independent approval and revocation"
+      ],
+      "exists": true
+    },
+    "crates/promotion-gate/src/evidence.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-13:Automate evidence-based model promotion with independent approval and revocation"
+      ],
+      "exists": true
+    },
+    "crates/promotion-gate/src/lib.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-13:Automate evidence-based model promotion with independent approval and revocation"
+      ],
+      "exists": true
+    },
+    "crates/promotion-gate/src/policy.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-13:Automate evidence-based model promotion with independent approval and revocation"
+      ],
+      "exists": true
+    },
+    "crates/promotion-gate/tests/promotion_policy.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-13:Automate evidence-based model promotion with independent approval and revocation"
+      ],
+      "exists": true
+    },
+    "crates/quality/Cargo.toml": {
+      "owners": [
+        "2026-07-24-phase-01-market-data-foundation.md:task-11:Supervise collectors with explicit backpressure, quality states, and admission control"
+      ],
+      "exists": true
+    },
+    "crates/quality/src/lib.rs": {
+      "owners": [
+        "2026-07-24-phase-01-market-data-foundation.md:task-11:Supervise collectors with explicit backpressure, quality states, and admission control"
+      ],
+      "exists": true
+    },
+    "crates/quality/src/source_health.rs": {
+      "owners": [
+        "2026-07-24-phase-01-market-data-foundation.md:task-11:Supervise collectors with explicit backpressure, quality states, and admission control"
+      ],
+      "exists": true
+    },
+    "crates/raw-wal/Cargo.toml": {
+      "owners": [
+        "2026-07-24-phase-01-market-data-foundation.md:task-3:Implement segmented append-only raw WAL framing and crash recovery"
+      ],
+      "exists": true
+    },
+    "crates/raw-wal/src/frame.rs": {
+      "owners": [
+        "2026-07-24-phase-01-market-data-foundation.md:task-3:Implement segmented append-only raw WAL framing and crash recovery"
+      ],
+      "exists": true
+    },
+    "crates/raw-wal/src/lib.rs": {
+      "owners": [
+        "2026-07-24-phase-01-market-data-foundation.md:task-3:Implement segmented append-only raw WAL framing and crash recovery"
+      ],
+      "exists": true
+    },
+    "crates/raw-wal/src/recovery.rs": {
+      "owners": [
+        "2026-07-24-phase-01-market-data-foundation.md:task-3:Implement segmented append-only raw WAL framing and crash recovery"
+      ],
+      "exists": true
+    },
+    "crates/raw-wal/src/segment.rs": {
+      "owners": [
+        "2026-07-24-phase-01-market-data-foundation.md:task-3:Implement segmented append-only raw WAL framing and crash recovery"
+      ],
+      "exists": true
+    },
+    "crates/raw-wal/tests/recovery.rs": {
+      "owners": [
+        "2026-07-24-phase-01-market-data-foundation.md:task-3:Implement segmented append-only raw WAL framing and crash recovery"
+      ],
+      "exists": true
+    },
+    "crates/recovery/Cargo.toml": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-6:Complete WAL/checkpoint recovery, encrypted backup, restore, and disaster-recovery verification"
+      ],
+      "exists": true
+    },
+    "crates/recovery/src/backup.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-6:Complete WAL/checkpoint recovery, encrypted backup, restore, and disaster-recovery verification"
+      ],
+      "exists": true
+    },
+    "crates/recovery/src/checkpoint.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-6:Complete WAL/checkpoint recovery, encrypted backup, restore, and disaster-recovery verification"
+      ],
+      "exists": true
+    },
+    "crates/recovery/src/lib.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-6:Complete WAL/checkpoint recovery, encrypted backup, restore, and disaster-recovery verification"
+      ],
+      "exists": true
+    },
+    "crates/recovery/src/restore.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-6:Complete WAL/checkpoint recovery, encrypted backup, restore, and disaster-recovery verification"
+      ],
+      "exists": true
+    },
+    "crates/recovery/src/wal_repair.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-6:Complete WAL/checkpoint recovery, encrypted backup, restore, and disaster-recovery verification"
+      ],
+      "exists": true
+    },
+    "crates/recovery/tests/backup_roundtrip.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-6:Complete WAL/checkpoint recovery, encrypted backup, restore, and disaster-recovery verification"
+      ],
+      "exists": true
+    },
+    "crates/recovery/tests/crash_recovery.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-6:Complete WAL/checkpoint recovery, encrypted backup, restore, and disaster-recovery verification"
+      ],
+      "exists": true
+    },
+    "crates/regime/Cargo.toml": {
+      "owners": [
+        "2026-07-24-phase-02-features-labels-baselines.md:task-13:Implement a Student-t hidden Markov regime model with neutral state identities"
+      ],
+      "exists": true
+    },
+    "crates/regime/src/describe.rs": {
+      "owners": [
+        "2026-07-24-phase-02-features-labels-baselines.md:task-13:Implement a Student-t hidden Markov regime model with neutral state identities"
+      ],
+      "exists": true
+    },
+    "crates/regime/src/em.rs": {
+      "owners": [
+        "2026-07-24-phase-02-features-labels-baselines.md:task-13:Implement a Student-t hidden Markov regime model with neutral state identities"
+      ],
+      "exists": true
+    },
+    "crates/regime/src/forward_backward.rs": {
+      "owners": [
+        "2026-07-24-phase-02-features-labels-baselines.md:task-13:Implement a Student-t hidden Markov regime model with neutral state identities"
+      ],
+      "exists": true
+    },
+    "crates/regime/src/lib.rs": {
+      "owners": [
+        "2026-07-24-phase-02-features-labels-baselines.md:task-13:Implement a Student-t hidden Markov regime model with neutral state identities"
+      ],
+      "exists": true
+    },
+    "crates/regime/tests/reference_hmm.rs": {
+      "owners": [
+        "2026-07-24-phase-02-features-labels-baselines.md:task-13:Implement a Student-t hidden Markov regime model with neutral state identities"
+      ],
+      "exists": true
+    },
+    "crates/replay-engine/Cargo.toml": {
+      "owners": [
+        "2026-07-24-phase-01-market-data-foundation.md:task-12:Deliver deterministic replay and the connector certification CLI"
+      ],
+      "exists": true
+    },
+    "crates/replay-engine/src/lib.rs": {
+      "owners": [
+        "2026-07-24-phase-01-market-data-foundation.md:task-12:Deliver deterministic replay and the connector certification CLI"
+      ],
+      "exists": true
+    },
+    "crates/replay-engine/tests/golden_market_foundation.rs": {
+      "owners": [
+        "2026-07-24-phase-01-market-data-foundation.md:task-12:Deliver deterministic replay and the connector certification CLI"
+      ],
+      "exists": true
+    },
+    "crates/risk-engine/Cargo.toml": {
+      "owners": [
+        "2026-07-24-phase-04-risk-calibration-alerts.md:task-12:Wire the production risk pipeline and persist-evaluate-publish ordering"
+      ],
+      "exists": true
+    },
+    "crates/risk-engine/src/evidence.rs": {
+      "owners": [
+        "2026-07-24-phase-04-risk-calibration-alerts.md:task-12:Wire the production risk pipeline and persist-evaluate-publish ordering"
+      ],
+      "exists": true
+    },
+    "crates/risk-engine/src/lib.rs": {
+      "owners": [
+        "2026-07-24-phase-04-risk-calibration-alerts.md:task-12:Wire the production risk pipeline and persist-evaluate-publish ordering"
+      ],
+      "exists": true
+    },
+    "crates/risk-engine/src/pipeline.rs": {
+      "owners": [
+        "2026-07-24-phase-04-risk-calibration-alerts.md:task-12:Wire the production risk pipeline and persist-evaluate-publish ordering",
+        "2026-07-24-phase-07-local-apple-models.md:task-8:Integrate model-host capabilities into the daemon/app with fallback, budgets, parity, and failure isolation"
+      ],
+      "exists": true
+    },
+    "crates/risk-engine/tests/pipeline_order.rs": {
+      "owners": [
+        "2026-07-24-phase-04-risk-calibration-alerts.md:task-12:Wire the production risk pipeline and persist-evaluate-publish ordering"
+      ],
+      "exists": true
+    },
+    "crates/runtime-health/Cargo.toml": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-7:Implement disk, clock, sleep/wake, and network failure state machines"
+      ],
+      "exists": true
+    },
+    "crates/runtime-health/src/clock.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-7:Implement disk, clock, sleep/wake, and network failure state machines"
+      ],
+      "exists": true
+    },
+    "crates/runtime-health/src/disk.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-7:Implement disk, clock, sleep/wake, and network failure state machines"
+      ],
+      "exists": true
+    },
+    "crates/runtime-health/src/lib.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-7:Implement disk, clock, sleep/wake, and network failure state machines"
+      ],
+      "exists": true
+    },
+    "crates/runtime-health/src/network.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-7:Implement disk, clock, sleep/wake, and network failure state machines"
+      ],
+      "exists": true
+    },
+    "crates/runtime-health/src/power.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-7:Implement disk, clock, sleep/wake, and network failure state machines"
+      ],
+      "exists": true
+    },
+    "crates/runtime-health/tests/failure_states.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-7:Implement disk, clock, sleep/wake, and network failure state machines"
+      ],
+      "exists": true
+    },
+    "crates/scenarios/Cargo.toml": {
+      "owners": [
+        "2026-07-24-phase-04-risk-calibration-alerts.md:task-8:Build conditional scenario simulation with reproducible paths and threshold summaries"
+      ],
+      "exists": true
+    },
+    "crates/scenarios/src/lib.rs": {
+      "owners": [
+        "2026-07-24-phase-04-risk-calibration-alerts.md:task-8:Build conditional scenario simulation with reproducible paths and threshold summaries"
+      ],
+      "exists": true
+    },
+    "crates/scenarios/src/liquidity.rs": {
+      "owners": [
+        "2026-07-24-phase-04-risk-calibration-alerts.md:task-8:Build conditional scenario simulation with reproducible paths and threshold summaries"
+      ],
+      "exists": true
+    },
+    "crates/scenarios/src/process.rs": {
+      "owners": [
+        "2026-07-24-phase-04-risk-calibration-alerts.md:task-8:Build conditional scenario simulation with reproducible paths and threshold summaries"
+      ],
+      "exists": true
+    },
+    "crates/scenarios/src/summary.rs": {
+      "owners": [
+        "2026-07-24-phase-04-risk-calibration-alerts.md:task-8:Build conditional scenario simulation with reproducible paths and threshold summaries"
+      ],
+      "exists": true
+    },
+    "crates/scenarios/tests/reference.rs": {
+      "owners": [
+        "2026-07-24-phase-04-risk-calibration-alerts.md:task-8:Build conditional scenario simulation with reproducible paths and threshold summaries"
+      ],
+      "exists": true
+    },
+    "crates/security-policy/Cargo.toml": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-8:Enforce local security, privacy, audit-chain, and outbound-network policy"
+      ],
+      "exists": true
+    },
+    "crates/security-policy/src/audit_chain.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-8:Enforce local security, privacy, audit-chain, and outbound-network policy"
+      ],
+      "exists": true
+    },
+    "crates/security-policy/src/code_identity.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-8:Enforce local security, privacy, audit-chain, and outbound-network policy"
+      ],
+      "exists": true
+    },
+    "crates/security-policy/src/files.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-8:Enforce local security, privacy, audit-chain, and outbound-network policy"
+      ],
+      "exists": true
+    },
+    "crates/security-policy/src/lib.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-8:Enforce local security, privacy, audit-chain, and outbound-network policy"
+      ],
+      "exists": true
+    },
+    "crates/security-policy/src/outbound.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-8:Enforce local security, privacy, audit-chain, and outbound-network policy"
+      ],
+      "exists": true
+    },
+    "crates/security-policy/tests/security_contract.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-8:Enforce local security, privacy, audit-chain, and outbound-network policy"
+      ],
+      "exists": true
+    },
+    "crates/shadow-ledger/Cargo.toml": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-11:Persist immutable live shadow forecasts and point-in-time outcome joins"
+      ],
+      "exists": true
+    },
+    "crates/shadow-ledger/src/consistency.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-11:Persist immutable live shadow forecasts and point-in-time outcome joins"
+      ],
+      "exists": true
+    },
+    "crates/shadow-ledger/src/lib.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-11:Persist immutable live shadow forecasts and point-in-time outcome joins"
+      ],
+      "exists": true
+    },
+    "crates/shadow-ledger/src/outcomes.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-11:Persist immutable live shadow forecasts and point-in-time outcome joins"
+      ],
+      "exists": true
+    },
+    "crates/shadow-ledger/src/writer.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-11:Persist immutable live shadow forecasts and point-in-time outcome joins"
+      ],
+      "exists": true
+    },
+    "crates/shadow-ledger/tests/immutable_shadow.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-11:Persist immutable live shadow forecasts and point-in-time outcome joins"
+      ],
+      "exists": true
+    },
+    "crates/slow-sources/Cargo.toml": {
+      "owners": [
+        "2026-07-24-phase-05-options-onchain-coupling.md:task-10:Integrate slow-source revisions, capacity isolation, evaluation, and Phase 5 gates"
+      ],
+      "exists": true
+    },
+    "crates/slow-sources/src/lib.rs": {
+      "owners": [
+        "2026-07-24-phase-05-options-onchain-coupling.md:task-10:Integrate slow-source revisions, capacity isolation, evaluation, and Phase 5 gates"
+      ],
+      "exists": true
+    },
+    "crates/slow-sources/src/resource_budget.rs": {
+      "owners": [
+        "2026-07-24-phase-05-options-onchain-coupling.md:task-10:Integrate slow-source revisions, capacity isolation, evaluation, and Phase 5 gates"
+      ],
+      "exists": true
+    },
+    "crates/slow-sources/src/revision.rs": {
+      "owners": [
+        "2026-07-24-phase-05-options-onchain-coupling.md:task-10:Integrate slow-source revisions, capacity isolation, evaluation, and Phase 5 gates"
+      ],
+      "exists": true
+    },
+    "crates/slow-sources/tests/publication_lag.rs": {
+      "owners": [
+        "2026-07-24-phase-05-options-onchain-coupling.md:task-10:Integrate slow-source revisions, capacity isolation, evaluation, and Phase 5 gates"
+      ],
+      "exists": true
+    },
+    "crates/system-tests/Cargo.toml": {
+      "owners": [
+        "2026-07-24-phase-00-foundations-contracts.md:task-1:Bootstrap the pinned Rust workspace and developer command surface",
+        "2026-07-24-phase-00-foundations-contracts.md:task-2:Record licenses, governance, threat boundary, and foundational ADRs",
+        "2026-07-24-phase-00-foundations-contracts.md:task-6:Create versioned protobuf contracts and reproducible code generation",
+        "2026-07-24-phase-04-risk-calibration-alerts.md:task-13:Expose forecast/evidence/scenario/alert services and prove latency/coherence under load",
+        "2026-07-24-phase-05-options-onchain-coupling.md:task-10:Integrate slow-source revisions, capacity isolation, evaluation, and Phase 5 gates",
+        "2026-07-24-phase-07-local-apple-models.md:task-8:Integrate model-host capabilities into the daemon/app with fallback, budgets, parity, and failure isolation",
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-4:Add deterministic concurrency, cancellation, and shutdown verification",
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-5:Build the fault-injection and chaos scenario runner",
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-8:Enforce local security, privacy, audit-chain, and outbound-network policy",
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-10:Establish reference-load benchmarks, latency regression gates, profiling, and 24-hour soak testing",
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-11:Persist immutable live shadow forecasts and point-in-time outcome joins",
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-15:Publish operator, incident, vulnerability, contribution, and data-license governance",
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-16:Produce SBOM, provenance, acceptance evidence, preview release, and stable release gate"
+      ],
+      "exists": true
+    },
+    "crates/system-tests/src/lib.rs": {
+      "owners": [
+        "2026-07-24-phase-00-foundations-contracts.md:task-1:Bootstrap the pinned Rust workspace and developer command surface"
+      ],
+      "exists": true
+    },
+    "crates/system-tests/tests/acceptance_manifest.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-16:Produce SBOM, provenance, acceptance evidence, preview release, and stable release gate"
+      ],
+      "exists": true
+    },
+    "crates/system-tests/tests/chaos_matrix.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-5:Build the fault-injection and chaos scenario runner"
+      ],
+      "exists": true
+    },
+    "crates/system-tests/tests/governance_contract.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-15:Publish operator, incident, vulnerability, contribution, and data-license governance"
+      ],
+      "exists": true
+    },
+    "crates/system-tests/tests/governance_files.rs": {
+      "owners": [
+        "2026-07-24-phase-00-foundations-contracts.md:task-2:Record licenses, governance, threat boundary, and foundational ADRs"
+      ],
+      "exists": true
+    },
+    "crates/system-tests/tests/latency_gate.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-10:Establish reference-load benchmarks, latency regression gates, profiling, and 24-hour soak testing"
+      ],
+      "exists": true
+    },
+    "crates/system-tests/tests/loom_book_resync.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-4:Add deterministic concurrency, cancellation, and shutdown verification"
+      ],
+      "exists": true
+    },
+    "crates/system-tests/tests/loom_model_hot_swap.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-4:Add deterministic concurrency, cancellation, and shutdown verification"
+      ],
+      "exists": true
+    },
+    "crates/system-tests/tests/loom_rpc_teardown.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-4:Add deterministic concurrency, cancellation, and shutdown verification"
+      ],
+      "exists": true
+    },
+    "crates/system-tests/tests/model_host.rs": {
+      "owners": [
+        "2026-07-24-phase-07-local-apple-models.md:task-8:Integrate model-host capabilities into the daemon/app with fallback, budgets, parity, and failure isolation"
+      ],
+      "exists": true
+    },
+    "crates/system-tests/tests/no_execution_surface.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-16:Produce SBOM, provenance, acceptance evidence, preview release, and stable release gate"
+      ],
+      "exists": true
+    },
+    "crates/system-tests/tests/no_secret_output.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-8:Enforce local security, privacy, audit-chain, and outbound-network policy"
+      ],
+      "exists": true
+    },
+    "crates/system-tests/tests/offline_live_consistency.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-11:Persist immutable live shadow forecasts and point-in-time outcome joins"
+      ],
+      "exists": true
+    },
+    "crates/system-tests/tests/outbound_allowlist.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-8:Enforce local security, privacy, audit-chain, and outbound-network policy"
+      ],
+      "exists": true
+    },
+    "crates/system-tests/tests/proto_contract.rs": {
+      "owners": [
+        "2026-07-24-phase-00-foundations-contracts.md:task-6:Create versioned protobuf contracts and reproducible code generation"
+      ],
+      "exists": true
+    },
+    "crates/system-tests/tests/repository_layout.rs": {
+      "owners": [
+        "2026-07-24-phase-00-foundations-contracts.md:task-1:Bootstrap the pinned Rust workspace and developer command surface"
+      ],
+      "exists": true
+    },
+    "crates/system-tests/tests/risk_pipeline.rs": {
+      "owners": [
+        "2026-07-24-phase-04-risk-calibration-alerts.md:task-13:Expose forecast/evidence/scenario/alert services and prove latency/coherence under load"
+      ],
+      "exists": true
+    },
+    "crates/system-tests/tests/slow_sources.rs": {
+      "owners": [
+        "2026-07-24-phase-05-options-onchain-coupling.md:task-10:Integrate slow-source revisions, capacity isolation, evaluation, and Phase 5 gates"
+      ],
+      "exists": true
+    },
+    "crates/system-tests/tests/soak_assertions.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-10:Establish reference-load benchmarks, latency regression gates, profiling, and 24-hour soak testing"
+      ],
+      "exists": true
+    },
+    "crates/system-tests/tests/spec_traceability.rs": {
+      "owners": [
+        "2026-07-24-phase-00-foundations-contracts.md:task-10:Create the contract CI pipeline and Phase 0 traceability gate"
+      ],
+      "exists": true
+    },
+    "crates/volatility/Cargo.toml": {
+      "owners": [
+        "2026-07-24-phase-02-features-labels-baselines.md:task-4:Implement price, return, volatility, semivariance, and jump features"
+      ],
+      "exists": true
+    },
+    "crates/volatility/src/ewma.rs": {
+      "owners": [
+        "2026-07-24-phase-02-features-labels-baselines.md:task-11:Implement EWMA and HAR-RV volatility forecasts with walk-forward selection"
+      ],
+      "exists": true
+    },
+    "crates/volatility/src/forecast.rs": {
+      "owners": [
+        "2026-07-24-phase-02-features-labels-baselines.md:task-11:Implement EWMA and HAR-RV volatility forecasts with walk-forward selection"
+      ],
+      "exists": true
+    },
+    "crates/volatility/src/har.rs": {
+      "owners": [
+        "2026-07-24-phase-02-features-labels-baselines.md:task-11:Implement EWMA and HAR-RV volatility forecasts with walk-forward selection"
+      ],
+      "exists": true
+    },
+    "crates/volatility/src/measures.rs": {
+      "owners": [
+        "2026-07-24-phase-02-features-labels-baselines.md:task-4:Implement price, return, volatility, semivariance, and jump features"
+      ],
+      "exists": true
+    },
+    "crates/volatility/tests/forecast_models.rs": {
+      "owners": [
+        "2026-07-24-phase-02-features-labels-baselines.md:task-11:Implement EWMA and HAR-RV volatility forecasts with walk-forward selection"
+      ],
+      "exists": true
+    },
+    "crates/volatility/tests/reference_measures.rs": {
+      "owners": [
+        "2026-07-24-phase-02-features-labels-baselines.md:task-4:Implement price, return, volatility, semivariance, and jump features"
+      ],
+      "exists": true
+    },
+    "deny.toml": {
+      "owners": [
+        "2026-07-24-phase-00-foundations-contracts.md:task-10:Create the contract CI pipeline and Phase 0 traceability gate"
+      ],
+      "exists": true
+    },
+    "docs/adr/0001-modular-monolith.md": {
+      "owners": [
+        "2026-07-24-phase-00-foundations-contracts.md:task-2:Record licenses, governance, threat boundary, and foundational ADRs"
+      ],
+      "exists": true
+    },
+    "docs/adr/0002-local-data-plane.md": {
+      "owners": [
+        "2026-07-24-phase-00-foundations-contracts.md:task-2:Record licenses, governance, threat boundary, and foundational ADRs"
+      ],
+      "exists": true
+    },
+    "docs/adr/0003-no-execution-v1.md": {
+      "owners": [
+        "2026-07-24-phase-00-foundations-contracts.md:task-2:Record licenses, governance, threat boundary, and foundational ADRs"
+      ],
+      "exists": true
+    },
+    "docs/adr/0004-cusp-estimator-and-sign.md": {
+      "owners": [
+        "2026-07-24-phase-03-stochastic-cusp.md:task-2:Freeze the cusp sign convention, potential, derivatives, controls, and state contract"
+      ],
+      "exists": true
+    },
+    "docs/adr/0005-core-ai-capability-gate.md": {
+      "owners": [
+        "2026-07-24-phase-07-local-apple-models.md:task-4:Implement capability-gated Core AI temporal inference with Core ML/reference fallback"
+      ],
+      "exists": true
+    },
+    "docs/data-dictionary/bitcoin-features.md": {
+      "owners": [
+        "2026-07-24-phase-05-options-onchain-coupling.md:task-4:Implement Bitcoin mempool, network, UTXO-age, realized-value, and flow features"
+      ],
+      "exists": true
+    },
+    "docs/data-dictionary/ethereum-features.md": {
+      "owners": [
+        "2026-07-24-phase-05-options-onchain-coupling.md:task-6:Implement Ethereum fee/burn/staking/stablecoin/DEX/bridge features"
+      ],
+      "exists": true
+    },
+    "docs/data-dictionary/features.md": {
+      "owners": [
+        "2026-07-24-phase-02-features-labels-baselines.md:task-1:Define the feature registry, observation record, and documentation contract"
+      ],
+      "exists": true
+    },
+    "docs/data-dictionary/labels.md": {
+      "owners": [
+        "2026-07-24-phase-02-features-labels-baselines.md:task-8:Implement versioned event labels, competing outcomes, censoring, and exclusions"
+      ],
+      "exists": true
+    },
+    "docs/data-dictionary/options-features.md": {
+      "owners": [
+        "2026-07-24-phase-05-options-onchain-coupling.md:task-2:Implement volatility-surface, skew, term, gamma, and downside-demand features"
+      ],
+      "exists": true
+    },
+    "docs/governance/dco.md": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-15:Publish operator, incident, vulnerability, contribution, and data-license governance"
+      ],
+      "exists": true
+    },
+    "docs/governance/model-promotion.md": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-13:Automate evidence-based model promotion with independent approval and revocation"
+      ],
+      "exists": true
+    },
+    "docs/implementation/traceability.md": {
+      "owners": [
+        "2026-07-24-phase-00-foundations-contracts.md:task-10:Create the contract CI pipeline and Phase 0 traceability gate",
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-16:Produce SBOM, provenance, acceptance evidence, preview release, and stable release gate"
+      ],
+      "exists": true
+    },
+    "docs/model-cards/cusp-control-features.md": {
+      "owners": [
+        "2026-07-24-phase-03-stochastic-cusp.md:task-6:Define hierarchical alpha/beta control mappings and constrained feature groups"
+      ],
+      "exists": true
+    },
+    "docs/model-cards/cusp-template.md": {
+      "owners": [
+        "2026-07-24-phase-03-stochastic-cusp.md:task-10:Expose cusp RPC data and automate the production-inclusion ablation gate"
+      ],
+      "exists": true
+    },
+    "docs/operations/capacity-planning.md": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-2:Implement the hardware-aware capacity planner and source admission controller"
+      ],
+      "exists": true
+    },
+    "docs/operations/chaos-testing.md": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-5:Build the fault-injection and chaos scenario runner"
+      ],
+      "exists": true
+    },
+    "docs/operations/disaster-recovery.md": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-6:Complete WAL/checkpoint recovery, encrypted backup, restore, and disaster-recovery verification"
+      ],
+      "exists": true
+    },
+    "docs/operations/disk-recovery.md": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-15:Publish operator, incident, vulnerability, contribution, and data-license governance"
+      ],
+      "exists": true
+    },
+    "docs/operations/incidents.md": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-15:Publish operator, incident, vulnerability, contribution, and data-license governance"
+      ],
+      "exists": true
+    },
+    "docs/operations/macos-user-workflows.md": {
+      "owners": [
+        "2026-07-24-phase-06-macos-rpc-product.md:task-12:Complete accessibility, localization, reduced motion, large-data, and daemon-failure end-to-end QA"
+      ],
+      "exists": true
+    },
+    "docs/operations/model-revocation.md": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-15:Publish operator, incident, vulnerability, contribution, and data-license governance"
+      ],
+      "exists": true
+    },
+    "docs/operations/observability.md": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-1:Implement local observability, stable telemetry fields, log redaction, and SLO snapshots"
+      ],
+      "exists": true
+    },
+    "docs/operations/operator-runbook.md": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-15:Publish operator, incident, vulnerability, contribution, and data-license governance"
+      ],
+      "exists": true
+    },
+    "docs/operations/performance-methodology.md": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-10:Establish reference-load benchmarks, latency regression gates, profiling, and 24-hour soak testing"
+      ],
+      "exists": true
+    },
+    "docs/operations/release-rollback.md": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-15:Publish operator, incident, vulnerability, contribution, and data-license governance"
+      ],
+      "exists": true
+    },
+    "docs/operations/runtime-failure-policy.md": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-7:Implement disk, clock, sleep/wake, and network failure state machines"
+      ],
+      "exists": true
+    },
+    "docs/operations/source-quarantine.md": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-15:Publish operator, incident, vulnerability, contribution, and data-license governance"
+      ],
+      "exists": true
+    },
+    "docs/release/macos-packaging.md": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-14:Build signed macOS packaging plus fresh-install, upgrade, interruption, and rollback tests"
+      ],
+      "exists": true
+    },
+    "docs/release/release-checklist.md": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-16:Produce SBOM, provenance, acceptance evidence, preview release, and stable release gate"
+      ],
+      "exists": true
+    },
+    "docs/release/release-notes-template.md": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-16:Produce SBOM, provenance, acceptance evidence, preview release, and stable release gate"
+      ],
+      "exists": true
+    },
+    "docs/release/reproducibility.md": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-16:Produce SBOM, provenance, acceptance evidence, preview release, and stable release gate"
+      ],
+      "exists": true
+    },
+    "docs/release/update-and-rollback.md": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-14:Build signed macOS packaging plus fresh-install, upgrade, interruption, and rollback tests"
+      ],
+      "exists": true
+    },
+    "docs/research/model-monitoring.md": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-12:Generate drift, calibration, subgroup, alert-outcome, and offline/live consistency reports"
+      ],
+      "exists": true
+    },
+    "docs/research/shadow-protocol.md": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-11:Persist immutable live shadow forecasts and point-in-time outcome joins"
+      ],
+      "exists": true
+    },
+    "docs/security/privacy-model.md": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-8:Enforce local security, privacy, audit-chain, and outbound-network policy"
+      ],
+      "exists": true
+    },
+    "docs/security/signing-key-policy.md": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-9:Create signed model and release artifact tooling with offline key separation"
+      ],
+      "exists": true
+    },
+    "docs/security/threat-model.md": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-8:Enforce local security, privacy, audit-chain, and outbound-network policy"
+      ],
+      "exists": true
+    },
+    "fixtures/chains/bitcoin/manifest.toml": {
+      "owners": [
+        "2026-07-24-phase-05-options-onchain-coupling.md:task-3:Implement local Bitcoin Core RPC ingestion with confirmation and reorg semantics"
+      ],
+      "exists": true
+    },
+    "fixtures/chains/ethereum/manifest.toml": {
+      "owners": [
+        "2026-07-24-phase-05-options-onchain-coupling.md:task-5:Implement Ethereum execution and consensus clients with finality/reorg tracking"
+      ],
+      "exists": true
+    },
+    "fixtures/exchanges/binance/manifest.toml": {
+      "owners": [
+        "2026-07-24-phase-01-market-data-foundation.md:task-7:Implement and certify the Binance spot and USD-margined derivatives adapter"
+      ],
+      "exists": true
+    },
+    "fixtures/exchanges/bybit/manifest.toml": {
+      "owners": [
+        "2026-07-24-phase-01-market-data-foundation.md:task-8:Implement and certify the Bybit spot and linear-derivatives adapter"
+      ],
+      "exists": true
+    },
+    "fixtures/exchanges/deribit/manifest.toml": {
+      "owners": [
+        "2026-07-24-phase-01-market-data-foundation.md:task-10:Implement and certify the Deribit futures, perpetuals, and options adapter"
+      ],
+      "exists": true
+    },
+    "fixtures/exchanges/kraken/manifest.toml": {
+      "owners": [
+        "2026-07-24-phase-01-market-data-foundation.md:task-9:Implement and certify the Kraken spot/derivatives adapter with checksum and selected L3 support"
+      ],
+      "exists": true
+    },
+    "fixtures/golden-replays/features-v1/manifest.toml": {
+      "owners": [
+        "2026-07-24-phase-02-features-labels-baselines.md:task-7:Persist point-in-time feature datasets and prove stream/batch parity"
+      ],
+      "exists": true
+    },
+    "fixtures/golden-replays/market-foundation/manifest.toml": {
+      "owners": [
+        "2026-07-24-phase-01-market-data-foundation.md:task-12:Deliver deterministic replay and the connector certification CLI"
+      ],
+      "exists": true
+    },
+    "fixtures/golden-replays/model-host-v1/manifest.toml": {
+      "owners": [
+        "2026-07-24-phase-07-local-apple-models.md:task-8:Integrate model-host capabilities into the daemon/app with fallback, budgets, parity, and failure isolation"
+      ],
+      "exists": true
+    },
+    "fixtures/golden-replays/risk-v1/manifest.toml": {
+      "owners": [
+        "2026-07-24-phase-04-risk-calibration-alerts.md:task-13:Expose forecast/evidence/scenario/alert services and prove latency/coherence under load"
+      ],
+      "exists": true
+    },
+    "fixtures/golden-replays/slow-sources-v1/manifest.toml": {
+      "owners": [
+        "2026-07-24-phase-05-options-onchain-coupling.md:task-10:Integrate slow-source revisions, capacity isolation, evaluation, and Phase 5 gates"
+      ],
+      "exists": true
+    },
+    "fixtures/numerical/cusp_roots.json": {
+      "owners": [
+        "2026-07-24-phase-03-stochastic-cusp.md:task-3:Implement stable real cubic roots at ordinary, near-fold, and repeated-root points"
+      ],
+      "exists": true
+    },
+    "fixtures/prompts/adversarial/manifest.json": {
+      "owners": [
+        "2026-07-24-phase-07-local-apple-models.md:task-7:Version prompts, OS/model state, golden cases, and prompt-injection regression gates"
+      ],
+      "exists": true
+    },
+    "fixtures/prompts/event-extraction/manifest.json": {
+      "owners": [
+        "2026-07-24-phase-07-local-apple-models.md:task-5:Implement schema-constrained Foundation Models event extraction"
+      ],
+      "exists": true
+    },
+    "fixtures/prompts/explanations/manifest.json": {
+      "owners": [
+        "2026-07-24-phase-07-local-apple-models.md:task-7:Version prompts, OS/model state, golden cases, and prompt-injection regression gates"
+      ],
+      "exists": true
+    },
+    "fuzz/Cargo.toml": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-3:Harden every network parser with shared limits and continuous fuzzing"
+      ],
+      "exists": true
+    },
+    "fuzz/corpus/README.md": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-3:Harden every network parser with shared limits and continuous fuzzing"
+      ],
+      "exists": true
+    },
+    "fuzz/fuzz_targets/binance_message.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-3:Harden every network parser with shared limits and continuous fuzzing"
+      ],
+      "exists": true
+    },
+    "fuzz/fuzz_targets/bybit_message.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-3:Harden every network parser with shared limits and continuous fuzzing"
+      ],
+      "exists": true
+    },
+    "fuzz/fuzz_targets/deribit_message.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-3:Harden every network parser with shared limits and continuous fuzzing"
+      ],
+      "exists": true
+    },
+    "fuzz/fuzz_targets/kraken_message.rs": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-3:Harden every network parser with shared limits and continuous fuzzing"
+      ],
+      "exists": true
+    },
+    "licenses/data-manifest.yaml": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-15:Publish operator, incident, vulnerability, contribution, and data-license governance"
+      ],
+      "exists": true
+    },
+    "licenses/fixture-manifest.yaml": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-15:Publish operator, incident, vulnerability, contribution, and data-license governance"
+      ],
+      "exists": true
+    },
+    "licenses/model-manifest.yaml": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-15:Publish operator, incident, vulnerability, contribution, and data-license governance"
+      ],
+      "exists": true
+    },
+    "models/public-test-artifacts/temporal-linear/model-manifest.json": {
+      "owners": [
+        "2026-07-24-phase-07-local-apple-models.md:task-3:Implement signed Core ML temporal-model loading, batching, state, and parity checks"
+      ],
+      "exists": true
+    },
+    "models/schemas/attribution-label.schema.json": {
+      "owners": [
+        "2026-07-24-phase-05-options-onchain-coupling.md:task-7:Create the point-in-time attribution and protocol-label registry"
+      ],
+      "exists": true
+    },
+    "models/schemas/cusp-control-map.schema.json": {
+      "owners": [
+        "2026-07-24-phase-03-stochastic-cusp.md:task-6:Define hierarchical alpha/beta control mappings and constrained feature groups"
+      ],
+      "exists": true
+    },
+    "models/schemas/model-package.schema.json": {
+      "owners": [
+        "2026-07-24-phase-02-features-labels-baselines.md:task-15:Create calibration, signed model packages, registry states, and evaluation reports"
+      ],
+      "exists": true
+    },
+    "models/trusted-keys.json": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-9:Create signed model and release artifact tooling with offline key separation"
+      ],
+      "exists": true
+    },
+    "proto/admin/v1/admin.proto": {
+      "owners": [
+        "2026-07-24-phase-00-foundations-contracts.md:task-6:Create versioned protobuf contracts and reproducible code generation",
+        "2026-07-24-phase-07-local-apple-models.md:task-2:Create the isolated Swift model-host process and authenticated ModelHostService bridge"
+      ],
+      "exists": true
+    },
+    "proto/buf.gen.yaml": {
+      "owners": [
+        "2026-07-24-phase-00-foundations-contracts.md:task-6:Create versioned protobuf contracts and reproducible code generation",
+        "2026-07-24-phase-06-macos-rpc-product.md:task-2:Generate Swift protobufs and implement the actor-isolated gRPC transport"
+      ],
+      "exists": true
+    },
+    "proto/buf.lock": {
+      "owners": [
+        "2026-07-24-phase-00-foundations-contracts.md:task-6:Create versioned protobuf contracts and reproducible code generation"
+      ],
+      "exists": true
+    },
+    "proto/buf.yaml": {
+      "owners": [
+        "2026-07-24-phase-00-foundations-contracts.md:task-6:Create versioned protobuf contracts and reproducible code generation"
+      ],
+      "exists": true
+    },
+    "proto/common/v1/common.proto": {
+      "owners": [
+        "2026-07-24-phase-00-foundations-contracts.md:task-6:Create versioned protobuf contracts and reproducible code generation"
+      ],
+      "exists": true
+    },
+    "proto/health/v1/health.proto": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-1:Implement local observability, stable telemetry fields, log redaction, and SLO snapshots",
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-7:Implement disk, clock, sleep/wake, and network failure state machines"
+      ],
+      "exists": true
+    },
+    "proto/market/v1/market.proto": {
+      "owners": [
+        "2026-07-24-phase-00-foundations-contracts.md:task-6:Create versioned protobuf contracts and reproducible code generation"
+      ],
+      "exists": true
+    },
+    "proto/replay/v1/replay.proto": {
+      "owners": [
+        "2026-07-24-phase-00-foundations-contracts.md:task-6:Create versioned protobuf contracts and reproducible code generation"
+      ],
+      "exists": true
+    },
+    "proto/risk/v1/risk.proto": {
+      "owners": [
+        "2026-07-24-phase-00-foundations-contracts.md:task-6:Create versioned protobuf contracts and reproducible code generation",
+        "2026-07-24-phase-03-stochastic-cusp.md:task-10:Expose cusp RPC data and automate the production-inclusion ablation gate",
+        "2026-07-24-phase-04-risk-calibration-alerts.md:task-13:Expose forecast/evidence/scenario/alert services and prove latency/coherence under load"
+      ],
+      "exists": true
+    },
+    "proto/settings/v1/settings.proto": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-2:Implement the hardware-aware capacity planner and source admission controller"
+      ],
+      "exists": true
+    },
+    "rust-toolchain.toml": {
+      "owners": [
+        "2026-07-24-phase-00-foundations-contracts.md:task-1:Bootstrap the pinned Rust workspace and developer command surface"
+      ],
+      "exists": true
+    },
+    "scripts/build-provenance.sh": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-16:Produce SBOM, provenance, acceptance evidence, preview release, and stable release gate"
+      ],
+      "exists": true
+    },
+    "scripts/build-sbom.sh": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-16:Produce SBOM, provenance, acceptance evidence, preview release, and stable release gate"
+      ],
+      "exists": true
+    },
+    "scripts/generate-proto.sh": {
+      "owners": [
+        "2026-07-24-phase-00-foundations-contracts.md:task-6:Create versioned protobuf contracts and reproducible code generation",
+        "2026-07-24-phase-06-macos-rpc-product.md:task-2:Generate Swift protobufs and implement the actor-isolated gRPC transport"
+      ],
+      "exists": true
+    },
+    "scripts/notarize-macos.sh": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-14:Build signed macOS packaging plus fresh-install, upgrade, interruption, and rollback tests"
+      ],
+      "exists": true
+    },
+    "scripts/package-macos.sh": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-14:Build signed macOS packaging plus fresh-install, upgrade, interruption, and rollback tests"
+      ],
+      "exists": true
+    },
+    "scripts/run-model-host-goldens.sh": {
+      "owners": [
+        "2026-07-24-phase-07-local-apple-models.md:task-7:Version prompts, OS/model state, golden cases, and prompt-injection regression gates"
+      ],
+      "exists": true
+    },
+    "scripts/run-soak.sh": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-10:Establish reference-load benchmarks, latency regression gates, profiling, and 24-hour soak testing"
+      ],
+      "exists": true
+    },
+    "scripts/verify-release.sh": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-14:Build signed macOS packaging plus fresh-install, upgrade, interruption, and rollback tests",
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-16:Produce SBOM, provenance, acceptance evidence, preview release, and stable release gate"
+      ],
+      "exists": true
+    },
+    "scripts/verify-reproducibility.sh": {
+      "owners": [
+        "2026-07-24-phase-00-foundations-contracts.md:task-10:Create the contract CI pipeline and Phase 0 traceability gate"
+      ],
+      "exists": true
+    },
+    "tests/chaos/scenarios/reference-matrix.yaml": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-5:Build the fault-injection and chaos scenario runner"
+      ],
+      "exists": true
+    },
+    "tests/performance/reference-load.toml": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-10:Establish reference-load benchmarks, latency regression gates, profiling, and 24-hour soak testing"
+      ],
+      "exists": true
+    },
+    "tests/upgrades/fixtures/v1/manifest.json": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-14:Build signed macOS packaging plus fresh-install, upgrade, interruption, and rollback tests"
+      ],
+      "exists": true
+    },
+    "tests/upgrades/matrix.yaml": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-14:Build signed macOS packaging plus fresh-install, upgrade, interruption, and rollback tests"
+      ],
+      "exists": true
+    },
+    "tests/upgrades/run_upgrade_matrix.swift": {
+      "owners": [
+        "2026-07-24-phase-08-hardening-shadow-release.md:task-14:Build signed macOS packaging plus fresh-install, upgrade, interruption, and rollback tests"
+      ],
+      "exists": true
+    },
+    "xtask/Cargo.toml": {
+      "owners": [
+        "2026-07-24-phase-00-foundations-contracts.md:task-1:Bootstrap the pinned Rust workspace and developer command surface"
+      ],
+      "exists": true
+    },
+    "xtask/src/main.rs": {
+      "owners": [
+        "2026-07-24-phase-00-foundations-contracts.md:task-1:Bootstrap the pinned Rust workspace and developer command surface",
+        "2026-07-24-phase-00-foundations-contracts.md:task-10:Create the contract CI pipeline and Phase 0 traceability gate"
+      ],
+      "exists": true
+    }
+  }
+}

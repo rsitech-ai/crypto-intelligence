@@ -1,0 +1,9 @@
+syntax = "proto3";
+package cmti.risk.v1;
+import "common/v1/common.proto";
+enum TransitionEventKind { TRANSITION_EVENT_KIND_UNSPECIFIED = 0; TRANSITION_EVENT_KIND_DOWNSIDE = 1; TRANSITION_EVENT_KIND_UPSIDE_SQUEEZE = 2; TRANSITION_EVENT_KIND_VOLATILITY_EXPLOSION = 3; TRANSITION_EVENT_KIND_LIQUIDITY_VACUUM = 4; TRANSITION_EVENT_KIND_LIQUIDATION_CASCADE = 5; TRANSITION_EVENT_KIND_BASIS_DISLOCATION = 6; TRANSITION_EVENT_KIND_STABLECOIN_DISLOCATION = 7; TRANSITION_EVENT_KIND_CONTAGION = 8; }
+enum ForecastStatus { FORECAST_STATUS_UNSPECIFIED = 0; FORECAST_STATUS_ACTIVE = 1; FORECAST_STATUS_ABSTAINED = 2; FORECAST_STATUS_EXPERIMENTAL = 3; FORECAST_STATUS_SUPPRESSED = 4; }
+message ProbabilityPoint { uint64 horizon_seconds = 1; uint32 cumulative_incidence_ppm = 2; uint32 lower_bound_ppm = 3; uint32 upper_bound_ppm = 4; uint32 baseline_ppm = 5; }
+message TransitionForecast { string forecast_id = 1; cmti.common.v1.AssetId asset = 2; TransitionEventKind event_kind = 3; ForecastStatus status = 4; repeated ProbabilityPoint curve = 5; cmti.common.v1.DataQualitySummary quality = 6; }
+message HazardSubscriptionRequest { repeated cmti.common.v1.AssetId assets = 1; repeated uint64 horizons_seconds = 2; }
+service RiskService { rpc SubscribeHazards(HazardSubscriptionRequest) returns (stream TransitionForecast); }

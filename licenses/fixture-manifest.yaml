@@ -1,0 +1,4 @@
+schema_version: 1
+artifact_id: "licenses/fixture-manifest.yaml"
+status: implemented
+local_only: true
