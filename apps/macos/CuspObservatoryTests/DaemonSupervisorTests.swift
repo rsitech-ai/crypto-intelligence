@@ -310,6 +310,141 @@ struct DaemonSupervisorTests {
     #expect(await supervisor.ownedTaskCount == 0)
   }
 
+  @Test("late run cleanup preserves the replacement startup owner")
+  func lateRunCleanupPreservesReplacementStartup() async throws {
+    let firstGate = SequencedLaunchGate()
+    let secondGate = SequencedLaunchGate()
+    let launcher = SequencedLauncher(
+      steps: [
+        SequencedLaunchStep(
+          gate: firstGate,
+          runtime: FakeDaemonRuntime(
+            readiness: .data(readiness()),
+            processID: 7
+          ),
+          ignoresCancellation: true
+        ),
+        SequencedLaunchStep(
+          gate: secondGate,
+          runtime: FakeDaemonRuntime(
+            readiness: .data(readiness()),
+            processID: 8
+          ),
+          ignoresCancellation: false
+        ),
+      ]
+    )
+    let supervisor = DaemonSupervisor(
+      configuration: configuration(),
+      launcher: launcher,
+      transportFactory: StaticTransportFactory(),
+      startupTimeout: .seconds(2),
+      shutdownTimeout: .milliseconds(100),
+      nowUnixSeconds: { 1_700_000_000 }
+    )
+    let firstCompletion = CompletionProbe()
+    let firstStart = Task {
+      _ = try? await supervisor.start()
+      await firstCompletion.markCompleted()
+    }
+    try await launcher.waitUntilLaunchCount(1)
+
+    try await supervisor.stop()
+    let secondCompletion = CompletionProbe()
+    let secondStart = Task {
+      _ = try? await supervisor.start()
+      await secondCompletion.markCompleted()
+    }
+    try await launcher.waitUntilLaunchCount(2)
+
+    await firstGate.release()
+    try await waitUntilCompleted(firstCompletion)
+
+    #expect(await supervisor.ownedTaskCount == 1)
+    await #expect(throws: DaemonSupervisorError.alreadyRunning) {
+      try await supervisor.start()
+    }
+    #expect(await launcher.launchCount == 2)
+
+    try await supervisor.stop()
+    try? await waitUntilCompleted(
+      secondCompletion,
+      timeout: .milliseconds(50)
+    )
+    let secondWasCancelled = await secondCompletion.isCompleted
+    if !secondWasCancelled {
+      await secondGate.release()
+    }
+    _ = await firstStart.result
+    _ = await secondStart.result
+
+    #expect(secondWasCancelled)
+    #expect(await supervisor.currentState == .stopped)
+    #expect(await supervisor.ownedTaskCount == 0)
+    #expect(await launcher.launchCount == 2)
+  }
+
+  @Test("late termination cleanup preserves the replacement runtime")
+  func lateTerminationCleanupPreservesReplacementRuntime() async throws {
+    let firstWait = SequencedLaunchGate()
+    let secondWait = SequencedLaunchGate()
+    let firstRuntime = ReentrantTerminationRuntime(
+      processID: 7,
+      waitGates: [firstWait, secondWait]
+    )
+    let secondRuntime = FakeDaemonRuntime(
+      readiness: .data(readiness()),
+      processID: 7
+    )
+    let transport = BlockingTransport()
+    let supervisor = DaemonSupervisor(
+      configuration: configuration(),
+      launcher: SequencedRuntimeLauncher(
+        runtimes: [firstRuntime, secondRuntime]
+      ),
+      transportFactory: SequencedTransportFactory(
+        transports: [FailingTransport(), transport]
+      ),
+      startupTimeout: .seconds(2),
+      shutdownTimeout: .seconds(1),
+      nowUnixSeconds: { 1_700_000_000 }
+    )
+    let firstCompletion = CompletionProbe()
+    let firstStart = Task {
+      _ = try? await supervisor.start()
+      await firstCompletion.markCompleted()
+    }
+    try await firstRuntime.waitUntilWaitCount(1)
+
+    let stopping = Task {
+      try await supervisor.stop()
+    }
+    try await firstRuntime.waitUntilWaitCount(2)
+    await secondWait.release()
+    try await stopping.value
+
+    let secondStart = Task {
+      try await supervisor.start()
+    }
+    try await transport.waitUntilStarted()
+
+    await firstWait.release()
+    try await waitUntilCompleted(firstCompletion)
+    await transport.release()
+    let secondResult = await secondStart.result
+
+    #expect(throws: Never.self) {
+      try secondResult.get()
+    }
+    #expect(await supervisor.currentState == .healthy)
+    try await supervisor.stop()
+    _ = await firstStart.result
+
+    #expect(await secondRuntime.wasTerminated)
+    #expect(await supervisor.currentState == .stopped)
+    #expect(await supervisor.ownedTaskCount == 0)
+  }
+
   @Test("incompatible protocol fails closed before market RPC")
   func incompatibleProtocol() async throws {
     let runtime = FakeDaemonRuntime(
@@ -570,6 +705,19 @@ private actor CompletionProbe {
   }
 }
 
+private func waitUntilCompleted(
+  _ probe: CompletionProbe,
+  timeout: Duration = .milliseconds(300)
+) async throws {
+  let deadline = ContinuousClock.now.advanced(by: timeout)
+  while !(await probe.isCompleted), ContinuousClock.now < deadline {
+    try await Task.sleep(for: .milliseconds(5))
+  }
+  guard await probe.isCompleted else {
+    throw DaemonSupervisorError.startupTimeout
+  }
+}
+
 private enum StopResult: Sendable, Equatable {
   case success
   case failure(DaemonSupervisorError)
@@ -628,6 +776,93 @@ private struct FakeLauncher: DaemonLaunching {
     bootstrap: SessionBootstrap
   ) async throws -> any DaemonRuntime {
     runtime
+  }
+}
+
+private struct SequencedLaunchStep: Sendable {
+  let gate: SequencedLaunchGate
+  let runtime: FakeDaemonRuntime
+  let ignoresCancellation: Bool
+}
+
+private actor SequencedLauncher: DaemonLaunching {
+  private var steps: [SequencedLaunchStep]
+  private(set) var launchCount = 0
+
+  init(steps: [SequencedLaunchStep]) {
+    self.steps = steps
+  }
+
+  func launch(
+    configuration: DaemonConfiguration,
+    bootstrap: SessionBootstrap
+  ) async throws -> any DaemonRuntime {
+    guard !steps.isEmpty else {
+      launchCount += 1
+      throw DaemonSupervisorError.launchFailed
+    }
+    launchCount += 1
+    let step = steps.removeFirst()
+    if step.ignoresCancellation {
+      await step.gate.waitIgnoringCancellation()
+    } else {
+      try await step.gate.waitCooperatively()
+    }
+    return step.runtime
+  }
+
+  func waitUntilLaunchCount(_ expected: Int) async throws {
+    let deadline = ContinuousClock.now.advanced(by: .milliseconds(300))
+    while launchCount < expected, ContinuousClock.now < deadline {
+      try await Task.sleep(for: .milliseconds(5))
+    }
+    guard launchCount >= expected else {
+      throw DaemonSupervisorError.launchFailed
+    }
+  }
+}
+
+private actor SequencedLaunchGate {
+  private var isReleased = false
+  private var waiter: CheckedContinuation<Void, Never>?
+
+  func waitIgnoringCancellation() async {
+    guard !isReleased else {
+      return
+    }
+    await withCheckedContinuation { continuation in
+      waiter = continuation
+    }
+  }
+
+  func waitCooperatively() async throws {
+    while !isReleased {
+      try await Task.sleep(for: .milliseconds(5))
+    }
+  }
+
+  func release() {
+    isReleased = true
+    waiter?.resume()
+    waiter = nil
+  }
+}
+
+private actor SequencedRuntimeLauncher: DaemonLaunching {
+  private var runtimes: [any DaemonRuntime]
+
+  init(runtimes: [any DaemonRuntime]) {
+    self.runtimes = runtimes
+  }
+
+  func launch(
+    configuration: DaemonConfiguration,
+    bootstrap: SessionBootstrap
+  ) throws -> any DaemonRuntime {
+    guard !runtimes.isEmpty else {
+      throw DaemonSupervisorError.launchFailed
+    }
+    return runtimes.removeFirst()
   }
 }
 
@@ -721,6 +956,42 @@ private actor UnkillableDaemonRuntime: DaemonRuntime {
   }
 }
 
+private actor ReentrantTerminationRuntime: DaemonRuntime {
+  nonisolated let processID: Int32
+  private let waitGates: [SequencedLaunchGate]
+  private(set) var waitCount = 0
+
+  init(processID: Int32, waitGates: [SequencedLaunchGate]) {
+    self.processID = processID
+    self.waitGates = waitGates
+  }
+
+  func readinessLine() -> Data {
+    readiness()
+  }
+
+  func terminate() {}
+
+  func forceTerminate() {}
+
+  func waitForExit() async -> Int32 {
+    let gate = waitGates[waitCount]
+    waitCount += 1
+    await gate.waitIgnoringCancellation()
+    return 0
+  }
+
+  func waitUntilWaitCount(_ expected: Int) async throws {
+    let deadline = ContinuousClock.now.advanced(by: .milliseconds(300))
+    while waitCount < expected, ContinuousClock.now < deadline {
+      try await Task.sleep(for: .milliseconds(5))
+    }
+    guard waitCount >= expected else {
+      throw DaemonSupervisorError.shutdownTimeout
+    }
+  }
+}
+
 private actor StaticTransportFactory: RPCTransportBuilding {
   private let snapshot: MarketSnapshot
   private(set) var buildCount = 0
@@ -734,6 +1005,32 @@ private actor StaticTransportFactory: RPCTransportBuilding {
   ) throws -> any RPCTransport {
     buildCount += 1
     return StaticTransport(snapshot: snapshot)
+  }
+}
+
+private actor SequencedTransportFactory: RPCTransportBuilding {
+  private var transports: [any RPCTransport]
+
+  init(transports: [any RPCTransport]) {
+    self.transports = transports
+  }
+
+  func makeTransport(
+    for descriptor: ReadinessDescriptor
+  ) throws -> any RPCTransport {
+    guard !transports.isEmpty else {
+      throw DaemonSupervisorError.snapshotUnavailable
+    }
+    return transports.removeFirst()
+  }
+}
+
+private struct FailingTransport: RPCTransport {
+  func getSnapshot(
+    using credentials: SessionCredentials,
+    timeout: Duration
+  ) throws -> MarketSnapshot {
+    throw DaemonSupervisorError.snapshotUnavailable
   }
 }
 
