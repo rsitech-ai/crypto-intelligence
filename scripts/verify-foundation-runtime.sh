@@ -6,8 +6,6 @@ readonly script_dir
 workspace_root="$(cd -- "${script_dir}/.." && pwd)"
 readonly workspace_root
 readonly target_readiness_label="runtime-proven foundation slice"
-unified_log_start="$(date -u '+@%s')"
-readonly unified_log_start
 evidence_output="${workspace_root}/release/evidence/foundation-runtime-verification.json"
 prior_evidence=""
 
@@ -576,6 +574,7 @@ readonly app_temporary_root
 app_run_token="$(basename "${temporary_root}" | tr -cd '[:alnum:]')"
 readonly app_run_token
 app_runtime_records="${temporary_root}/app-runtime-records.jsonl"
+app_runtime_log_start="$(date -u '+@%s')"
 
 wait_for_pid_gone() {
   local pid="$1"
@@ -917,6 +916,33 @@ for generated_root in "${app_runtime_roots[@]}"; do
   fi
 done
 
+app_runtime_log_end="$(date -u '+@%s')"
+runtime_pid_predicate="$(python3 - "${app_runtime_records}" <<'PY'
+import json
+import pathlib
+import sys
+
+path = pathlib.Path(sys.argv[1])
+pids = set()
+if path.exists():
+    for line in path.read_text().splitlines():
+        if line:
+            record = json.loads(line)
+            pids.update((record["app_pid"], record["daemon_pid"]))
+print(
+    " OR ".join(f"processIdentifier == {pid}" for pid in sorted(pids))
+    or "processIdentifier == -1"
+)
+PY
+)"
+run_gate unified-log-inspection 120 /usr/bin/log show \
+  --style json \
+  --start "${app_runtime_log_start}" \
+  --end "${app_runtime_log_end}" \
+  --predicate "${runtime_pid_predicate}"
+run_gate unified-log-policy 30 python3 scripts/check-foundation-unified-log.py \
+  "${temporary_root}/unified-log-inspection.log"
+
 capture_xcresult_summary() {
   local label="$1"
   local bundle="$2"
@@ -979,18 +1005,6 @@ capture_xcresult_summary \
   "${temporary_root}/native-ui.xcresult" \
   "${temporary_root}/native-ui-summary.json" \
   1
-
-run_gate unified-log-inspection 120 /usr/bin/log show \
-  --style json --start "${unified_log_start}" \
-  --predicate 'process == "CuspObservatory" OR process == "cryptoriskd"'
-if rg -ni '"messageType":"(Error|Fault)"|panic|crash|hang|secret|token' \
-  "${temporary_root}/unified-log-inspection.log" >/dev/null 2>&1
-then
-  rg -ni '"messageType":"(Error|Fault)"|panic|crash|hang|secret|token' \
-    "${temporary_root}/unified-log-inspection.log" \
-    > "${temporary_root}/unified-log-findings.txt"
-  record_blocker "unified-log-inspection:finding"
-fi
 
 git status --porcelain=v1 --untracked-files=all \
   > "${temporary_root}/pre-audit-tree-status.txt"
@@ -1270,9 +1284,12 @@ for name in ("native-unit-summary.json", "native-ui-summary.json"):
     if path.exists():
         native_summaries[name] = json.loads(path.read_text())
 unified_findings = []
-unified_path = root / "unified-log-findings.txt"
+unified_path = root / "unified-log-policy.log"
 if unified_path.exists():
-    unified_findings = unified_path.read_text().splitlines()
+    unified_result = json.loads(unified_path.read_text())
+    unified_findings = unified_result.get("findings", [])
+    if "parse_error" in unified_result:
+        unified_findings.append({"parse_error": unified_result["parse_error"]})
 app_wal_recovery_path = root / "app-wal-recovery.json"
 app_wal_recovery = (
     json.loads(app_wal_recovery_path.read_text())
