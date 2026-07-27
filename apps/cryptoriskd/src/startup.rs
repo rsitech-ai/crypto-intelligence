@@ -24,14 +24,9 @@ const PROTOCOL_MINOR: u32 = 0;
 const WAL_FILE_NAME: &str = "market.wal";
 const LOG_FILE_NAME: &str = "cmti.jsonl";
 
-#[cfg(test)]
-pub fn read_session_secret(mut reader: impl Read) -> Result<SessionSecret, StartupError> {
-    let mut bytes = Zeroizing::new(Vec::with_capacity(SESSION_SECRET_LENGTH + 1));
-    reader
-        .by_ref()
-        .take((SESSION_SECRET_LENGTH + 1) as u64)
-        .read_to_end(&mut bytes)
-        .map_err(StartupError::SecretIo)?;
+pub(crate) fn parse_session_secret(
+    bytes: Zeroizing<Vec<u8>>,
+) -> Result<SessionSecret, StartupError> {
     if bytes.len() != SESSION_SECRET_LENGTH {
         return Err(StartupError::SecretLength {
             actual: bytes.len(),
@@ -64,12 +59,7 @@ pub async fn read_session_secret_from_fd_async(fd: u32) -> Result<SessionSecret,
             Err(_) => {}
         }
     }
-    if bytes.len() != SESSION_SECRET_LENGTH {
-        return Err(StartupError::SecretLength {
-            actual: bytes.len(),
-        });
-    }
-    SessionSecret::try_from(bytes).map_err(StartupError::Secret)
+    parse_session_secret(bytes)
 }
 
 fn take_session_secret_fd(fd: u32) -> Result<File, StartupError> {
