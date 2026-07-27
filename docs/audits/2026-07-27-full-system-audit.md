@@ -74,7 +74,7 @@ repository now fails closed with 400 structural/placeholder errors.
 | Cargo metadata | `cargo metadata --locked --offline --no-deps --format-version 1` | Failed, exit 101 | `xtask/Cargo.toml` has neither `[package]` nor `[workspace]` |
 | Cargo fmt/check/clippy/test/run | Workspace commands | Blocked, exit 101 | Same invalid member manifest |
 | Independent Rust parse | `rustfmt --check crates/local-api/build.rs crates/cusp/src/lib.rs` | Failed | Path-only build script; edition-2024 `gen` keyword parse errors |
-| Static audit tests | `python3 -m unittest discover -s scripts/tests -p 'test_*.py'` | Passed, 14 tests | Tests cover placeholder, manifest, Xcode, workflow, and secret-scan regressions |
+| Static audit tests | `python3 -m unittest discover -s scripts/tests -p 'test_*.py'` | Passed, 15 tests | Tests cover placeholder, manifest, Xcode, workflow, and secret-scan regressions |
 | Hardened static audit | `python3 scripts/static-audit.py` | Failed closed, 400 errors | 197 generic contracts, 99 tautological tests, 68 Swift stubs, and structural blockers |
 | Narrow security scan | `python3 scripts/security-audit.py` | Passed, 0 pattern findings | Report explicitly says it does not verify security implementation/runtime |
 | Buf lint/build | `buf lint`; `buf build --exclude-source-info -o /dev/null` | Failed, exit 100 | Invalid Buf config/import roots and duplicate generated contract |
@@ -122,7 +122,7 @@ repository now fails closed with 400 structural/placeholder errors.
 
 | Category | Severity | Surface | Evidence | Product impact | Remediation | Status | Re-verification |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Objective defect | Blocker | Repository trust | Static audit previously passed a scaffold | Reviewers can mistake paths for behavior | Detect structural placeholders and false-green workflows | Fixed in audit tooling | 14 audit tests pass; repository now fails with 400 errors |
+| Objective defect | Blocker | Repository trust | Static audit previously passed a scaffold | Reviewers can mistake paths for behavior | Detect structural placeholders and false-green workflows | Fixed in audit tooling | 15 audit tests pass; repository now fails with 400 errors |
 | Objective defect | Blocker | Rust workspace | Invalid `xtask` manifest and missing lockfile | No Rust build/test/service evidence exists | Restore valid manifests, lockfile, parse-clean sources | Blocked | Cargo exits 101 |
 | Objective defect | Blocker | Native app | Empty Xcode project and no SwiftUI entry point | No user-facing product exists to operate | Create real targets/schemes/app shell | Blocked | Xcode exits 74 |
 | Objective defect | Blocker | Runtime | Print-and-exit applications and disconnected crates | No capture, state, model, RPC, or audit flow | Implement one vertical runtime slice first | Blocked | No persistent process/log |
