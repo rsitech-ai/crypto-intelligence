@@ -1,7 +1,7 @@
 {
   "artifact_sha256": {
-    "/var/folders/g6/mrhqfgk15_d2gjj52991r1jr0000gn/T//cmti-foundation-runtime.ngdmFs/DerivedData/Build/Products/Debug-UITesting/CuspObservatory.app/Contents/MacOS/CuspObservatory": "dd4af50629ebd8c54e932f4e867b0b7010cb0e921bc05a872eea24846e8a5ac5",
-    "/var/folders/g6/mrhqfgk15_d2gjj52991r1jr0000gn/T//cmti-foundation-runtime.ngdmFs/DerivedData/Build/Products/Debug-UITesting/CuspObservatory.app/Contents/MacOS/cryptoriskd": "dc2816b63aba80a96aab0899df0d30b8ae3429d0394708f4c2f9223977b682b2",
+    "/var/folders/g6/mrhqfgk15_d2gjj52991r1jr0000gn/T//cmti-foundation-runtime.W0pF9h/DerivedData/Build/Products/Debug-UITesting/CuspObservatory.app/Contents/MacOS/CuspObservatory": "99c44b65d816ab15c12f2a15c3b16de967b1acf53210d3eea83b5b8511c1b717",
+    "/var/folders/g6/mrhqfgk15_d2gjj52991r1jr0000gn/T//cmti-foundation-runtime.W0pF9h/DerivedData/Build/Products/Debug-UITesting/CuspObservatory.app/Contents/MacOS/cryptoriskd": "dc2816b63aba80a96aab0899df0d30b8ae3429d0394708f4c2f9223977b682b2",
     "Cargo.lock": "1d7f5e7018a5666b3a84b8cb49992646ef4c6b137dd78ea6d8d9851bc502f5a9",
     "apps/macos/CuspObservatory.xcodeproj/project.pbxproj": "5d46ad17340c51e03ce73b285f762407fbdba1790a99042f384b2f3b94c2a9ca",
     "apps/macos/Packages/TransitionClient/Package.resolved": "4fa96caf0b71a712931311409191ba5ea481d94a8cc5e49e5301534322caa7b0",
@@ -9,14 +9,13 @@
     "fixtures/binance/btcusdt-book-v1.jsonl": "466de1750efd922ed76d682b1e29b11b8ded586b407dd02c9842e37f31aa4df5",
     "proto/buf.lock": "791401ae80c25b10cfc66adc8370531ade154965b0cb6ba3647190a1563e4af9",
     "target/debug/cryptoriskd": "c374e4f142a4ce6c4acc8478fe19098dc9a14c9c994074db47efd2f3a4c4e59b",
-    "target/debug/foundation-runtime-probe": "0cc5c6fe9514e32e15e037b209d83ce62e6df2fc6dcb5f124b7d243d84de9c36"
+    "target/debug/foundation-runtime-probe": "1763c26a91dce2a981e7b48bafd48b77d224318616e2a9ad8c6f42a75a14529b"
   },
   "blockers": [
     "external:swift-nio-cniowindows-warning",
-    "native-ui-tests:exit-124",
+    "native-ui-tests:exit-65",
     "external:swift-nio-cniowindows-warning",
     "external:macos-automation-authorization-disabled",
-    "external:native-ui-tests-invalid-xcresult",
     "static-audit:exit-1",
     "security-audit:exit-1",
     "two-clean-full-gate-runs-not-observed"
@@ -24,47 +23,47 @@
   "commands": [
     {
       "command": "cargo build --workspace --all-targets --all-features --locked",
-      "ended_unix_nanos": 1785192826706271000,
+      "ended_unix_nanos": 1785195876799838000,
       "exit_code": 0,
       "label": "cargo-build",
-      "output_sha256": "2bc683fb4e4f4f21ee9ee39e2b8ecce2efe20d3b1be57bda5316aa519ab3d30a",
-      "started_unix_nanos": 1785192826339095000,
+      "output_sha256": "7ea9ff7442106040f95bc079f85de985b086e1fed897d88dec87dd8425c35ee1",
+      "started_unix_nanos": 1785195875958809000,
       "test_count_matches": []
     },
     {
       "command": "cargo +1.88.0 check --workspace --all-targets --all-features --locked --offline",
-      "ended_unix_nanos": 1785192827179494000,
+      "ended_unix_nanos": 1785195877984243000,
       "exit_code": 0,
       "label": "cargo-msrv",
-      "output_sha256": "8b1fd2394f7b6f177ede882431154a419bd9f404f00add314c912e91a7fc0ec0",
-      "started_unix_nanos": 1785192826743637000,
+      "output_sha256": "dccad65a474a0e64d7c677fc96c87f30265067841005a793f4d82605fea6fe77",
+      "started_unix_nanos": 1785195876928104000,
       "test_count_matches": []
     },
     {
       "command": "cargo fmt --all -- --check",
-      "ended_unix_nanos": 1785192827463392000,
+      "ended_unix_nanos": 1785195878852778000,
       "exit_code": 0,
       "label": "cargo-format",
       "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "started_unix_nanos": 1785192827215872000,
+      "started_unix_nanos": 1785195878147061000,
       "test_count_matches": []
     },
     {
       "command": "cargo clippy --workspace --all-targets --all-features --locked -- -D warnings",
-      "ended_unix_nanos": 1785192827871572000,
+      "ended_unix_nanos": 1785195879653966000,
       "exit_code": 0,
       "label": "cargo-clippy",
-      "output_sha256": "2bc683fb4e4f4f21ee9ee39e2b8ecce2efe20d3b1be57bda5316aa519ab3d30a",
-      "started_unix_nanos": 1785192827500423000,
+      "output_sha256": "bcb74884a78099501f6bfc31de29d15aae4eb48dcd18d5c99bdde44d75b90089",
+      "started_unix_nanos": 1785195878942454000,
       "test_count_matches": []
     },
     {
       "command": "cargo test --workspace --all-targets --all-features --locked",
-      "ended_unix_nanos": 1785192849865427000,
+      "ended_unix_nanos": 1785195923201229000,
       "exit_code": 0,
       "label": "cargo-tests",
-      "output_sha256": "62ef305f84a7fa7857f8ba8e1c222ee46d05cbf61dfe29ae98d5eea141255d28",
-      "started_unix_nanos": 1785192827908126000,
+      "output_sha256": "6957dafd6a83970d16d20d1eedcdd807ad8121e2c90c0858e367a41e5d71a973",
+      "started_unix_nanos": 1785195879710497000,
       "test_count_matches": [
         [
           0,
@@ -252,7 +251,7 @@
           0
         ],
         [
-          1,
+          3,
           0,
           0
         ],
@@ -292,7 +291,7 @@
           0
         ],
         [
-          6,
+          7,
           0,
           0
         ],
@@ -355,65 +354,74 @@
     },
     {
       "command": "shellcheck scripts/verify-foundation-runtime.sh",
-      "ended_unix_nanos": 1785192850512456000,
+      "ended_unix_nanos": 1785195924173291000,
       "exit_code": 0,
       "label": "verifier-shellcheck",
       "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "started_unix_nanos": 1785192849904895000,
+      "started_unix_nanos": 1785195923272253000,
+      "test_count_matches": []
+    },
+    {
+      "command": "python3 -m unittest discover -s scripts/tests -p test_\\*.py",
+      "ended_unix_nanos": 1785195929231783000,
+      "exit_code": 0,
+      "label": "verifier-helper-tests",
+      "output_sha256": "89383ca061bd91c0e002a580d7e80e64aaf1c634cc3107c0993c84409659106f",
+      "started_unix_nanos": 1785195924226660000,
       "test_count_matches": []
     },
     {
       "command": "buf lint proto",
-      "ended_unix_nanos": 1785192850642071000,
+      "ended_unix_nanos": 1785195929556233000,
       "exit_code": 0,
       "label": "buf-lint",
       "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "started_unix_nanos": 1785192850549988000,
+      "started_unix_nanos": 1785195929289744000,
       "test_count_matches": []
     },
     {
       "command": "buf build proto",
-      "ended_unix_nanos": 1785192850774491000,
+      "ended_unix_nanos": 1785195929712681000,
       "exit_code": 0,
       "label": "buf-build",
       "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "started_unix_nanos": 1785192850677607000,
+      "started_unix_nanos": 1785195929604015000,
       "test_count_matches": []
     },
     {
       "command": "scripts/generate-proto.sh --check",
-      "ended_unix_nanos": 1785192858014640000,
+      "ended_unix_nanos": 1785195940301372000,
       "exit_code": 0,
       "label": "proto-generation",
-      "output_sha256": "f7cb3b80a18afaf337229dc9debebe3bd9100188f3c24babac6461255f22f78f",
-      "started_unix_nanos": 1785192850812225000,
+      "output_sha256": "426ae088ec2aea081f3d423b68505a2a24accb50f2f9830075c6eaf7de15484b",
+      "started_unix_nanos": 1785195929757497000,
       "test_count_matches": []
     },
     {
       "command": "cargo run --locked -p xtask -- generate-config-schema --check",
-      "ended_unix_nanos": 1785192858538852000,
+      "ended_unix_nanos": 1785195940941987000,
       "exit_code": 0,
       "label": "config-generation",
-      "output_sha256": "0a3f79f9ea9c7ca8dfe953334add3322c5ed365526bf51de8c2ce8e70221f140",
-      "started_unix_nanos": 1785192858050872000,
+      "output_sha256": "ceceafa902d9a96754ab5f1af60dca4412173b89fe94d11b94bb81522c0529ce",
+      "started_unix_nanos": 1785195940347715000,
       "test_count_matches": []
     },
     {
       "command": "scripts/generate-xcode-project.sh --check",
-      "ended_unix_nanos": 1785192858986043000,
+      "ended_unix_nanos": 1785195941522984000,
       "exit_code": 0,
       "label": "xcode-generation",
       "output_sha256": "542ca724f46d8a3dffb85c3cd4b6e0d2fdf6c1bd4c484e6978dd9ed2f22cd639",
-      "started_unix_nanos": 1785192858574499000,
+      "started_unix_nanos": 1785195940992583000,
       "test_count_matches": []
     },
     {
       "command": "swift test --package-path apps/macos/Packages/TransitionClient",
-      "ended_unix_nanos": 1785192860282040000,
+      "ended_unix_nanos": 1785195943188002000,
       "exit_code": 0,
       "label": "swift-package-tests",
-      "output_sha256": "2c8be80938aea59ecf2866382114001e7d20f79dd308c94f9f210a3817ae3cf0",
-      "started_unix_nanos": 1785192859060344000,
+      "output_sha256": "266669f79867afad61542920438f3c485f0805cc1731f95757ea88bda11f6657",
+      "started_unix_nanos": 1785195941569454000,
       "test_count_matches": [
         [
           0,
@@ -422,98 +430,98 @@
       ]
     },
     {
-      "command": "xcodebuild -quiet -project apps/macos/CuspObservatory.xcodeproj -scheme CuspObservatory -configuration Debug-UITesting -destination platform=macOS\\,arch=arm64 -derivedDataPath /var/folders/g6/mrhqfgk15_d2gjj52991r1jr0000gn/T//cmti-foundation-runtime.ngdmFs/DerivedData -jobs 1 SWIFT_ENABLE_EXPLICIT_MODULES=NO build",
-      "ended_unix_nanos": 1785192979710260000,
+      "command": "xcodebuild -quiet -project apps/macos/CuspObservatory.xcodeproj -scheme CuspObservatory -configuration Debug-UITesting -destination platform=macOS\\,arch=arm64 -derivedDataPath /var/folders/g6/mrhqfgk15_d2gjj52991r1jr0000gn/T//cmti-foundation-runtime.W0pF9h/DerivedData -jobs 1 SWIFT_ENABLE_EXPLICIT_MODULES=NO build",
+      "ended_unix_nanos": 1785196101170278000,
       "exit_code": 0,
       "label": "native-app-build",
       "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "started_unix_nanos": 1785192861188616000,
+      "started_unix_nanos": 1785195944320138000,
       "test_count_matches": []
     },
     {
-      "command": "swift -e import\\ AppKit\\;\\ import\\ Darwin\\;\\ guard\\ let\\ app\\ =\\ NSRunningApplication\\(processIdentifier:\\ 21476\\)\\ else\\ \\{\\ exit\\(2\\)\\ \\}\\;\\ exit\\(app.terminate\\(\\)\\ \\?\\ 0\\ :\\ 3\\)",
-      "ended_unix_nanos": 1785192981438590000,
+      "command": "swift -e import\\ AppKit\\;\\ import\\ Darwin\\;\\ guard\\ let\\ app\\ =\\ NSRunningApplication\\(processIdentifier:\\ 99341\\)\\ else\\ \\{\\ exit\\(2\\)\\ \\}\\;\\ exit\\(app.terminate\\(\\)\\ \\?\\ 0\\ :\\ 3\\)",
+      "ended_unix_nanos": 1785196102994567000,
       "exit_code": 0,
       "label": "app-controlled-controlled-quit",
       "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "started_unix_nanos": 1785192980940527000,
+      "started_unix_nanos": 1785196102498891000,
       "test_count_matches": []
     },
     {
-      "command": "swift -e import\\ AppKit\\;\\ import\\ Darwin\\;\\ guard\\ let\\ app\\ =\\ NSRunningApplication\\(processIdentifier:\\ 21733\\)\\ else\\ \\{\\ exit\\(2\\)\\ \\}\\;\\ exit\\(app.terminate\\(\\)\\ \\?\\ 0\\ :\\ 3\\)",
-      "ended_unix_nanos": 1785192983170066000,
+      "command": "swift -e import\\ AppKit\\;\\ import\\ Darwin\\;\\ guard\\ let\\ app\\ =\\ NSRunningApplication\\(processIdentifier:\\ 99628\\)\\ else\\ \\{\\ exit\\(2\\)\\ \\}\\;\\ exit\\(app.terminate\\(\\)\\ \\?\\ 0\\ :\\ 3\\)",
+      "ended_unix_nanos": 1785196104835006000,
       "exit_code": 0,
       "label": "app-relaunch-controlled-quit",
       "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "started_unix_nanos": 1785192982864122000,
+      "started_unix_nanos": 1785196104461987000,
       "test_count_matches": []
     },
     {
-      "command": "/usr/bin/log show --style json --start @1785192979 --end @1785192983 --predicate processIdentifier\\ ==\\ 21476\\ OR\\ processIdentifier\\ ==\\ 21567\\ OR\\ processIdentifier\\ ==\\ 21640\\ OR\\ processIdentifier\\ ==\\ 21679\\ OR\\ processIdentifier\\ ==\\ 21733\\ OR\\ processIdentifier\\ ==\\ 21770",
-      "ended_unix_nanos": 1785192984945560000,
+      "command": "/usr/bin/log show --style json --start @1785196101 --end @1785196104 --predicate processIdentifier\\ ==\\ 99341\\ OR\\ processIdentifier\\ ==\\ 99462\\ OR\\ processIdentifier\\ ==\\ 99522\\ OR\\ processIdentifier\\ ==\\ 99565\\ OR\\ processIdentifier\\ ==\\ 99628\\ OR\\ processIdentifier\\ ==\\ 99683",
+      "ended_unix_nanos": 1785196106791783000,
       "exit_code": 0,
       "label": "unified-log-inspection",
-      "output_sha256": "fe3bf3247eaaa3b83830414d0fc918627249c91bf51f22950d655b507eb7c52b",
-      "started_unix_nanos": 1785192983294394000,
+      "output_sha256": "b34de7e7069daa49d0c4c4162556c932f3999cb792d37ce87f678281b72bbb99",
+      "started_unix_nanos": 1785196104957087000,
       "test_count_matches": []
     },
     {
-      "command": "python3 scripts/check-foundation-unified-log.py /var/folders/g6/mrhqfgk15_d2gjj52991r1jr0000gn/T//cmti-foundation-runtime.ngdmFs/unified-log-inspection.log",
-      "ended_unix_nanos": 1785192985080536000,
+      "command": "python3 scripts/check-foundation-unified-log.py /var/folders/g6/mrhqfgk15_d2gjj52991r1jr0000gn/T//cmti-foundation-runtime.W0pF9h/unified-log-inspection.log",
+      "ended_unix_nanos": 1785196106956612000,
       "exit_code": 0,
       "label": "unified-log-policy",
       "output_sha256": "b8adad3852f196db84ad05c2affa3855c7e15d1c9d24c62c8d32165e34a82c39",
-      "started_unix_nanos": 1785192984985060000,
+      "started_unix_nanos": 1785196106843510000,
       "test_count_matches": []
     },
     {
-      "command": "scripts/test-macos.sh -resultBundlePath /var/folders/g6/mrhqfgk15_d2gjj52991r1jr0000gn/T//cmti-foundation-runtime.ngdmFs/native-unit.xcresult -only-testing:CuspObservatoryTests test",
-      "ended_unix_nanos": 1785193006156861000,
+      "command": "scripts/test-macos.sh -resultBundlePath /var/folders/g6/mrhqfgk15_d2gjj52991r1jr0000gn/T//cmti-foundation-runtime.W0pF9h/native-unit.xcresult -only-testing:CuspObservatoryTests test",
+      "ended_unix_nanos": 1785196125138176000,
       "exit_code": 0,
       "label": "native-unit-tests",
-      "output_sha256": "90812394e906aa75b88687b6724b3d0d3e6b9ec457892352e37681d902723cd9",
-      "started_unix_nanos": 1785192985118316000,
+      "output_sha256": "eabf3b3e207c37991512e3e59029ca05eb60bf4565d593c044e6feacbbf7d672",
+      "started_unix_nanos": 1785196107002802000,
       "test_count_matches": []
     },
     {
-      "command": "scripts/test-macos.sh -resultBundlePath /var/folders/g6/mrhqfgk15_d2gjj52991r1jr0000gn/T//cmti-foundation-runtime.ngdmFs/native-ui.xcresult -only-testing:CuspObservatoryUITests test",
-      "ended_unix_nanos": 1785193126486922000,
-      "exit_code": 124,
+      "command": "scripts/test-macos.sh -resultBundlePath /var/folders/g6/mrhqfgk15_d2gjj52991r1jr0000gn/T//cmti-foundation-runtime.W0pF9h/native-ui.xcresult -only-testing:CuspObservatoryUITests test",
+      "ended_unix_nanos": 1785196215679250000,
+      "exit_code": 65,
       "label": "native-ui-tests",
-      "output_sha256": "2118d1c189718bd637012e881e0cf30fc0ae22bb63c4291ac673d568b6f15e23",
-      "started_unix_nanos": 1785193006398962000,
+      "output_sha256": "51dde20056b553b5965d14c202a5e213957e1f69a1c02e592fd6cfc539755d4e",
+      "started_unix_nanos": 1785196125366314000,
       "test_count_matches": []
     },
     {
       "command": "python3 scripts/static-audit.py",
-      "ended_unix_nanos": 1785193133375283000,
+      "ended_unix_nanos": 1785196223406688000,
       "exit_code": 1,
       "label": "static-audit",
       "output_sha256": "a567d4a22bc496d93d67e86d48e5616ed316177f87eddac1c388b9fda64f2a66",
-      "started_unix_nanos": 1785193126664709000,
+      "started_unix_nanos": 1785196215900539000,
       "test_count_matches": []
     },
     {
       "command": "python3 scripts/security-audit.py",
-      "ended_unix_nanos": 1785193156590388000,
+      "ended_unix_nanos": 1785196251365799000,
       "exit_code": 1,
       "label": "security-audit",
       "output_sha256": "15e66fc552e98188c750d79a093a27d89a9ae8aa2c044106d586ab0332ad6f1b",
-      "started_unix_nanos": 1785193133423413000,
+      "started_unix_nanos": 1785196223446999000,
       "test_count_matches": []
     },
     {
       "command": "git diff --check",
-      "ended_unix_nanos": 1785193156752130000,
+      "ended_unix_nanos": 1785196251564054000,
       "exit_code": 0,
       "label": "git-diff-check",
       "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "started_unix_nanos": 1785193156674262000,
+      "started_unix_nanos": 1785196251481507000,
       "test_count_matches": []
     }
   ],
   "full_gate_invocations_observed": 1,
-  "generated_at": "2026-07-27T22:59:17.208117+00:00",
+  "generated_at": "2026-07-27T23:50:52.040583+00:00",
   "limitations": [
     "This is not model, live-source, App Store, notarization, or release readiness.",
     "Fresh XCUITest is blocked before product tests while macOS automation authorization is disabled.",
@@ -529,39 +537,39 @@
     "records": [
       {
         "app_exit_code": 0,
-        "app_pid": 21476,
+        "app_pid": 99341,
         "cleanup_required_escalation": false,
         "daemon_parent_was_app": true,
-        "daemon_pid": 21567,
+        "daemon_pid": 99462,
         "label": "app-controlled",
         "owned_processes_gone": true,
         "termination": "controlled",
         "watcher_parent_was_daemon": true,
-        "watcher_pid": 21568
+        "watcher_pid": 99463
       },
       {
         "app_exit_code": 137,
-        "app_pid": 21640,
+        "app_pid": 99522,
         "cleanup_required_escalation": false,
         "daemon_parent_was_app": true,
-        "daemon_pid": 21679,
+        "daemon_pid": 99565,
         "label": "app-supervisor-loss",
         "owned_processes_gone": true,
         "termination": "SIGKILL",
         "watcher_parent_was_daemon": true,
-        "watcher_pid": 21680
+        "watcher_pid": 99567
       },
       {
         "app_exit_code": 0,
-        "app_pid": 21733,
+        "app_pid": 99628,
         "cleanup_required_escalation": false,
         "daemon_parent_was_app": true,
-        "daemon_pid": 21770,
+        "daemon_pid": 99683,
         "label": "app-relaunch",
         "owned_processes_gone": true,
         "termination": "controlled",
         "watcher_parent_was_daemon": true,
-        "watcher_pid": 21772
+        "watcher_pid": 99684
       }
     ],
     "relaunch_observed": true,
@@ -574,6 +582,50 @@
     }
   },
   "native_test_summaries": {
+    "native-ui-summary.json": {
+      "devicesAndConfigurations": [
+        {
+          "device": {
+            "architecture": "arm64",
+            "deviceId": "00006034-001441800188001C",
+            "deviceName": "My Mac",
+            "modelName": "MacBook Pro",
+            "osBuildNumber": "26A5378j",
+            "osVersion": "27.0",
+            "platform": "macOS"
+          },
+          "expectedFailures": 0,
+          "failedTests": 1,
+          "passedTests": 0,
+          "skippedTests": 0,
+          "testPlanConfiguration": {
+            "configurationId": "1",
+            "configurationName": "Test Scheme Action"
+          }
+        }
+      ],
+      "environmentDescription": "CuspObservatory \u00b7 Built with macOS 27.0",
+      "expectedFailures": 0,
+      "failedTests": 1,
+      "finishTime": 1785196213.868,
+      "passedTests": 0,
+      "result": "Failed",
+      "skippedTests": 0,
+      "startTime": 1785196137.239,
+      "statistics": [],
+      "testFailures": [
+        {
+          "failureText": "The test runner failed to initialize for UI testing. (Underlying Error: Timed out while enabling automation mode.)",
+          "targetName": "CuspObservatoryUITests",
+          "testIdentifier": 1,
+          "testIdentifierString": "CuspObservatoryUITests-Runner (1259) encountered an error",
+          "testName": "CuspObservatoryUITests-Runner (1259) encountered an error"
+        }
+      ],
+      "title": "Test - CuspObservatory",
+      "topInsights": [],
+      "totalTestCount": 1
+    },
     "native-unit-summary.json": {
       "devicesAndConfigurations": [
         {
@@ -599,38 +651,41 @@
       "environmentDescription": "CuspObservatory \u00b7 Built with macOS 27.0",
       "expectedFailures": 0,
       "failedTests": 0,
-      "finishTime": 1785193006.046,
+      "finishTime": 1785196125.052,
       "passedTests": 35,
       "result": "Passed",
       "skippedTests": 0,
-      "startTime": 1785192996.643,
+      "startTime": 1785196119.835,
       "statistics": [],
       "testFailures": [],
       "title": "Test - CuspObservatory",
       "topInsights": [
         {
           "category": "Longest Test Runs",
-          "impact": "27% of duration",
-          "text": "1 longest test run with outlier durations exceeding 0.41s (three standard deviations)"
+          "impact": "24% of duration",
+          "text": "1 longest test run with outlier durations exceeding 0.28s (three standard deviations)"
         }
       ],
       "totalTestCount": 35
     }
   },
-  "prior_run_summary": null,
   "process_and_stream_inspection_sha256": {
-    "daemon-1.lsof": "e44f646b2325be4e2005cde91c2b774d4b5156907082e55b64095cefe9b229c7",
-    "daemon-1.process": "0f65fa442088f63420edf30855fcf8f4a5d4dee2204cdb6b010579bb1669f929",
+    "daemon-1.lsof": "b240bbfef4f628f11d616ef91e9399dce0a2e34d76a7abf28dfbf0cfd48ee28f",
+    "daemon-1.process": "7a0655ffecd8dce5996723c3f9a45f11df0226417299e58676e40c845a50c309",
     "daemon-1.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    "daemon-1.stdout": "d5ec5a82c00efdc7211c3612a2e246dbcc0dea6efe66b9055f68baa64ba23322",
-    "daemon-2.lsof": "59c9dfecd4972b2325b359d6b8db6754d0b8bf9db38b0c762ed2c74b6f3a220b",
-    "daemon-2.process": "6f187dde1281bf9d74bfa39e49612f5fbfce1e05b2bae1faa720c4e3ceeb8413",
+    "daemon-1.stdout": "3d1adb36ef366d580a9604052f636aafad9a56751fb992059829163ef87ba0ea",
+    "daemon-2.lsof": "6c44fbc5704e6038c33c613b642fd16031810d1b138708d9747f97f283386f0a",
+    "daemon-2.process": "d1c0903693386285e09208e9cab71c4d71ca225c7eee5621bc32f7e17677cdcf",
     "daemon-2.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    "daemon-2.stdout": "1523fa1781c5df92e502a05b41a607622aecdae5b2b20292b915c9b46c0cce77"
+    "daemon-2.stdout": "c34a32af4ecfc275e03d0dd965681776d2464f56de109b2590a24bfbcb1d0d8a"
   },
   "provenance_invariant": "This file was generated from the exact clean implementation commit named by verified_commit and is added, if tracked, only by a later evidence-only commit.",
   "readiness_label": "blocked:repo+external",
   "runtime": {
+    "authentication_failure": {
+      "authentication_failure": "rejected",
+      "code": "Unauthenticated"
+    },
     "deliberate_authentication_failure": true,
     "graceful_shutdown_observed": true,
     "healthy_digests_identical": true,
@@ -653,7 +708,7 @@
           "symbol": "BTCUSDT"
         },
         "snapshot_digest": "ca5d9ac076a984b4eb473482df8ccf301fb8b24c5f79e2e0d6d9f88a03204c8f",
-        "stopped_pid": 18800,
+        "stopped_pid": 94717,
         "wal_sha256": "604a9449120147017620700ca31f7254a381358359b9bb9ca1fff1ede7704431",
         "wal_size_bytes": 658
       },
@@ -674,7 +729,7 @@
           "symbol": "BTCUSDT"
         },
         "snapshot_digest": "ca5d9ac076a984b4eb473482df8ccf301fb8b24c5f79e2e0d6d9f88a03204c8f",
-        "stopped_pid": 18834,
+        "stopped_pid": 94769,
         "wal_sha256": "604a9449120147017620700ca31f7254a381358359b9bb9ca1fff1ede7704431",
         "wal_size_bytes": 658
       }
@@ -699,7 +754,7 @@
       ]
     }
   },
-  "schema_version": 1,
+  "schema_version": 2,
   "security_audit_current_counts": {
     "critical": 0,
     "high": 2,
@@ -733,5 +788,6 @@
     "start-tree-status.txt": []
   },
   "two_clean_full_gate_runs_observed": false,
-  "verified_commit": "ee36e78d8790c1394a91dc8de0fe1607269b841c"
+  "two_run_receipt": null,
+  "verified_commit": "488adc502bbf3f3ae8caf5cafbf278f92e32bdb0"
 }
