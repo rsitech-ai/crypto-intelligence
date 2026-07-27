@@ -1,3 +1,10 @@
-//! config::schema implementation boundary.
-#[derive(Clone,Debug,Eq,PartialEq)] pub struct SchemaContract { pub schema_version:u32, pub identifier:String }
-impl SchemaContract { pub fn new(identifier:impl Into<String>)->Result<Self,&'static str>{let identifier=identifier.into();if identifier.is_empty()||identifier.len()>256{return Err("invalid identifier")}Ok(Self{schema_version:1,identifier})} }
+//! Deterministic JSON Schema generation for the public configuration contract.
+
+use crate::{AppConfig, ConfigError};
+
+pub fn generate() -> Result<String, ConfigError> {
+    let schema = schemars::schema_for!(AppConfig);
+    let mut rendered = serde_json::to_string_pretty(&schema)?;
+    rendered.push('\n');
+    Ok(rendered)
+}

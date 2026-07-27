@@ -24,8 +24,10 @@ fn cargo(args: &[&str]) -> Output {
         .expect("cargo command should run")
 }
 
-fn xtask(command: &str) -> Output {
-    cargo(&["run", "--locked", "-p", "xtask", "--", command])
+fn xtask(arguments: &[&str]) -> Output {
+    let mut cargo_arguments = vec!["run", "--locked", "-p", "xtask", "--"];
+    cargo_arguments.extend_from_slice(arguments);
+    cargo(&cargo_arguments)
 }
 
 #[test]
@@ -60,24 +62,41 @@ fn active_workspace_contains_only_implemented_packages() {
         })
         .collect::<BTreeSet<_>>();
 
-    assert_eq!(package_names, BTreeSet::from(["system-tests", "xtask"]));
+    assert_eq!(
+        package_names,
+        BTreeSet::from([
+            "config",
+            "domain",
+            "event-envelope",
+            "fixed-decimal",
+            "system-tests",
+            "xtask",
+        ])
+    );
 }
 
 #[test]
 fn supported_xtask_commands_succeed() {
     for command in ["help", "workspace-check"] {
-        let output = xtask(command);
+        let output = xtask(&[command]);
         assert!(
             output.status.success(),
             "xtask {command} failed: {}",
             String::from_utf8_lossy(&output.stderr)
         );
     }
+
+    let output = xtask(&["generate-config-schema", "--check"]);
+    assert!(
+        output.status.success(),
+        "xtask generate-config-schema --check failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 #[test]
 fn unknown_xtask_commands_fail_with_a_stable_exit_code() {
-    let output = xtask("not-a-command");
+    let output = xtask(&["not-a-command"]);
 
     assert_eq!(output.status.code(), Some(UNKNOWN_COMMAND_EXIT_CODE));
     assert!(
