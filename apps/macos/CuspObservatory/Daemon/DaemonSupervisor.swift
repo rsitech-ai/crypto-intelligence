@@ -269,6 +269,11 @@ actor DaemonSupervisor {
     let runtime: any DaemonRuntime
   }
 
+  private struct StopOwnership {
+    let stopID: UUID
+    let runtime: RuntimeOwnership
+  }
+
   private let configuration: DaemonConfiguration
   private let launcher: any DaemonLaunching
   private let transportFactory: any RPCTransportBuilding
@@ -278,6 +283,7 @@ actor DaemonSupervisor {
 
   private var runtimeOwnership: RuntimeOwnership?
   private var startupOwnership: StartupOwnership?
+  private var stopOwnership: StopOwnership?
   private var monitorTask: Task<Void, Never>?
   private var activeRunID: UUID?
   private var eventContinuations: [UUID: AsyncStream<DaemonSupervisorEvent>.Continuation] = [:]
@@ -331,6 +337,7 @@ actor DaemonSupervisor {
       currentState == .stopped || currentState == .failed,
       runtimeOwnership == nil,
       startupOwnership == nil,
+      stopOwnership == nil,
       monitorTask == nil
     else {
       throw DaemonSupervisorError.alreadyRunning
@@ -440,27 +447,55 @@ actor DaemonSupervisor {
     guard currentState != .stopped else {
       return
     }
-    activeRunID = nil
-    publish(state: .stopping, snapshot: nil)
-    startupOwnership?.task.cancel()
-    startupOwnership = nil
-    monitorTask?.cancel()
-    monitorTask = nil
+    let stopping: StopOwnership
+    if let activeStop = stopOwnership {
+      stopping = activeStop
+    } else {
+      activeRunID = nil
+      publish(state: .stopping, snapshot: nil)
+      startupOwnership?.task.cancel()
+      startupOwnership = nil
+      monitorTask?.cancel()
+      monitorTask = nil
 
-    guard let active = runtimeOwnership else {
-      publish(state: .stopped, snapshot: nil)
-      return
+      guard let active = runtimeOwnership else {
+        publish(state: .stopped, snapshot: nil)
+        return
+      }
+      stopping = StopOwnership(
+        stopID: UUID(),
+        runtime: active
+      )
+      stopOwnership = stopping
     }
-    switch await terminate(active.runtime) {
+
+    let result = await terminate(stopping.runtime.runtime)
+    try completeStop(result, ownership: stopping)
+  }
+
+  private func completeStop(
+    _ result: RuntimeTerminationResult,
+    ownership: StopOwnership
+  ) throws {
+    let ownsCompletion = stopOwnership?.stopID == ownership.stopID
+    switch result {
     case .graceful:
-      clearRuntimeOwnership(for: active.runID)
-      publish(state: .stopped, snapshot: nil)
+      if ownsCompletion {
+        clearRuntimeOwnership(for: ownership.runtime.runID)
+        stopOwnership = nil
+        publish(state: .stopped, snapshot: nil)
+      }
     case .forced:
-      clearRuntimeOwnership(for: active.runID)
-      publish(state: .stopped, snapshot: nil)
+      if ownsCompletion {
+        clearRuntimeOwnership(for: ownership.runtime.runID)
+        stopOwnership = nil
+        publish(state: .stopped, snapshot: nil)
+      }
       throw DaemonSupervisorError.shutdownTimeout
     case .unresolved:
-      publish(state: .failed, snapshot: nil)
+      if ownsCompletion {
+        publish(state: .failed, snapshot: nil)
+      }
       throw DaemonSupervisorError.shutdownTimeout
     }
   }

@@ -445,6 +445,66 @@ struct DaemonSupervisorTests {
     #expect(await supervisor.ownedTaskCount == 0)
   }
 
+  @Test("stale concurrent stop completion preserves the replacement lifecycle")
+  func staleConcurrentStopPreservesReplacementLifecycle() async throws {
+    let monitorGate = SequencedLaunchGate()
+    let firstStopGate = SequencedLaunchGate()
+    let secondStopGate = SequencedLaunchGate()
+    let firstRuntime = ReentrantTerminationRuntime(
+      processID: 7,
+      waitGates: [monitorGate, firstStopGate, secondStopGate]
+    )
+    let secondRuntime = FakeDaemonRuntime(
+      readiness: .data(readiness()),
+      processID: 7
+    )
+    let replacementSnapshot = makeSnapshot()
+    let supervisor = DaemonSupervisor(
+      configuration: configuration(),
+      launcher: SequencedRuntimeLauncher(
+        runtimes: [firstRuntime, secondRuntime]
+      ),
+      transportFactory: SequencedTransportFactory(
+        transports: [
+          StaticTransport(snapshot: makeSnapshot()),
+          StaticTransport(snapshot: replacementSnapshot),
+        ]
+      ),
+      startupTimeout: .seconds(2),
+      shutdownTimeout: .seconds(1),
+      nowUnixSeconds: { 1_700_000_000 }
+    )
+    try await supervisor.start()
+    try await firstRuntime.waitUntilWaitCount(1)
+
+    let firstStop = Task { await stopResult(from: supervisor) }
+    try await firstRuntime.waitUntilWaitCount(2)
+    let secondStop = Task { await stopResult(from: supervisor) }
+    try await firstRuntime.waitUntilWaitCount(3)
+
+    await firstStopGate.release()
+    #expect(await firstStop.value == .success)
+    #expect(await supervisor.currentState == .stopped)
+
+    try await supervisor.start()
+    #expect(await supervisor.currentState == .healthy)
+    #expect(await supervisor.latestSnapshot == replacementSnapshot)
+
+    await secondStopGate.release()
+    #expect(await secondStop.value == .success)
+
+    #expect(await supervisor.currentState == .healthy)
+    #expect(await supervisor.latestSnapshot == replacementSnapshot)
+    #expect(!(await secondRuntime.wasTerminated))
+
+    await monitorGate.release()
+    if await supervisor.currentState == .healthy {
+      try await supervisor.stop()
+    } else {
+      await secondRuntime.terminate()
+    }
+  }
+
   @Test("incompatible protocol fails closed before market RPC")
   func incompatibleProtocol() async throws {
     let runtime = FakeDaemonRuntime(
@@ -722,6 +782,19 @@ private enum StopResult: Sendable, Equatable {
   case success
   case failure(DaemonSupervisorError)
   case unexpectedFailure
+}
+
+private func stopResult(
+  from supervisor: DaemonSupervisor
+) async -> StopResult {
+  do {
+    try await supervisor.stop()
+    return .success
+  } catch let error as DaemonSupervisorError {
+    return .failure(error)
+  } catch {
+    return .unexpectedFailure
+  }
 }
 
 private func configuration() -> DaemonConfiguration {
