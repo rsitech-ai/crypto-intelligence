@@ -1,6 +1,9 @@
 //! HMAC-SHA256 authentication for versioned local sessions.
 
-use std::sync::Arc;
+use std::{
+    sync::Arc,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
@@ -22,12 +25,22 @@ const SESSION_SECRET_LENGTH: usize = 32;
 
 type HmacSha256 = Hmac<Sha256>;
 
-/// Time source used for authentication boundary checks.
-///
-/// Runtime services receive this dependency explicitly. Tests can therefore
-/// exercise issuance and expiry without sleeping or changing process time.
-pub trait Clock: Send + Sync + 'static {
+/// Crate-private time source used for authentication boundary checks.
+pub(crate) trait Clock: Send + Sync + 'static {
     fn unix_seconds(&self) -> i64;
+}
+
+/// Production authentication clock, sourced only from the operating system.
+pub(crate) struct SystemClock;
+
+impl Clock for SystemClock {
+    fn unix_seconds(&self) -> i64 {
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_or(i64::MIN, |duration| {
+                i64::try_from(duration.as_secs()).unwrap_or(i64::MAX)
+            })
+    }
 }
 
 /// A pre-read, exact-length session secret that zeroizes on final drop.

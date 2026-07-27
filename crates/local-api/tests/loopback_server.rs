@@ -1,20 +1,18 @@
 use std::{
     net::SocketAddr,
-    sync::{
-        Arc,
-        atomic::{AtomicI64, Ordering},
-    },
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use domain::{InstrumentId, SourceId, SourceKind, UnixNanos, VenueId};
 use fixed_decimal::{FixedDecimal, Price};
 use local_api::{
     auth::{
-        Clock, SessionAuthenticator, SessionSecret, TOKEN_METADATA_KEY,
-        insert_authentication_metadata,
+        SessionAuthenticator, SessionSecret, TOKEN_METADATA_KEY, insert_authentication_metadata,
     },
     proto::{
-        health_v1::{CheckRequest, ServingStatus, health_service_client::HealthServiceClient},
+        health_v1::{
+            CheckRequest, CheckResponse, ServingStatus, health_service_client::HealthServiceClient,
+        },
         market_v1::{
             GetSnapshotRequest, SnapshotHealth, market_service_client::MarketServiceClient,
         },
@@ -23,38 +21,39 @@ use local_api::{
     session::{SessionDescriptor, TOKEN_LIFETIME_SECONDS},
 };
 use prost::Message;
-use tonic::{Code, Request, transport::Endpoint};
+use tokio::net::TcpStream;
+use tonic::{
+    Code, Request,
+    client::Grpc,
+    codegen::http::uri::PathAndQuery,
+    transport::{Channel, Endpoint},
+};
 use zeroize::Zeroizing;
 
-const ISSUED_AT: i64 = 1_700_000_000;
 const SECRET_BYTES: [u8; 32] = [0x6b; 32];
 
-#[derive(Default)]
-struct TestClock {
-    now: AtomicI64,
+#[derive(Clone, PartialEq, Message)]
+struct OversizedRequest {
+    #[prost(bytes = "vec", tag = "1")]
+    padding: Vec<u8>,
 }
 
-impl TestClock {
-    fn at(now: i64) -> Self {
-        Self {
-            now: AtomicI64::new(now),
-        }
-    }
-
-    fn set(&self, now: i64) {
-        self.now.store(now, Ordering::SeqCst);
-    }
+fn current_unix_seconds() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("fixture clock must be after the Unix epoch")
+        .as_secs()
+        .try_into()
+        .expect("fixture time must fit i64")
 }
 
-impl Clock for TestClock {
-    fn unix_seconds(&self) -> i64 {
-        self.now.load(Ordering::SeqCst)
-    }
+fn descriptor_at(issued_unix_seconds: i64) -> SessionDescriptor {
+    SessionDescriptor::issue(1, 0, 4_242, [0x11; 16], [0x22; 16], issued_unix_seconds)
+        .expect("fixture descriptor must be valid for sixty seconds")
 }
 
 fn descriptor() -> SessionDescriptor {
-    SessionDescriptor::issue(1, 0, 4_242, [0x11; 16], [0x22; 16], ISSUED_AT)
-        .expect("fixture descriptor must be valid")
+    descriptor_at(current_unix_seconds())
 }
 
 fn secret() -> SessionSecret {
@@ -111,6 +110,14 @@ async fn connect(
     )
 }
 
+async fn channel(address: SocketAddr) -> Channel {
+    Endpoint::from_shared(format!("http://{address}"))
+        .expect("loopback endpoint must be valid")
+        .connect()
+        .await
+        .expect("server must accept a local connection")
+}
+
 #[tokio::test]
 async fn rejects_every_bind_except_exact_ephemeral_ipv4_loopback() {
     for address in [
@@ -122,14 +129,7 @@ async fn rejects_every_bind_except_exact_ephemeral_ipv4_loopback() {
         "[::]:0".parse().expect("fixture address must parse"),
         "[::1]:0".parse().expect("fixture address must parse"),
     ] {
-        let result = LoopbackServer::spawn(
-            address,
-            secret(),
-            descriptor(),
-            snapshot(),
-            Arc::new(TestClock::at(ISSUED_AT)),
-        )
-        .await;
+        let result = LoopbackServer::spawn(address, secret(), descriptor(), snapshot()).await;
         assert!(
             matches!(result, Err(ServerError::NonLoopbackBind)),
             "unexpected acceptance for {address}"
@@ -144,7 +144,6 @@ async fn liveness_is_unauthenticated_and_wire_minimal() {
         secret(),
         descriptor(),
         snapshot(),
-        Arc::new(TestClock::at(ISSUED_AT)),
     )
     .await
     .expect("exact loopback bind must start");
@@ -190,7 +189,6 @@ async fn authenticated_snapshot_returns_only_canonical_authoritative_fields() {
         secret(),
         session.clone(),
         snapshot(),
-        Arc::new(TestClock::at(ISSUED_AT)),
     )
     .await
     .expect("exact loopback bind must start");
@@ -221,8 +219,7 @@ async fn authenticated_snapshot_returns_only_canonical_authoritative_fields() {
 }
 
 #[tokio::test]
-async fn missing_mutated_and_replayed_credentials_fail_closed() {
-    let clock = Arc::new(TestClock::at(ISSUED_AT));
+async fn missing_and_mutated_credentials_fail_closed() {
     let session = descriptor();
     let client_authenticator = SessionAuthenticator::new(secret());
     let token = client_authenticator.token(&session);
@@ -231,7 +228,6 @@ async fn missing_mutated_and_replayed_credentials_fail_closed() {
         secret(),
         session.clone(),
         snapshot(),
-        clock.clone(),
     )
     .await
     .expect("exact loopback bind must start");
@@ -270,20 +266,98 @@ async fn missing_mutated_and_replayed_credentials_fail_closed() {
         .await
         .expect("token must work before expiry");
 
-    clock.set(ISSUED_AT + TOKEN_LIFETIME_SECONDS);
-    let replay =
-        insert_authentication_metadata(Request::new(GetSnapshotRequest {}), &session, &token);
+    server
+        .shutdown()
+        .await
+        .expect("server must shut down cleanly");
+}
+
+#[tokio::test]
+async fn public_server_uses_system_time_to_reject_an_already_expired_session() {
+    let session = descriptor_at(current_unix_seconds() - TOKEN_LIFETIME_SECONDS - 1);
+    let client_authenticator = SessionAuthenticator::new(secret());
+    let token = client_authenticator.token(&session);
+    let server = LoopbackServer::spawn(
+        "127.0.0.1:0".parse().expect("bind address must parse"),
+        secret(),
+        session.clone(),
+        snapshot(),
+    )
+    .await
+    .expect("exact loopback bind must start");
+    let (_, mut market) = connect(server.local_addr()).await;
+
+    let status = market
+        .get_snapshot(insert_authentication_metadata(
+            Request::new(GetSnapshotRequest {}),
+            &session,
+            &token,
+        ))
+        .await
+        .expect_err("production server must reject an already expired session");
+    assert_eq!(status.code(), Code::Unauthenticated);
+    assert_eq!(status.message(), "authentication failed");
+
+    server
+        .shutdown()
+        .await
+        .expect("server must shut down cleanly");
+}
+
+#[tokio::test]
+async fn oversized_empty_method_payload_is_rejected_before_service_logic() {
+    let server = LoopbackServer::spawn(
+        "127.0.0.1:0".parse().expect("bind address must parse"),
+        secret(),
+        descriptor(),
+        snapshot(),
+    )
+    .await
+    .expect("exact loopback bind must start");
+    let mut grpc = Grpc::new(channel(server.local_addr()).await);
+    grpc.ready()
+        .await
+        .expect("local RPC client must become ready");
+
+    let result: Result<tonic::Response<CheckResponse>, tonic::Status> = grpc
+        .unary(
+            Request::new(OversizedRequest {
+                padding: vec![0_u8; 1_024],
+            }),
+            PathAndQuery::from_static("/cmti.health.v1.HealthService/Check"),
+            tonic_prost::ProstCodec::default(),
+        )
+        .await;
     assert_eq!(
-        market
-            .get_snapshot(replay)
-            .await
-            .expect_err("replay at expiry must fail")
+        result
+            .expect_err("oversized payload must fail before health logic")
             .code(),
-        Code::Unauthenticated
+        Code::OutOfRange
     );
 
     server
         .shutdown()
         .await
         .expect("server must shut down cleanly");
+}
+
+#[tokio::test]
+async fn shutdown_forces_a_stuck_connection_closed_within_a_fixed_bound() {
+    let server = LoopbackServer::spawn(
+        "127.0.0.1:0".parse().expect("bind address must parse"),
+        secret(),
+        descriptor(),
+        snapshot(),
+    )
+    .await
+    .expect("exact loopback bind must start");
+    let _stuck_connection = TcpStream::connect(server.local_addr())
+        .await
+        .expect("raw loopback connection must open");
+    tokio::task::yield_now().await;
+
+    tokio::time::timeout(Duration::from_secs(2), server.shutdown())
+        .await
+        .expect("shutdown must have a fixed internal deadline")
+        .expect("forced cleanup must complete successfully");
 }
