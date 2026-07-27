@@ -7,15 +7,13 @@ use std::{
 
 use thiserror::Error;
 
-use crate::frame::{
-    CHECKSUM_LENGTH, HEADER_LENGTH, MAGIC, MAX_PAYLOAD_LENGTH, SCHEMA_VERSION, decode,
-};
+use crate::frame::{HEADER_LENGTH, MAGIC, MAX_PAYLOAD_LENGTH, SCHEMA_VERSION, decode};
 
 #[derive(Debug, Error)]
 pub enum RecoveryError {
     #[error("WAL I/O failed: {0}")]
     Io(#[from] io::Error),
-    #[error("WAL corruption before the final frame at byte offset {offset}")]
+    #[error("WAL corruption at byte offset {offset}")]
     Corruption { offset: u64 },
 }
 
@@ -48,7 +46,10 @@ pub fn recover(file: &mut File) -> Result<RecoveryReport, RecoveryError> {
                 records.push(frame.payload().to_vec());
                 offset += frame.encoded_length();
             }
-            Err(_) if is_unambiguous_eof_tail(&bytes[offset..]) => {
+            Err(_)
+                if is_repairable_partial_header_at_eof(&bytes[offset..])
+                    && !contains_later_valid_frame(&bytes[offset..]) =>
+            {
                 let truncated_bytes = (bytes.len() - offset) as u64;
                 file.set_len(offset as u64)?;
                 file.seek(SeekFrom::End(0))?;
@@ -73,37 +74,17 @@ pub fn recover(file: &mut File) -> Result<RecoveryReport, RecoveryError> {
     })
 }
 
-fn is_unambiguous_eof_tail(bytes: &[u8]) -> bool {
-    if bytes.len() < HEADER_LENGTH {
-        return is_valid_partial_header_prefix(bytes);
-    }
-    if bytes[..MAGIC.len()] != MAGIC {
-        return false;
-    }
-    let version = u16::from_be_bytes(
-        bytes[MAGIC.len()..MAGIC.len() + size_of::<u16>()]
-            .try_into()
-            .expect("validated frame header contains a complete version"),
-    );
-    if version != SCHEMA_VERSION {
-        return false;
-    }
-    let payload_length = u32::from_be_bytes(
-        bytes[MAGIC.len() + size_of::<u16>()..HEADER_LENGTH]
-            .try_into()
-            .expect("validated frame header contains a complete length"),
-    ) as usize;
-    if payload_length > MAX_PAYLOAD_LENGTH {
-        return false;
-    }
-    let Some(encoded_length) = HEADER_LENGTH
-        .checked_add(payload_length)
-        .and_then(|length| length.checked_add(CHECKSUM_LENGTH))
-    else {
-        return false;
-    };
+fn is_repairable_partial_header_at_eof(bytes: &[u8]) -> bool {
+    !bytes.is_empty() && bytes.len() < HEADER_LENGTH && is_valid_partial_header_prefix(bytes)
+}
 
-    bytes.len() == encoded_length
+fn contains_later_valid_frame(bytes: &[u8]) -> bool {
+    bytes
+        .get(1..)
+        .into_iter()
+        .flat_map(|suffix| suffix.windows(MAGIC.len()).enumerate())
+        .filter(|(_, window)| *window == MAGIC)
+        .any(|(relative_offset, _)| decode(&bytes[relative_offset + 1..]).is_ok())
 }
 
 fn is_valid_partial_header_prefix(bytes: &[u8]) -> bool {
