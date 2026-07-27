@@ -445,14 +445,14 @@ struct DaemonSupervisorTests {
     #expect(await supervisor.ownedTaskCount == 0)
   }
 
-  @Test("stale concurrent stop completion preserves the replacement lifecycle")
-  func staleConcurrentStopPreservesReplacementLifecycle() async throws {
+  @Test("concurrent graceful stop preserves the replacement monitor lifecycle")
+  func concurrentGracefulStopPreservesReplacementLifecycle() async throws {
     let monitorGate = SequencedLaunchGate()
-    let firstStopGate = SequencedLaunchGate()
-    let secondStopGate = SequencedLaunchGate()
+    let stopGate = SequencedLaunchGate()
+    let duplicateStopGate = SequencedLaunchGate()
     let firstRuntime = ReentrantTerminationRuntime(
       processID: 7,
-      waitGates: [monitorGate, firstStopGate, secondStopGate]
+      waitGates: [monitorGate, stopGate, duplicateStopGate]
     )
     let secondRuntime = FakeDaemonRuntime(
       readiness: .data(readiness()),
@@ -480,29 +480,142 @@ struct DaemonSupervisorTests {
     let firstStop = Task { await stopResult(from: supervisor) }
     try await firstRuntime.waitUntilWaitCount(2)
     let secondStop = Task { await stopResult(from: supervisor) }
-    try await firstRuntime.waitUntilWaitCount(3)
+    try await waitUntilActiveStopCallerCount(2, supervisor: supervisor)
 
-    await firstStopGate.release()
+    await stopGate.release()
+    await duplicateStopGate.release()
     #expect(await firstStop.value == .success)
+    #expect(await secondStop.value == .success)
+    #expect(await firstRuntime.waitCount == 2)
     #expect(await supervisor.currentState == .stopped)
+    #expect(await supervisor.activeStopCallerCount == 0)
 
     try await supervisor.start()
     #expect(await supervisor.currentState == .healthy)
     #expect(await supervisor.latestSnapshot == replacementSnapshot)
-
-    await secondStopGate.release()
-    #expect(await secondStop.value == .success)
-
-    #expect(await supervisor.currentState == .healthy)
-    #expect(await supervisor.latestSnapshot == replacementSnapshot)
     #expect(!(await secondRuntime.wasTerminated))
+    #expect(await supervisor.ownedTaskCount == 1)
 
+    await secondRuntime.terminate()
+    try await waitUntilState(.failed, supervisor: supervisor)
+    #expect(await supervisor.latestSnapshot == nil)
+    #expect(await supervisor.ownedTaskCount == 0)
     await monitorGate.release()
-    if await supervisor.currentState == .healthy {
-      try await supervisor.stop()
-    } else {
-      await secondRuntime.terminate()
+  }
+
+  @Test("concurrent stop callers share one forced termination operation")
+  func concurrentStopsShareForcedTermination() async throws {
+    let monitorGate = SequencedLaunchGate()
+    let forcedWaitGate = SequencedLaunchGate()
+    let runtime = CountedStopRuntime(
+      processID: 7,
+      monitorGate: monitorGate,
+      forcedWaitGate: forcedWaitGate,
+      duplicateWaitGate: SequencedLaunchGate(),
+      firstForcedWaitIsUnresolved: false
+    )
+    let supervisor = DaemonSupervisor(
+      configuration: configuration(),
+      launcher: SequencedRuntimeLauncher(runtimes: [runtime]),
+      transportFactory: StaticTransportFactory(),
+      startupTimeout: .seconds(1),
+      shutdownTimeout: .seconds(1),
+      nowUnixSeconds: { 1_700_000_000 }
+    )
+    try await supervisor.start()
+    try await runtime.waitUntilWaitCount(1)
+
+    let firstStop = Task { await stopResult(from: supervisor) }
+    try await runtime.waitUntilWaitCount(3)
+    let secondStop = Task { await stopResult(from: supervisor) }
+    try await waitUntilActiveStopCallerCount(2, supervisor: supervisor)
+
+    firstStop.cancel()
+    #expect(await supervisor.ownedTaskCount == 1)
+    #expect(await supervisor.activeStopCallerCount == 2)
+    await forcedWaitGate.release()
+    await runtime.releaseDuplicateWait()
+
+    let expected = StopResult.failure(.shutdownTimeout)
+    #expect(await firstStop.value == expected)
+    #expect(await secondStop.value == expected)
+    #expect(await runtime.terminateCount == 1)
+    #expect(await runtime.forceTerminationCount == 1)
+    #expect(await runtime.waitCount == 3)
+    #expect(await supervisor.currentState == .stopped)
+    #expect(await supervisor.ownedTaskCount == 0)
+    #expect(await supervisor.activeStopCallerCount == 0)
+    await monitorGate.release()
+  }
+
+  @Test("unresolved shared stop is released and a retry owns a fresh operation")
+  func unresolvedSharedStopCanBeRetried() async throws {
+    let monitorGate = SequencedLaunchGate()
+    let unresolvedWaitGate = SequencedLaunchGate()
+    let runtime = CountedStopRuntime(
+      processID: 7,
+      monitorGate: monitorGate,
+      forcedWaitGate: unresolvedWaitGate,
+      duplicateWaitGate: SequencedLaunchGate(),
+      firstForcedWaitIsUnresolved: true
+    )
+    let supervisor = DaemonSupervisor(
+      configuration: configuration(),
+      launcher: SequencedRuntimeLauncher(runtimes: [runtime]),
+      transportFactory: StaticTransportFactory(),
+      startupTimeout: .seconds(1),
+      shutdownTimeout: .seconds(1),
+      nowUnixSeconds: { 1_700_000_000 }
+    )
+    try await supervisor.start()
+    try await runtime.waitUntilWaitCount(1)
+    let recorder = StateRecorder()
+    let events = await supervisor.events()
+    let observing = Task {
+      for await event in events {
+        await recorder.record(event.state)
+      }
     }
+    defer { observing.cancel() }
+
+    let firstStop = Task { await stopResult(from: supervisor) }
+    try await runtime.waitUntilWaitCount(3)
+    let secondStop = Task { await stopResult(from: supervisor) }
+    try await waitUntilActiveStopCallerCount(2, supervisor: supervisor)
+
+    #expect(await supervisor.ownedTaskCount == 1)
+    await unresolvedWaitGate.release()
+    await runtime.releaseDuplicateWait()
+
+    let expected = StopResult.failure(.shutdownTimeout)
+    #expect(await firstStop.value == expected)
+    #expect(await secondStop.value == expected)
+    try await recorder.waitUntilCount(of: .failed, isAtLeast: 1)
+    #expect(await recorder.count(of: .failed) == 1)
+    #expect(await runtime.terminateCount == 1)
+    #expect(await runtime.forceTerminationCount == 1)
+    #expect(await runtime.waitCount == 3)
+    #expect(await supervisor.currentState == .failed)
+    #expect(await supervisor.latestSnapshot == nil)
+    #expect(await supervisor.ownedTaskCount == 0)
+    #expect(await supervisor.activeStopCallerCount == 0)
+    await #expect(throws: DaemonSupervisorError.alreadyRunning) {
+      try await supervisor.start()
+    }
+
+    await runtime.resetDuplicateWait()
+    let retryStop = Task { await stopResult(from: supervisor) }
+    try await runtime.waitUntilWaitCount(4)
+    try await waitUntilActiveStopCallerCount(1, supervisor: supervisor)
+    #expect(await supervisor.ownedTaskCount == 1)
+    await runtime.releaseDuplicateWait()
+    #expect(await retryStop.value == .success)
+    #expect(await runtime.terminateCount == 2)
+    #expect(await runtime.forceTerminationCount == 1)
+    #expect(await runtime.waitCount == 4)
+    #expect(await supervisor.currentState == .stopped)
+    #expect(await supervisor.ownedTaskCount == 0)
+    await monitorGate.release()
   }
 
   @Test("incompatible protocol fails closed before market RPC")
@@ -775,6 +888,64 @@ private func waitUntilCompleted(
   }
   guard await probe.isCompleted else {
     throw DaemonSupervisorError.startupTimeout
+  }
+}
+
+private func waitUntilState(
+  _ expected: DaemonState,
+  supervisor: DaemonSupervisor,
+  timeout: Duration = .milliseconds(300)
+) async throws {
+  let deadline = ContinuousClock.now.advanced(by: timeout)
+  while await supervisor.currentState != expected,
+    ContinuousClock.now < deadline
+  {
+    try await Task.sleep(for: .milliseconds(5))
+  }
+  guard await supervisor.currentState == expected else {
+    throw DaemonSupervisorError.startupTimeout
+  }
+}
+
+private func waitUntilActiveStopCallerCount(
+  _ expected: Int,
+  supervisor: DaemonSupervisor,
+  timeout: Duration = .milliseconds(300)
+) async throws {
+  let deadline = ContinuousClock.now.advanced(by: timeout)
+  while await supervisor.activeStopCallerCount != expected,
+    ContinuousClock.now < deadline
+  {
+    try await Task.sleep(for: .milliseconds(5))
+  }
+  guard await supervisor.activeStopCallerCount == expected else {
+    throw DaemonSupervisorError.shutdownTimeout
+  }
+}
+
+private actor StateRecorder {
+  private var states: [DaemonState] = []
+
+  func record(_ state: DaemonState) {
+    states.append(state)
+  }
+
+  func count(of state: DaemonState) -> Int {
+    states.count { $0 == state }
+  }
+
+  func waitUntilCount(
+    of state: DaemonState,
+    isAtLeast expected: Int,
+    timeout: Duration = .milliseconds(300)
+  ) async throws {
+    let deadline = ContinuousClock.now.advanced(by: timeout)
+    while count(of: state) < expected, ContinuousClock.now < deadline {
+      try await Task.sleep(for: .milliseconds(5))
+    }
+    guard count(of: state) >= expected else {
+      throw DaemonSupervisorError.startupTimeout
+    }
   }
 }
 
@@ -1052,6 +1223,81 @@ private actor ReentrantTerminationRuntime: DaemonRuntime {
     waitCount += 1
     await gate.waitIgnoringCancellation()
     return 0
+  }
+
+  func waitUntilWaitCount(_ expected: Int) async throws {
+    let deadline = ContinuousClock.now.advanced(by: .milliseconds(300))
+    while waitCount < expected, ContinuousClock.now < deadline {
+      try await Task.sleep(for: .milliseconds(5))
+    }
+    guard waitCount >= expected else {
+      throw DaemonSupervisorError.shutdownTimeout
+    }
+  }
+}
+
+private actor CountedStopRuntime: DaemonRuntime {
+  nonisolated let processID: Int32
+  private let monitorGate: SequencedLaunchGate
+  private let forcedWaitGate: SequencedLaunchGate
+  private var duplicateWaitGate: SequencedLaunchGate
+  private let firstForcedWaitIsUnresolved: Bool
+  private(set) var terminateCount = 0
+  private(set) var forceTerminationCount = 0
+  private(set) var waitCount = 0
+
+  init(
+    processID: Int32,
+    monitorGate: SequencedLaunchGate,
+    forcedWaitGate: SequencedLaunchGate,
+    duplicateWaitGate: SequencedLaunchGate,
+    firstForcedWaitIsUnresolved: Bool
+  ) {
+    self.processID = processID
+    self.monitorGate = monitorGate
+    self.forcedWaitGate = forcedWaitGate
+    self.duplicateWaitGate = duplicateWaitGate
+    self.firstForcedWaitIsUnresolved = firstForcedWaitIsUnresolved
+  }
+
+  func readinessLine() -> Data {
+    readiness()
+  }
+
+  func terminate() {
+    terminateCount += 1
+  }
+
+  func forceTerminate() {
+    forceTerminationCount += 1
+  }
+
+  func waitForExit() async throws -> Int32 {
+    waitCount += 1
+    switch waitCount {
+    case 1:
+      await monitorGate.waitIgnoringCancellation()
+      return 0
+    case 2:
+      throw CancellationError()
+    case 3:
+      await forcedWaitGate.waitIgnoringCancellation()
+      if firstForcedWaitIsUnresolved {
+        throw CancellationError()
+      }
+      return 0
+    default:
+      await duplicateWaitGate.waitIgnoringCancellation()
+      return 0
+    }
+  }
+
+  func releaseDuplicateWait() async {
+    await duplicateWaitGate.release()
+  }
+
+  func resetDuplicateWait() {
+    duplicateWaitGate = SequencedLaunchGate()
   }
 
   func waitUntilWaitCount(_ expected: Int) async throws {

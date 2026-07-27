@@ -272,6 +272,7 @@ actor DaemonSupervisor {
   private struct StopOwnership {
     let stopID: UUID
     let runtime: RuntimeOwnership
+    let task: Task<RuntimeTerminationResult, Never>
   }
 
   private let configuration: DaemonConfiguration
@@ -290,9 +291,12 @@ actor DaemonSupervisor {
 
   private(set) var currentState: DaemonState = .stopped
   private(set) var latestSnapshot: MarketSnapshot?
+  private(set) var activeStopCallerCount = 0
 
   var ownedTaskCount: Int {
-    (startupOwnership == nil ? 0 : 1) + (monitorTask == nil ? 0 : 1)
+    (startupOwnership == nil ? 0 : 1)
+      + (monitorTask == nil ? 0 : 1)
+      + (stopOwnership == nil ? 0 : 1)
   }
 
   func events() -> AsyncStream<DaemonSupervisorEvent> {
@@ -447,6 +451,10 @@ actor DaemonSupervisor {
     guard currentState != .stopped else {
       return
     }
+    activeStopCallerCount += 1
+    defer {
+      activeStopCallerCount -= 1
+    }
     let stopping: StopOwnership
     if let activeStop = stopOwnership {
       stopping = activeStop
@@ -462,14 +470,19 @@ actor DaemonSupervisor {
         publish(state: .stopped, snapshot: nil)
         return
       }
+      let runtime = active.runtime
+      let timeout = shutdownTimeout
       stopping = StopOwnership(
         stopID: UUID(),
-        runtime: active
+        runtime: active,
+        task: Task {
+          await Self.terminate(runtime, timeout: timeout)
+        }
       )
       stopOwnership = stopping
     }
 
-    let result = await terminate(stopping.runtime.runtime)
+    let result = await stopping.task.value
     try completeStop(result, ownership: stopping)
   }
 
@@ -478,17 +491,18 @@ actor DaemonSupervisor {
     ownership: StopOwnership
   ) throws {
     let ownsCompletion = stopOwnership?.stopID == ownership.stopID
+    if ownsCompletion {
+      stopOwnership = nil
+    }
     switch result {
     case .graceful:
       if ownsCompletion {
         clearRuntimeOwnership(for: ownership.runtime.runID)
-        stopOwnership = nil
         publish(state: .stopped, snapshot: nil)
       }
     case .forced:
       if ownsCompletion {
         clearRuntimeOwnership(for: ownership.runtime.runID)
-        stopOwnership = nil
         publish(state: .stopped, snapshot: nil)
       }
       throw DaemonSupervisorError.shutdownTimeout
@@ -595,19 +609,23 @@ actor DaemonSupervisor {
     guard let active = runtimeOwnership(for: runID) else {
       return
     }
-    let result = await terminate(active.runtime)
+    let result = await Self.terminate(
+      active.runtime,
+      timeout: shutdownTimeout
+    )
     if result != .unresolved {
       clearRuntimeOwnership(for: runID)
     }
   }
 
-  private func terminate(
-    _ active: any DaemonRuntime
+  private static func terminate(
+    _ active: any DaemonRuntime,
+    timeout: Duration
   ) async -> RuntimeTerminationResult {
     await active.terminate()
     do {
       _ = try await Self.value(
-        before: shutdownTimeout,
+        before: timeout,
         operation: {
           try await active.waitForExit()
         }
@@ -617,7 +635,7 @@ actor DaemonSupervisor {
       await active.forceTerminate()
       do {
         _ = try await Self.value(
-          before: shutdownTimeout,
+          before: timeout,
           operation: {
             try await active.waitForExit()
           }
