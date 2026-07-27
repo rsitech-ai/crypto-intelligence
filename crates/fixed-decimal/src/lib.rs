@@ -129,18 +129,31 @@ impl FixedDecimal {
     }
 
     pub fn checked_mul(self, rhs: Self) -> Result<Self, DecimalError> {
-        let scale = self
+        if self.is_zero() || rhs.is_zero() {
+            return Self::new(0, 0);
+        }
+
+        let combined_scale = self
             .scale
             .checked_add(rhs.scale)
             .ok_or(DecimalError::ArithmeticOverflow)?;
+        let mut left = self.mantissa.unsigned_abs();
+        let mut right = rhs.mantissa.unsigned_abs();
+        let cancellable_tens = combined_scale
+            .min(factor_count(left, 2) + factor_count(right, 2))
+            .min(factor_count(left, 5) + factor_count(right, 5));
+        cancel_factor(&mut left, &mut right, 2, cancellable_tens);
+        cancel_factor(&mut left, &mut right, 5, cancellable_tens);
+
+        let scale = combined_scale - cancellable_tens;
         if scale > MAX_SCALE {
             return Err(DecimalError::ScaleTooLarge);
         }
-        let mantissa = self
-            .mantissa
-            .checked_mul(rhs.mantissa)
+        let magnitude = left
+            .checked_mul(right)
             .ok_or(DecimalError::ArithmeticOverflow)?;
-        Self::new(mantissa, scale)
+        let negative = self.is_negative() ^ rhs.is_negative();
+        Self::new(signed_magnitude(magnitude, negative)?, scale)
     }
 
     pub fn checked_neg(self) -> Result<Self, DecimalError> {
@@ -394,6 +407,26 @@ fn checked_scale_up(value: i128, power: u32) -> Result<i128, DecimalError> {
     value
         .checked_mul(checked_power_of_ten(power)?)
         .ok_or(DecimalError::ArithmeticOverflow)
+}
+
+fn factor_count(mut value: u128, factor: u128) -> u32 {
+    let mut count = 0;
+    while value.is_multiple_of(factor) {
+        value /= factor;
+        count += 1;
+    }
+    count
+}
+
+fn cancel_factor(left: &mut u128, right: &mut u128, factor: u128, mut count: u32) {
+    while count > 0 {
+        if (*left).is_multiple_of(factor) {
+            *left /= factor;
+        } else {
+            *right /= factor;
+        }
+        count -= 1;
+    }
 }
 
 fn compare_without_scaling(left: FixedDecimal, right: FixedDecimal) -> Ordering {

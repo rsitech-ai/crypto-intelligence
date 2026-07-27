@@ -70,6 +70,28 @@ fn checked_arithmetic_reports_overflow() {
     );
 }
 
+#[test]
+fn multiplication_reduces_scale_before_enforcing_the_limit() {
+    let tiny_even = FixedDecimal::new(2, MAX_SCALE).expect("tiny even value");
+    let half_ten = FixedDecimal::new(5, 1).expect("one half");
+
+    assert_eq!(
+        tiny_even.checked_mul(half_ten),
+        FixedDecimal::new(1, MAX_SCALE)
+    );
+}
+
+#[test]
+fn multiplication_cancels_factors_before_raw_product_overflow() {
+    let large_even = FixedDecimal::new(i128::MAX - 1, 0).expect("large even integer");
+    let one_half = FixedDecimal::new(5, 1).expect("one half");
+
+    assert_eq!(
+        large_even.checked_mul(one_half),
+        FixedDecimal::new((i128::MAX - 1) / 2, 0)
+    );
+}
+
 proptest! {
     #[test]
     fn display_is_a_canonical_round_trip(mantissa in any::<i128>(), scale in 0_u32..=MAX_SCALE) {
