@@ -2,15 +2,29 @@ use std::{
     collections::BTreeSet,
     env,
     ffi::OsString,
-    fs, io,
+    fs,
+    io::{self, Read, Write},
     path::{Path, PathBuf},
-    process::{Command, ExitCode, ExitStatus},
+    process::{Command, ExitCode, ExitStatus, Output},
 };
 
+use prost::Message as _;
+use prost_build::Module;
+use prost_types::compiler::{CodeGeneratorRequest, CodeGeneratorResponse, code_generator_response};
 use serde::Deserialize;
 use thiserror::Error;
 
 const UNKNOWN_COMMAND_EXIT_CODE: u8 = 2;
+const PROTO_FILES: [&str; 3] = [
+    "common/v1/common.proto",
+    "health/v1/health.proto",
+    "market/v1/market.proto",
+];
+const GENERATED_PROTO_FILES: [&str; 3] = [
+    "cmti.common.v1.rs",
+    "cmti.health.v1.rs",
+    "cmti.market.v1.rs",
+];
 
 #[derive(Debug, Error)]
 enum XtaskError {
@@ -63,6 +77,61 @@ enum XtaskError {
     },
     #[error("checked-in configuration schema is out of date")]
     SchemaOutOfDate,
+    #[error("could not start required protobuf tool {tool}: {source}")]
+    ProtoToolSpawn {
+        tool: &'static str,
+        #[source]
+        source: io::Error,
+    },
+    #[error("protobuf command {command} failed with {status}: {stderr}")]
+    ProtoToolFailed {
+        command: &'static str,
+        status: ExitStatus,
+        stderr: String,
+    },
+    #[error("could not prepare protobuf output directory {path}: {source}")]
+    ProtoOutputDirectory {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
+    #[error("protobuf generation failed for {path}: {reason}")]
+    ProtoGenerate { path: PathBuf, reason: String },
+    #[error("could not inspect generated protobuf output {path}: {source}")]
+    ProtoOutputRead {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
+    #[error("unexpected generated protobuf outputs: expected {expected:?}, got {actual:?}")]
+    ProtoOutputMismatch {
+        expected: BTreeSet<String>,
+        actual: BTreeSet<String>,
+    },
+    #[error("generated protobuf file differs between clean runs: {file}")]
+    ProtoNotDeterministic { file: String },
+    #[error("could not read protobuf plugin request: {source}")]
+    ProtoPluginRead {
+        #[source]
+        source: io::Error,
+    },
+    #[error("could not decode protobuf plugin request: {source}")]
+    ProtoPluginDecode {
+        #[source]
+        source: prost::DecodeError,
+    },
+    #[error("protobuf plugin generation failed: {reason}")]
+    ProtoPluginGenerate { reason: String },
+    #[error("could not encode protobuf plugin response: {source}")]
+    ProtoPluginEncode {
+        #[source]
+        source: prost::EncodeError,
+    },
+    #[error("could not write protobuf plugin response: {source}")]
+    ProtoPluginWrite {
+        #[source]
+        source: io::Error,
+    },
 }
 
 #[derive(Debug, Deserialize)]
@@ -112,7 +181,12 @@ fn run() -> Result<(), XtaskError> {
         }
         "workspace-check" if options.is_empty() => workspace_check(),
         "generate-config-schema" => generate_config_schema(options),
-        "help" | "workspace-check" => Err(XtaskError::InvalidInvocation),
+        "generate-proto" => generate_proto_command(options),
+        "proto-check" if options.is_empty() => proto_check(),
+        "protoc-gen-local-api" if options.is_empty() => protoc_gen_local_api(),
+        "help" | "proto-check" | "protoc-gen-local-api" | "workspace-check" => {
+            Err(XtaskError::InvalidInvocation)
+        }
         command => Err(XtaskError::UnknownCommand {
             command: command.to_owned(),
         }),
@@ -120,7 +194,9 @@ fn run() -> Result<(), XtaskError> {
 }
 
 fn print_help() {
-    println!("xtask commands:\n  help\n  workspace-check\n  generate-config-schema [--check]");
+    println!(
+        "xtask commands:\n  help\n  workspace-check\n  generate-config-schema [--check]\n  generate-proto [--check]\n  proto-check"
+    );
 }
 
 fn generate_config_schema(options: &[OsString]) -> Result<(), XtaskError> {
@@ -166,6 +242,232 @@ fn workspace_check() -> Result<(), XtaskError> {
 
     println!("workspace-check: ok");
     Ok(())
+}
+
+fn generate_proto_command(options: &[OsString]) -> Result<(), XtaskError> {
+    let check = match options {
+        [] => false,
+        [option] if option == "--check" => true,
+        _ => return Err(XtaskError::InvalidInvocation),
+    };
+    generate_proto(check)
+}
+
+fn proto_check() -> Result<(), XtaskError> {
+    ensure_proto_tool("buf")?;
+    ensure_proto_tool("protoc")?;
+    run_proto_tool("buf lint proto", "buf", &["lint", "proto"])?;
+    run_proto_tool("buf build proto", "buf", &["build", "proto"])?;
+    generate_proto(true)?;
+    println!("proto-check: ok");
+    Ok(())
+}
+
+fn generate_proto(check: bool) -> Result<(), XtaskError> {
+    ensure_proto_tool("protoc")?;
+
+    if check {
+        let first = tempfile::Builder::new()
+            .prefix("cmti-proto-first-")
+            .tempdir()
+            .map_err(|source| XtaskError::ProtoOutputDirectory {
+                path: env::temp_dir(),
+                source,
+            })?;
+        let second = tempfile::Builder::new()
+            .prefix("cmti-proto-second-")
+            .tempdir()
+            .map_err(|source| XtaskError::ProtoOutputDirectory {
+                path: env::temp_dir(),
+                source,
+            })?;
+        generate_proto_into(first.path())?;
+        generate_proto_into(second.path())?;
+        compare_generated_outputs(first.path(), second.path())?;
+        println!(
+            "generate-proto: reproducible ({} files)",
+            GENERATED_PROTO_FILES.len()
+        );
+        return Ok(());
+    }
+
+    let output = workspace_root().join("target/generated/local-api");
+    fs::create_dir_all(&output).map_err(|source| XtaskError::ProtoOutputDirectory {
+        path: output.clone(),
+        source,
+    })?;
+    generate_proto_into(&output)?;
+    println!("generate-proto: wrote {}", output.display());
+    Ok(())
+}
+
+fn ensure_proto_tool(tool: &'static str) -> Result<(), XtaskError> {
+    run_proto_tool(tool, tool, &["--version"]).map(|_| ())
+}
+
+fn run_proto_tool(
+    command: &'static str,
+    program: &'static str,
+    arguments: &[&str],
+) -> Result<Output, XtaskError> {
+    let output = Command::new(program)
+        .args(arguments)
+        .current_dir(workspace_root())
+        .output()
+        .map_err(|source| XtaskError::ProtoToolSpawn {
+            tool: program,
+            source,
+        })?;
+    if output.status.success() {
+        Ok(output)
+    } else {
+        Err(XtaskError::ProtoToolFailed {
+            command,
+            status: output.status,
+            stderr: String::from_utf8_lossy(&output.stderr).trim().to_owned(),
+        })
+    }
+}
+
+fn generate_proto_into(output: &Path) -> Result<(), XtaskError> {
+    let proto_root = workspace_root().join("proto");
+    let proto_files = PROTO_FILES
+        .map(|relative| proto_root.join(relative))
+        .to_vec();
+    for proto_file in &proto_files {
+        if !proto_file.is_file() {
+            return Err(XtaskError::ProtoGenerate {
+                path: output.to_path_buf(),
+                reason: format!("required input is missing: {}", proto_file.display()),
+            });
+        }
+    }
+
+    tonic_prost_build::configure()
+        .build_client(true)
+        .build_server(true)
+        .out_dir(output)
+        .compile_protos(&proto_files, &[proto_root])
+        .map_err(|source| XtaskError::ProtoGenerate {
+            path: output.to_path_buf(),
+            reason: source.to_string(),
+        })?;
+    verify_generated_outputs(output)
+}
+
+fn verify_generated_outputs(output: &Path) -> Result<(), XtaskError> {
+    let expected = GENERATED_PROTO_FILES
+        .into_iter()
+        .map(str::to_owned)
+        .collect::<BTreeSet<_>>();
+    let actual = fs::read_dir(output)
+        .map_err(|source| XtaskError::ProtoOutputRead {
+            path: output.to_path_buf(),
+            source,
+        })?
+        .map(|entry| entry.map(|entry| entry.file_name()))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|source| XtaskError::ProtoOutputRead {
+            path: output.to_path_buf(),
+            source,
+        })?
+        .into_iter()
+        .map(|name| name.to_string_lossy().into_owned())
+        .collect::<BTreeSet<_>>();
+
+    if actual == expected {
+        Ok(())
+    } else {
+        Err(XtaskError::ProtoOutputMismatch { expected, actual })
+    }
+}
+
+fn compare_generated_outputs(first: &Path, second: &Path) -> Result<(), XtaskError> {
+    for file in GENERATED_PROTO_FILES {
+        let first_path = first.join(file);
+        let second_path = second.join(file);
+        let first_bytes = fs::read(&first_path).map_err(|source| XtaskError::ProtoOutputRead {
+            path: first_path,
+            source,
+        })?;
+        let second_bytes =
+            fs::read(&second_path).map_err(|source| XtaskError::ProtoOutputRead {
+                path: second_path,
+                source,
+            })?;
+        if first_bytes != second_bytes {
+            return Err(XtaskError::ProtoNotDeterministic {
+                file: file.to_owned(),
+            });
+        }
+    }
+    Ok(())
+}
+
+fn protoc_gen_local_api() -> Result<(), XtaskError> {
+    let mut encoded_request = Vec::new();
+    io::stdin()
+        .read_to_end(&mut encoded_request)
+        .map_err(|source| XtaskError::ProtoPluginRead { source })?;
+    let request = CodeGeneratorRequest::decode(encoded_request.as_slice())
+        .map_err(|source| XtaskError::ProtoPluginDecode { source })?;
+    let files_to_generate = request
+        .file_to_generate
+        .into_iter()
+        .collect::<BTreeSet<_>>();
+    let requests = request
+        .proto_file
+        .into_iter()
+        .filter(|descriptor| {
+            descriptor
+                .name
+                .as_ref()
+                .is_some_and(|name| files_to_generate.contains(name))
+        })
+        .map(|descriptor| {
+            (
+                Module::from_protobuf_package_name(descriptor.package()),
+                descriptor,
+            )
+        })
+        .collect::<Vec<_>>();
+
+    let mut config = prost_build::Config::new();
+    config.service_generator(
+        tonic_prost_build::configure()
+            .build_client(true)
+            .build_server(true)
+            .service_generator(),
+    );
+    let generated =
+        config
+            .generate(requests)
+            .map_err(|source| XtaskError::ProtoPluginGenerate {
+                reason: source.to_string(),
+            })?;
+    let files = generated
+        .into_iter()
+        .collect::<std::collections::BTreeMap<_, _>>()
+        .into_iter()
+        .map(|(module, content)| code_generator_response::File {
+            name: Some(module.to_file_name_or("_")),
+            insertion_point: None,
+            content: Some(content),
+            generated_code_info: None,
+        })
+        .collect();
+    let response = CodeGeneratorResponse {
+        error: None,
+        supported_features: None,
+        file: files,
+    };
+    let mut encoded_response = Vec::new();
+    response
+        .encode(&mut encoded_response)
+        .map_err(|source| XtaskError::ProtoPluginEncode { source })?;
+    io::stdout()
+        .write_all(&encoded_response)
+        .map_err(|source| XtaskError::ProtoPluginWrite { source })
 }
 
 fn read_metadata() -> Result<CargoMetadata, XtaskError> {
