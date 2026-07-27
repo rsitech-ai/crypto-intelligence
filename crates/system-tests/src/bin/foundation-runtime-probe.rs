@@ -6,7 +6,7 @@ use local_api::{
         GetSnapshotRequest, GetSnapshotResponse, SnapshotHealth,
         market_service_client::MarketServiceClient,
     },
-    session::SessionDescriptor,
+    session::{SessionDescriptor, TOKEN_LIFETIME_SECONDS},
 };
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -69,20 +69,15 @@ async fn run() -> Result<(), ProbeError> {
         &fs::read(&arguments.readiness).map_err(|_| ProbeError::ReadinessRead)?,
     )
     .map_err(|_| ProbeError::ReadinessInvalid)?;
-    validate_readiness(&readiness)?;
+    let endpoint = validate_readiness(&readiness)?;
     let descriptor = descriptor(&readiness)?;
     let secret_bytes =
         Zeroizing::new(fs::read(&arguments.secret).map_err(|_| ProbeError::SecretRead)?);
     let secret = SessionSecret::try_from(secret_bytes).map_err(|_| ProbeError::SecretInvalid)?;
-    let channel = tokio::time::timeout(
-        RPC_TIMEOUT,
-        Endpoint::from_shared(readiness.endpoint.clone())
-            .map_err(|_| ProbeError::Endpoint)?
-            .connect(),
-    )
-    .await
-    .map_err(|_| ProbeError::Timeout)?
-    .map_err(|_| ProbeError::Connect)?;
+    let channel = tokio::time::timeout(RPC_TIMEOUT, endpoint.connect())
+        .await
+        .map_err(|_| ProbeError::Timeout)?
+        .map_err(|_| ProbeError::Connect)?;
     let mut market = MarketServiceClient::new(channel);
 
     match arguments.mode {
@@ -176,15 +171,25 @@ fn parse_arguments(arguments: impl Iterator<Item = String>) -> Result<Arguments,
     })
 }
 
-fn validate_readiness(readiness: &Readiness) -> Result<(), ProbeError> {
+fn validate_readiness(readiness: &Readiness) -> Result<Endpoint, ProbeError> {
+    let endpoint = Endpoint::from_shared(readiness.endpoint.clone())
+        .map_err(|_| ProbeError::ReadinessInvalid)?;
+    let uri = endpoint.uri();
+    let port = uri.port_u16().filter(|port| *port != 0);
+    let canonical_endpoint = port.map(|port| format!("http://127.0.0.1:{port}"));
     if readiness.protocol_major != 1
         || readiness.protocol_minor != 0
-        || !readiness.endpoint.starts_with("http://127.0.0.1:")
-        || readiness.expiry_unix_seconds - readiness.issued_unix_seconds != 60
+        || uri.scheme_str() != Some("http")
+        || uri.host() != Some("127.0.0.1")
+        || canonical_endpoint.as_deref() != Some(readiness.endpoint.as_str())
+        || readiness
+            .expiry_unix_seconds
+            .checked_sub(readiness.issued_unix_seconds)
+            != Some(TOKEN_LIFETIME_SECONDS)
     {
         return Err(ProbeError::ReadinessInvalid);
     }
-    Ok(())
+    Ok(endpoint)
 }
 
 fn descriptor(readiness: &Readiness) -> Result<SessionDescriptor, ProbeError> {
@@ -242,8 +247,6 @@ enum ProbeError {
     SecretRead,
     #[error("session secret is invalid")]
     SecretInvalid,
-    #[error("readiness endpoint is invalid")]
-    Endpoint,
     #[error("local daemon connection failed")]
     Connect,
     #[error("local daemon probe exceeded five seconds")]

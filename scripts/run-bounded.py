@@ -16,6 +16,10 @@ def group_exists(process_group: int) -> bool:
         os.killpg(process_group, 0)
     except ProcessLookupError:
         return False
+    except PermissionError:
+        # EPERM still proves that the process group exists. Keep polling
+        # within the caller's deadline and fail closed if it never disappears.
+        return True
     return True
 
 
@@ -47,7 +51,10 @@ def terminate_group(process: subprocess.Popen[bytes]) -> bool:
         return True
     signal_group(process_group, signal.SIGKILL)
     if process.poll() is None:
-        process.wait()
+        try:
+            process.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            pass
     return wait_for_group_exit(process_group, 2)
 
 

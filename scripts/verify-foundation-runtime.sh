@@ -7,10 +7,9 @@ workspace_root="$(cd -- "${script_dir}/.." && pwd)"
 readonly workspace_root
 readonly target_readiness_label="runtime-proven foundation slice"
 evidence_output="${workspace_root}/release/evidence/foundation-runtime-verification.json"
-prior_evidence=""
 
 usage() {
-  printf 'usage: %s [--evidence-output PATH] [--prior-evidence PATH]\n' "$0"
+  printf 'usage: %s [--evidence-output PATH]\n' "$0"
 }
 
 while [[ "$#" -gt 0 ]]; do
@@ -21,9 +20,6 @@ while [[ "$#" -gt 0 ]]; do
   case "$1" in
     --evidence-output)
       evidence_output="$2"
-      ;;
-    --prior-evidence)
-      prior_evidence="$2"
       ;;
     *)
       usage >&2
@@ -61,6 +57,19 @@ process_is_live() {
   local state
   state="$(ps -p "${pid}" -o stat= 2>/dev/null | awk '{$1=$1; print}' || true)"
   [[ -n "${state}" ]] && [[ "${state}" != Z* ]]
+}
+
+wait_for_pid_gone() {
+  local pid="$1"
+  local timeout_ticks="$2"
+  local tick
+  for ((tick = 0; tick < timeout_ticks; tick += 1)); do
+    if ! process_is_live "${pid}"; then
+      return 0
+    fi
+    sleep 0.05
+  done
+  return 124
 }
 
 stop_owned_descendant() {
@@ -108,11 +117,11 @@ cleanup() {
     if process_is_live "${active_pid}"; then
       kill -KILL "${active_pid}" 2>/dev/null || true
     fi
-    wait "${active_pid}" 2>/dev/null || true
+    wait_for_pid_gone "${active_pid}" 40 || true
   fi
   if [[ -n "${active_app_pid}" ]] && process_is_live "${active_app_pid}"; then
     kill -KILL "${active_app_pid}" 2>/dev/null || true
-    wait "${active_app_pid}" 2>/dev/null || true
+    wait_for_pid_gone "${active_app_pid}" 40 || true
   fi
   stop_owned_descendant "${active_app_watcher_pid}" || true
   stop_owned_descendant "${active_app_daemon_pid}" || true
@@ -263,6 +272,8 @@ run_gate cargo-clippy 300 cargo clippy \
 run_gate cargo-tests 600 cargo test \
   --workspace --all-targets --all-features --locked
 run_gate verifier-shellcheck 120 shellcheck scripts/verify-foundation-runtime.sh
+run_gate verifier-helper-tests 120 python3 -m unittest discover \
+  -s scripts/tests -p 'test_*.py'
 run_gate buf-lint 120 buf lint proto
 run_gate buf-build 120 buf build proto
 run_gate proto-generation 300 scripts/generate-proto.sh --check
@@ -350,10 +361,10 @@ abort_direct_runtime() {
     set -e
     if [[ "${abort_status}" -eq 124 ]] && process_is_live "${pid}"; then
       kill -KILL "${pid}" 2>/dev/null || true
-      wait "${pid}" 2>/dev/null || true
+      wait_for_pid_gone "${pid}" 40 || true
     fi
   elif [[ -n "${pid}" ]]; then
-    wait "${pid}" 2>/dev/null || true
+    wait_for_exit "${pid}" 1 >/dev/null 2>&1 || true
   fi
   active_pid=""
   rm -f -- "${secret_file}"
@@ -498,7 +509,9 @@ for run_number in 1 2; do
   if [[ "${shutdown_status}" -eq 124 ]]; then
     record_blocker "runtime-${run_number}:shutdown-timeout"
     kill -KILL "${active_pid}" 2>/dev/null || true
-    wait "${active_pid}" 2>/dev/null || true
+    if ! wait_for_pid_gone "${active_pid}" 40; then
+      record_blocker "runtime-${run_number}:sigkill-timeout"
+    fi
   elif [[ "${shutdown_status}" -ne 0 ]]; then
     record_blocker "runtime-${run_number}:shutdown-exit-${shutdown_status}"
   fi
@@ -576,19 +589,6 @@ readonly app_run_token
 app_runtime_records="${temporary_root}/app-runtime-records.jsonl"
 app_runtime_log_start="$(date -u '+@%s')"
 
-wait_for_pid_gone() {
-  local pid="$1"
-  local timeout_ticks="$2"
-  local tick
-  for ((tick = 0; tick < timeout_ticks; tick += 1)); do
-    if ! process_is_live "${pid}"; then
-      return 0
-    fi
-    sleep 0.05
-  done
-  return 124
-}
-
 exact_child_pid() {
   local parent_pid="$1"
   local executable_name="$2"
@@ -641,7 +641,7 @@ abort_app_runtime() {
   local watcher_pid="${active_app_watcher_pid}"
   if [[ -n "${app_pid}" ]] && process_is_live "${app_pid}"; then
     kill -KILL "${app_pid}" 2>/dev/null || true
-    wait "${app_pid}" 2>/dev/null || true
+    wait_for_pid_gone "${app_pid}" 40 || true
   fi
   stop_owned_descendant "${watcher_pid}" || true
   stop_owned_descendant "${daemon_pid}" || true
@@ -742,10 +742,12 @@ controlled_app_quit() {
   else
     record_blocker "${label}:controlled-app-exit-timeout"
     kill -KILL "${app_pid}" 2>/dev/null || true
-    set +e
-    wait "${app_pid}"
-    app_status=$?
-    set -e
+    if wait_for_pid_gone "${app_pid}" 40; then
+      app_status=137
+    else
+      record_blocker "${label}:controlled-app-sigkill-timeout"
+      app_status=125
+    fi
   fi
   if [[ "${app_status}" -ne 0 ]]; then
     record_blocker "${label}:controlled-app-exit-${app_status}"
@@ -806,10 +808,12 @@ else
     forced_watcher_pid="${active_app_watcher_pid}"
     forced_topology_observed="${active_app_topology_observed}"
     kill -KILL "${forced_app_pid}"
-    set +e
-    wait "${forced_app_pid}"
-    forced_app_status=$?
-    set -e
+    if wait_for_pid_gone "${forced_app_pid}" 40; then
+      forced_app_status=137
+    else
+      record_blocker "app-supervisor-loss:app-sigkill-timeout"
+      forced_app_status=125
+    fi
     if [[ "${forced_app_status}" -ne 137 ]] && [[ "${forced_app_status}" -ne 9 ]]; then
       record_blocker "app-supervisor-loss:unexpected-app-exit-${forced_app_status}"
     fi
@@ -1063,127 +1067,8 @@ if [[ "${gate_status}" -eq 0 ]]; then
 else
   subgate_status="blocked"
 fi
-full_gate_invocations=1
-if [[ -n "${prior_evidence}" ]]; then
-  set +e
-  prior_count="$(python3 - "${prior_evidence}" "${verified_commit}" \
-    "${temporary_root}/prior-evidence-summary.json" <<'PY'
-import hashlib
-import json
-import pathlib
-import sys
-
-path = pathlib.Path(sys.argv[1])
-commit = sys.argv[2]
-summary_path = pathlib.Path(sys.argv[3])
-try:
-    raw = path.read_bytes()
-    evidence = json.loads(raw)
-except (OSError, ValueError):
-    raise SystemExit(1)
-if evidence.get("verified_commit") != commit:
-    raise SystemExit(2)
-if evidence.get("subgate_status") != "passed" or not evidence.get("tree_clean_at_start"):
-    raise SystemExit(3)
-if evidence.get("status") != "blocked":
-    raise SystemExit(3)
-count = evidence.get("full_gate_invocations_observed")
-if not isinstance(count, int) or count < 1:
-    raise SystemExit(4)
-if evidence.get("blockers") != ["two-clean-full-gate-runs-not-observed"]:
-    raise SystemExit(5)
-commands = evidence.get("commands")
-if not isinstance(commands, list) or not commands or any(
-    command.get("exit_code") != 0 for command in commands
-):
-    raise SystemExit(6)
-runtime = evidence.get("runtime", {})
-if not all(
-    runtime.get(field) is True
-    for field in (
-        "healthy_digests_identical",
-        "deliberate_authentication_failure",
-        "graceful_shutdown_observed",
-        "wal_recovery_observed",
-    )
-):
-    raise SystemExit(7)
-if runtime.get("healthy_run_count") != 2:
-    raise SystemExit(7)
-native = evidence.get("native_app_runtime", {})
-if not all(
-    native.get(field) is True
-    for field in (
-        "controlled_quit_observed",
-        "forced_supervisor_loss_observed",
-        "relaunch_observed",
-        "exact_watcher_topology_observed",
-    )
-):
-    raise SystemExit(8)
-if not native.get("wal_recovery", {}).get("identical"):
-    raise SystemExit(8)
-tree_checks = evidence.get("tree_mutation_checks", {})
-if not tree_checks or any(tree_checks.values()):
-    raise SystemExit(9)
-if evidence.get("static_audit_current_error_count") != 0:
-    raise SystemExit(10)
-security_counts = evidence.get("security_audit_current_counts", {})
-if any(security_counts.values()):
-    raise SystemExit(10)
-summary = {
-    "sha256": hashlib.sha256(raw).hexdigest(),
-    "verified_commit": commit,
-    "status": evidence.get("status"),
-    "subgate_status": evidence.get("subgate_status"),
-    "tree_clean_at_start": evidence.get("tree_clean_at_start"),
-    "blockers": evidence.get("blockers"),
-    "full_gate_invocations_observed": count,
-    "commands": [
-        {
-            "label": command.get("label"),
-            "exit_code": command.get("exit_code"),
-            "output_sha256": command.get("output_sha256"),
-        }
-        for command in commands
-    ],
-    "snapshot_digests": [
-        run.get("snapshot_digest") for run in runtime.get("runs", [])
-    ],
-    "runtime_invariants": {
-        field: runtime.get(field)
-        for field in (
-            "healthy_digests_identical",
-            "deliberate_authentication_failure",
-            "graceful_shutdown_observed",
-            "wal_recovery_observed",
-        )
-    },
-    "native_runtime_invariants": {
-        field: native.get(field)
-        for field in (
-            "controlled_quit_observed",
-            "forced_supervisor_loss_observed",
-            "relaunch_observed",
-            "exact_watcher_topology_observed",
-        )
-    },
-}
-summary_path.write_text(json.dumps(summary, sort_keys=True) + "\n")
-print(count)
-PY
-  )"
-  prior_status=$?
-  set -e
-  if [[ "${prior_status}" -ne 0 ]]; then
-    record_blocker "prior-evidence-invalid-${prior_status}"
-  else
-    full_gate_invocations=$((prior_count + 1))
-  fi
-fi
-if [[ "${full_gate_invocations}" -lt 2 ]]; then
-  record_blocker "two-clean-full-gate-runs-not-observed"
-fi
+readonly full_gate_invocations=1
+record_blocker "two-clean-full-gate-runs-not-observed"
 
 python3 - \
   "${verified_commit}" \
@@ -1304,12 +1189,6 @@ for name in (
     path = root / name
     if path.exists():
         app_log_findings[name] = path.read_text().splitlines()
-prior_summary_path = root / "prior-evidence-summary.json"
-prior_summary = (
-    json.loads(prior_summary_path.read_text())
-    if prior_summary_path.exists()
-    else None
-)
 static_log = (root / "static-audit.log").read_text(errors="replace")
 static_match = re.search(r"static audit failed with (\d+) error\(s\)", static_log)
 static_error_count = int(static_match.group(1)) if static_match else 0
@@ -1379,14 +1258,14 @@ if security_counts.get("high"):
     )
 
 evidence = {
-    "schema_version": 1,
+    "schema_version": 2,
     "generated_at": datetime.now(timezone.utc).isoformat(),
     "verified_commit": commit,
     "tree_clean_at_start": tree_status.get("start-tree-status.txt", ["missing"]) == [],
     "subgate_status": subgate_status,
     "full_gate_invocations_observed": int(full_gate_invocations),
     "two_clean_full_gate_runs_observed": int(full_gate_invocations) >= 2,
-    "prior_run_summary": prior_summary,
+    "two_run_receipt": None,
     "provenance_invariant": (
         "This file was generated from the exact clean implementation commit named "
         "by verified_commit and is added, if tracked, only by a later evidence-only commit."
@@ -1413,6 +1292,11 @@ evidence = {
                 "authentication_failure": "rejected",
                 "code": "Unauthenticated",
             }
+        ),
+        "authentication_failure": (
+            json.loads((root / "authentication-failure.json").read_text())
+            if (root / "authentication-failure.json").exists()
+            else None
         ),
         "graceful_shutdown_observed": (
             len(runtime) == 2

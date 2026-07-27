@@ -40,6 +40,10 @@ const APPROVED_FOUNDATION_DEPENDENCIES: &[&str] = &[
     "tonic-prost-build",
     "zeroize",
 ];
+const APPROVED_FOUNDATION_NETWORK_CAPABILITIES: &[&str] = &[
+    "configs/default.toml bind_address=\"127.0.0.1:0\"",
+    "crates/local-api/src/server.rs TcpListener::bind(bind)",
+];
 
 #[derive(Debug, Eq, PartialEq)]
 struct SurfaceInventory {
@@ -48,7 +52,7 @@ struct SurfaceInventory {
     protobuf_methods: Vec<String>,
     cli_options: Vec<String>,
     configuration_fields: Vec<String>,
-    outbound_destinations: Vec<String>,
+    network_capabilities: Vec<String>,
     runtime_declarations: Vec<String>,
 }
 
@@ -137,7 +141,7 @@ impl SurfaceInventory {
         let cli_options = long_options(&String::from_utf8(help_output.stdout)?);
         let protobuf_methods = active_protobuf_methods(root)?;
         let configuration_fields = configuration_fields(root)?;
-        let outbound_destinations = outbound_destinations(root, &active_sources)?;
+        let network_capabilities = network_capabilities(root, &active_sources)?;
         let runtime_declarations = active_sources
             .iter()
             .map(|source| execution_declarations_in_source(root, source))
@@ -152,7 +156,7 @@ impl SurfaceInventory {
             protobuf_methods,
             cli_options,
             configuration_fields,
-            outbound_destinations,
+            network_capabilities,
             runtime_declarations,
         })
     }
@@ -190,8 +194,16 @@ impl SurfaceInventory {
                 violations.push(format!("configuration field: {field}"));
             }
         }
-        for destination in &self.outbound_destinations {
-            violations.push(format!("outbound destination: {destination}"));
+        let approved_network = APPROVED_FOUNDATION_NETWORK_CAPABILITIES
+            .iter()
+            .copied()
+            .collect::<BTreeSet<_>>();
+        for capability in &self.network_capabilities {
+            if !approved_network.contains(capability.as_str()) {
+                violations.push(format!(
+                    "network capability outside ownership policy: {capability}"
+                ));
+            }
         }
         for declaration in &self.runtime_declarations {
             violations.push(format!("runtime declaration: {declaration}"));
@@ -433,11 +445,11 @@ fn collect_schema_fields(schema: &Value, prefix: &str, fields: &mut BTreeSet<Str
     }
 }
 
-fn outbound_destinations(
+fn network_capabilities(
     root: &Path,
     active_sources: &[PathBuf],
 ) -> Result<Vec<String>, Box<dyn Error>> {
-    let mut destinations = BTreeSet::new();
+    let mut capabilities = BTreeSet::new();
     let default = fs::read_to_string(root.join("configs/default.toml"))?;
     let bind = default
         .lines()
@@ -446,66 +458,135 @@ fn outbound_destinations(
                 .and_then(|value| value.split_once('=').map(|(_, value)| value.trim()))
         })
         .ok_or("default configuration omitted bind_address")?;
-    if bind != "\"127.0.0.1:0\"" {
-        destinations.insert(format!("configured bind {bind}"));
-    }
+    capabilities.insert(format!("configs/default.toml bind_address={bind}"));
     for source in active_sources {
         let production_text = production_rust_source(&fs::read_to_string(source)?);
-        for word in production_text.split(|character: char| {
-            character.is_whitespace() || matches!(character, '"' | '\'' | ',' | ')' | ']')
-        }) {
-            if (word.starts_with("http://")
-                || word.starts_with("https://")
-                || word.starts_with("ws://")
-                || word.starts_with("wss://"))
-                && word != "http://{local_addr}"
-            {
-                destinations.insert(word.to_owned());
-            }
-        }
-        destinations.extend(outbound_connection_declarations(
+        capabilities.extend(network_capability_declarations(
             root,
             source,
             &production_text,
         ));
     }
-    Ok(destinations.into_iter().collect())
+    Ok(capabilities.into_iter().collect())
 }
 
-fn outbound_connection_declarations(
+fn network_capability_declarations(
     root: &Path,
     source: &Path,
     production_text: &str,
-) -> Vec<String> {
-    let mut destinations = Vec::new();
-    for (number, line) in production_text.lines().enumerate() {
+) -> BTreeSet<String> {
+    let relative = source
+        .strip_prefix(root)
+        .unwrap_or(source)
+        .to_string_lossy();
+    let mut capabilities = BTreeSet::new();
+    let uncommented = rust_source_without_comments(production_text);
+    let skeleton = rust_code_without_literals_and_comments(production_text);
+    let file_code = skeleton.split_whitespace().collect::<String>();
+    let has_udp_socket = file_code.contains("UdpSocket");
+    for (number, (line, literal_line)) in skeleton.lines().zip(uncommented.lines()).enumerate() {
         let code = rust_code_without_literals_and_comments(line)
             .split_whitespace()
             .collect::<String>();
-        if has_outbound_connection_call(&code) {
-            destinations.push(format!(
-                "{}:{} outbound client declaration",
-                source
-                    .strip_prefix(root)
-                    .unwrap_or(source)
-                    .to_string_lossy(),
-                number + 1
-            ));
+        let location = format!("{relative}:{}", number + 1);
+        if code.contains("TcpListener::bind(") {
+            if relative == "crates/local-api/src/server.rs"
+                && code.contains("letlistener=TcpListener::bind(bind)")
+                && file_code.contains(
+                    "constLOOPBACK_BIND:SocketAddr=SocketAddr::new(std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST),0);",
+                )
+                && file_code.contains("ifbind!=LOOPBACK_BIND{")
+            {
+                capabilities
+                    .insert("crates/local-api/src/server.rs TcpListener::bind(bind)".to_owned());
+            } else {
+                capabilities.insert(format!("{location} TCP listener bind"));
+            }
+        }
+        if code.contains("UdpSocket") || code.contains("UdpSocket::bind(") {
+            capabilities.insert(format!("{location} UDP socket"));
+        }
+        if code.contains("TcpStream")
+            || code.contains("::connect(")
+            || code.contains(".connect(")
+            || code.contains("::connect_timeout(")
+            || code.contains("connect_async(")
+            || code.contains("connect_with_config(")
+            || code.contains("Endpoint::from_shared(")
+            || code.contains("Endpoint::from_static(")
+            || code.contains("Channel::from_shared(")
+            || code.contains("Channel::from_static(")
+            || code.contains("Client::builder(")
+        {
+            capabilities.insert(format!("{location} network client"));
+        }
+        if code.contains("lookup_host(") || code.contains("ToSocketAddrs") {
+            capabilities.insert(format!("{location} DNS resolution"));
+        }
+        if code.contains("send_to(")
+            || code.contains("sendto(")
+            || (has_udp_socket && code.contains(".send("))
+        {
+            capabilities.insert(format!("{location} UDP send"));
+        }
+        if code.contains("libc::socket(")
+            || code.contains("libc::connect(")
+            || code.contains("libc::send(")
+            || code.contains("libc::sendto(")
+            || code.contains("rustix::net::socket(")
+            || code.contains("socket2::Socket")
+        {
+            capabilities.insert(format!("{location} raw socket API"));
+        }
+        if code.contains("Command::new(") && has_network_tool_literal(literal_line) {
+            capabilities.insert(format!("{location} network command"));
+        }
+        for endpoint in endpoint_literals(literal_line) {
+            if endpoint != "http://{local_addr}" {
+                capabilities.insert(format!("{location} raw endpoint {endpoint}"));
+            }
         }
     }
-    destinations
+    if file_code.contains("extern")
+        && [
+            "fnconnect(",
+            "fnsocket(",
+            "fnsend(",
+            "fnsendto(",
+            "fngetaddrinfo(",
+        ]
+        .iter()
+        .any(|function| file_code.contains(function))
+    {
+        capabilities.insert(format!("{relative} unsafe network FFI"));
+    }
+    capabilities
 }
 
-fn has_outbound_connection_call(code: &str) -> bool {
-    code.contains(".connect(")
-        || code.contains("::connect(")
-        || code.contains("connect_async(")
-        || code.contains("connect_with_config(")
-        || code.contains("Endpoint::from_shared(")
-        || code.contains("Endpoint::from_static(")
-        || code.contains("Channel::from_shared(")
-        || code.contains("Channel::from_static(")
-        || code.contains("Client::builder(")
+fn has_network_tool_literal(line: &str) -> bool {
+    [
+        "curl", "wget", "nc", "ncat", "netcat", "socat", "ssh", "openssl",
+    ]
+    .iter()
+    .any(|tool| {
+        line.contains(&format!("\"{tool}\""))
+            || line.contains(&format!("\"/usr/bin/{tool}\""))
+            || line.contains(&format!("\"/bin/{tool}\""))
+    })
+}
+
+fn endpoint_literals(line: &str) -> Vec<String> {
+    line.split(|character: char| {
+        character.is_whitespace() || matches!(character, '"' | '\'' | ',' | ')' | ']' | ';')
+    })
+    .filter(|word| {
+        word.starts_with("http://")
+            || word.starts_with("https://")
+            || word.starts_with("ws://")
+            || word.starts_with("wss://")
+    })
+    .map(str::to_owned)
+    .collect()
 }
 
 fn execution_declarations_in_source(
@@ -579,6 +660,134 @@ fn production_rust_source(source: &str) -> String {
         }
     }
     String::from_utf8(production).expect("Rust source was valid UTF-8")
+}
+
+fn rust_source_without_comments(source: &str) -> String {
+    #[derive(Clone, Copy)]
+    enum State {
+        Code,
+        LineComment,
+        BlockComment(usize),
+        String(bool),
+        RawString(usize),
+    }
+
+    let bytes = source.as_bytes();
+    let mut output = String::with_capacity(bytes.len());
+    let mut state = State::Code;
+    let mut index = 0;
+    while index < bytes.len() {
+        match state {
+            State::Code if bytes[index..].starts_with(b"//") => {
+                output.push_str("  ");
+                index += 2;
+                state = State::LineComment;
+            }
+            State::Code if bytes[index..].starts_with(b"/*") => {
+                output.push_str("  ");
+                index += 2;
+                state = State::BlockComment(1);
+            }
+            State::Code if bytes[index] == b'"' => {
+                output.push('"');
+                index += 1;
+                state = State::String(false);
+            }
+            State::Code if bytes[index] == b'r' => {
+                let mut cursor = index + 1;
+                while cursor < bytes.len() && bytes[cursor] == b'#' {
+                    cursor += 1;
+                }
+                if cursor < bytes.len() && bytes[cursor] == b'"' {
+                    let hashes = cursor - index - 1;
+                    output.push_str(
+                        std::str::from_utf8(&bytes[index..=cursor])
+                            .expect("Rust source was valid UTF-8"),
+                    );
+                    index = cursor + 1;
+                    state = State::RawString(hashes);
+                } else {
+                    output.push('r');
+                    index += 1;
+                }
+            }
+            State::Code => {
+                output.push(char::from(bytes[index]));
+                index += 1;
+            }
+            State::LineComment if bytes[index] == b'\n' => {
+                output.push('\n');
+                index += 1;
+                state = State::Code;
+            }
+            State::LineComment => {
+                output.push(' ');
+                index += 1;
+            }
+            State::BlockComment(depth) if bytes[index..].starts_with(b"/*") => {
+                output.push_str("  ");
+                index += 2;
+                state = State::BlockComment(depth + 1);
+            }
+            State::BlockComment(depth) if bytes[index..].starts_with(b"*/") => {
+                output.push_str("  ");
+                index += 2;
+                state = if depth == 1 {
+                    State::Code
+                } else {
+                    State::BlockComment(depth - 1)
+                };
+            }
+            State::BlockComment(depth) => {
+                output.push(if bytes[index] == b'\n' { '\n' } else { ' ' });
+                index += 1;
+                state = State::BlockComment(depth);
+            }
+            State::String(escaped) if escaped => {
+                output.push(char::from(bytes[index]));
+                index += 1;
+                state = State::String(false);
+            }
+            State::String(_) if bytes[index] == b'\\' => {
+                output.push('\\');
+                index += 1;
+                state = State::String(true);
+            }
+            State::String(_) if bytes[index] == b'"' => {
+                output.push('"');
+                index += 1;
+                state = State::Code;
+            }
+            State::String(_) => {
+                output.push(char::from(bytes[index]));
+                index += 1;
+            }
+            State::RawString(hashes) if bytes[index] == b'"' => {
+                let terminator_end = index + 1 + hashes;
+                if terminator_end <= bytes.len()
+                    && bytes[index + 1..terminator_end]
+                        .iter()
+                        .all(|byte| *byte == b'#')
+                {
+                    output.push_str(
+                        std::str::from_utf8(&bytes[index..terminator_end])
+                            .expect("Rust source was valid UTF-8"),
+                    );
+                    index = terminator_end;
+                    state = State::Code;
+                } else {
+                    output.push('"');
+                    index += 1;
+                }
+            }
+            State::RawString(hashes) => {
+                output.push(char::from(bytes[index]));
+                index += 1;
+                state = State::RawString(hashes);
+            }
+        }
+    }
+    output
 }
 
 fn rust_code_without_literals_and_comments(source: &str) -> String {
@@ -811,7 +1020,7 @@ fn detector_rejects_every_execution_authority_class() {
         protobuf_methods: vec!["TradingService.PlaceOrder".into()],
         cli_options: vec!["--api-key".into()],
         configuration_fields: vec!["withdrawal_address".into()],
-        outbound_destinations: vec!["https://api.exchange.invalid".into()],
+        network_capabilities: vec!["network.rs:8 raw endpoint https://api.exchange.invalid".into()],
         runtime_declarations: vec!["src/runtime.rs:8 place_order".into()],
     };
 
@@ -825,7 +1034,7 @@ fn detector_rejects_every_execution_authority_class() {
             "protobuf method: TradingService.PlaceOrder",
             "CLI option: --api-key",
             "configuration field: withdrawal_address",
-            "outbound destination: https://api.exchange.invalid",
+            "network capability outside ownership policy: network.rs:8 raw endpoint https://api.exchange.invalid",
             "runtime declaration: src/runtime.rs:8 place_order",
         ]
     );
@@ -861,7 +1070,7 @@ fn source_declaration_parser_rejects_execution_identifiers_from_a_real_fixture()
 }
 
 #[test]
-fn nested_configuration_and_constructed_outbound_destinations_are_detected() {
+fn nested_configuration_and_constructed_network_capabilities_are_detected() {
     let schema = serde_json::json!({
         "properties": {
             "local": {
@@ -889,8 +1098,61 @@ fn nested_configuration_and_constructed_outbound_destinations_are_detected() {
     let production = production_rust_source(text);
 
     assert_eq!(
-        outbound_connection_declarations(directory.path(), &source, &production),
-        ["network.rs:4 outbound client declaration"]
+        network_capability_declarations(directory.path(), &source, &production),
+        BTreeSet::from(["network.rs:4 network client".to_owned()])
+    );
+}
+
+#[test]
+fn every_network_capability_family_is_detected_by_mutation() {
+    let fixtures = [
+        (
+            "udp-send-to",
+            "pub async fn mutate(socket: tokio::net::UdpSocket, remote: std::net::SocketAddr) { socket.send_to(b\"x\", remote).await; }\n",
+        ),
+        (
+            "udp-send",
+            "pub async fn mutate(socket: tokio::net::UdpSocket) { socket.send(b\"x\").await; }\n",
+        ),
+        (
+            "dns-lookup",
+            "pub async fn mutate() { tokio::net::lookup_host(\"exchange.invalid:443\").await; }\n",
+        ),
+        (
+            "connect-timeout",
+            "pub fn mutate(address: &std::net::SocketAddr) { std::net::TcpStream::connect_timeout(address, std::time::Duration::from_secs(1)); }\n",
+        ),
+        (
+            "socket-syscall",
+            "pub unsafe fn mutate() { libc::socket(libc::AF_INET, libc::SOCK_STREAM, 0); }\n",
+        ),
+        (
+            "network-command",
+            "pub fn mutate() { std::process::Command::new(\"curl\").arg(\"https://exchange.invalid\"); }\n",
+        ),
+        (
+            "raw-endpoint",
+            "pub const REMOTE: &str = \"wss://exchange.invalid/stream\";\n",
+        ),
+        (
+            "unsafe-network-ffi",
+            "unsafe extern \"C\" { fn connect(fd: i32, address: *const u8, length: u32) -> i32; }\n",
+        ),
+    ];
+    let directory = tempfile::tempdir().expect("network mutation root must exist");
+    let mut missed = Vec::new();
+    for (name, text) in fixtures {
+        let source = directory.path().join(format!("{name}.rs"));
+        fs::write(&source, text).expect("network mutation must write");
+        let production = production_rust_source(text);
+        if network_capability_declarations(directory.path(), &source, &production).is_empty() {
+            missed.push(name);
+        }
+    }
+    assert_eq!(
+        missed,
+        Vec::<&str>::new(),
+        "network capability families escaped detection"
     );
 }
 
