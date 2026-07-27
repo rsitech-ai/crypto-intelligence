@@ -1,6 +1,6 @@
 //! Minimal health and authenticated market services on IPv4 loopback.
 
-use std::{io, net::SocketAddr, sync::Arc};
+use std::{io, net::SocketAddr, sync::Arc, time::Duration};
 
 use domain::{InstrumentId, SourceId, UnixNanos};
 use fixed_decimal::Price;
@@ -15,7 +15,7 @@ use tonic::{Request, Response, Status, transport::Server};
 
 use crate::{
     auth::{
-        Clock, SESSION_DESCRIPTOR_METADATA_KEY, SessionAuthenticator, SessionSecret,
+        Clock, SESSION_DESCRIPTOR_METADATA_KEY, SessionAuthenticator, SessionSecret, SystemClock,
         TOKEN_METADATA_KEY,
     },
     proto::{
@@ -35,6 +35,17 @@ use crate::{
 const LOOPBACK_BIND: SocketAddr =
     SocketAddr::new(std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST), 0);
 const AUTHENTICATION_FAILED: &str = "authentication failed";
+const MAX_REQUEST_MESSAGE_BYTES: usize = 256;
+const MAX_RESPONSE_MESSAGE_BYTES: usize = 1_024;
+const MAX_HEADER_LIST_BYTES: u32 = 2_048;
+const STREAM_WINDOW_BYTES: u32 = 16 * 1_024;
+const CONNECTION_WINDOW_BYTES: u32 = 32 * 1_024;
+const MAX_CONCURRENT_STREAMS: u32 = 2;
+const CONCURRENCY_LIMIT_PER_CONNECTION: usize = 1;
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(2);
+const MAX_CONNECTION_AGE: Duration = Duration::from_secs(60);
+const MAX_CONNECTION_AGE_GRACE: Duration = Duration::from_secs(1);
+const GRACEFUL_SHUTDOWN_TIMEOUT: Duration = Duration::from_millis(250);
 
 /// Invalid authoritative market snapshot state.
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
@@ -125,12 +136,12 @@ impl MarketSnapshot {
 
 /// Minimal public liveness implementation.
 #[derive(Clone)]
-pub struct HealthService {
+struct HealthService {
     protocol: ProtocolVersion,
 }
 
 impl HealthService {
-    pub const fn new(protocol_major: u32, protocol_minor: u32) -> Self {
+    const fn new(protocol_major: u32, protocol_minor: u32) -> Self {
         Self {
             protocol: ProtocolVersion {
                 major: protocol_major,
@@ -155,7 +166,7 @@ impl HealthServiceRpc for HealthService {
 
 /// Authenticated authoritative snapshot implementation.
 #[derive(Clone)]
-pub struct MarketService {
+struct MarketService {
     expected_descriptor: SessionDescriptor,
     authenticator: Arc<SessionAuthenticator>,
     clock: Arc<dyn Clock>,
@@ -163,7 +174,7 @@ pub struct MarketService {
 }
 
 impl MarketService {
-    pub fn new(
+    fn new(
         expected_descriptor: SessionDescriptor,
         authenticator: Arc<SessionAuthenticator>,
         clock: Arc<dyn Clock>,
@@ -258,6 +269,15 @@ impl LoopbackServer {
         secret: SessionSecret,
         descriptor: SessionDescriptor,
         snapshot: MarketSnapshot,
+    ) -> Result<Self, ServerError> {
+        Self::spawn_with_clock(bind, secret, descriptor, snapshot, Arc::new(SystemClock)).await
+    }
+
+    async fn spawn_with_clock(
+        bind: SocketAddr,
+        secret: SessionSecret,
+        descriptor: SessionDescriptor,
+        snapshot: MarketSnapshot,
         clock: Arc<dyn Clock>,
     ) -> Result<Self, ServerError> {
         if bind != LOOPBACK_BIND {
@@ -275,11 +295,27 @@ impl LoopbackServer {
         let market = MarketService::new(descriptor, authenticator, clock, snapshot);
         let incoming = TcpListenerStream::new(listener);
         let (shutdown, shutdown_signal) = oneshot::channel();
+        let health = HealthServiceServer::new(health)
+            .max_decoding_message_size(MAX_REQUEST_MESSAGE_BYTES)
+            .max_encoding_message_size(MAX_RESPONSE_MESSAGE_BYTES);
+        let market = MarketServiceServer::new(market)
+            .max_decoding_message_size(MAX_REQUEST_MESSAGE_BYTES)
+            .max_encoding_message_size(MAX_RESPONSE_MESSAGE_BYTES);
 
         let task = tokio::spawn(async move {
             Server::builder()
-                .add_service(HealthServiceServer::new(health))
-                .add_service(MarketServiceServer::new(market))
+                .concurrency_limit_per_connection(CONCURRENCY_LIMIT_PER_CONNECTION)
+                .load_shed(true)
+                .timeout(REQUEST_TIMEOUT)
+                .initial_stream_window_size(STREAM_WINDOW_BYTES)
+                .initial_connection_window_size(CONNECTION_WINDOW_BYTES)
+                .max_concurrent_streams(MAX_CONCURRENT_STREAMS)
+                .http2_max_header_list_size(MAX_HEADER_LIST_BYTES)
+                .max_frame_size(STREAM_WINDOW_BYTES)
+                .max_connection_age(MAX_CONNECTION_AGE)
+                .max_connection_age_grace(MAX_CONNECTION_AGE_GRACE)
+                .add_service(health)
+                .add_service(market)
                 .serve_with_incoming_shutdown(incoming, async {
                     let _ = shutdown_signal.await;
                 })
@@ -303,9 +339,181 @@ impl LoopbackServer {
             .ok_or(ServerError::ShutdownUnavailable)?
             .send(())
             .map_err(|_| ServerError::ShutdownUnavailable)?;
-        self.task
+        match tokio::time::timeout(GRACEFUL_SHUTDOWN_TIMEOUT, &mut self.task).await {
+            Ok(result) => server_task_result(result),
+            Err(_) => {
+                self.task.abort();
+                match self.task.await {
+                    Err(source) if source.is_cancelled() => Ok(()),
+                    result => server_task_result(result),
+                }
+            }
+        }
+    }
+}
+
+fn server_task_result(
+    result: Result<Result<(), tonic::transport::Error>, JoinError>,
+) -> Result<(), ServerError> {
+    result
+        .map_err(|source| ServerError::Join { source })?
+        .map_err(|source| ServerError::Transport { source })
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        sync::{
+            Arc, Mutex,
+            atomic::{AtomicBool, Ordering},
+            mpsc,
+        },
+        time::Duration,
+    };
+
+    use domain::{SourceKind, VenueId};
+    use fixed_decimal::FixedDecimal;
+    use tonic::{Code, Request, transport::Endpoint};
+    use zeroize::Zeroizing;
+
+    use super::*;
+    use crate::{
+        auth::{SessionAuthenticator, insert_authentication_metadata},
+        proto::market_v1::{GetSnapshotRequest, market_service_client::MarketServiceClient},
+    };
+
+    const ISSUED_AT: i64 = 1_700_000_000;
+
+    struct BlockingFirstClock {
+        first_call: AtomicBool,
+        entered: Mutex<Option<mpsc::Sender<()>>>,
+        release: Mutex<mpsc::Receiver<()>>,
+    }
+
+    impl Clock for BlockingFirstClock {
+        fn unix_seconds(&self) -> i64 {
+            if !self.first_call.swap(true, Ordering::SeqCst) {
+                if let Some(entered) = self
+                    .entered
+                    .lock()
+                    .expect("test clock entry lock must not be poisoned")
+                    .take()
+                {
+                    let _ = entered.send(());
+                }
+                let _ = self
+                    .release
+                    .lock()
+                    .expect("test clock release lock must not be poisoned")
+                    .recv();
+            }
+            ISSUED_AT
+        }
+    }
+
+    fn test_secret() -> SessionSecret {
+        SessionSecret::try_from(Zeroizing::new(vec![0x6b; 32])).expect("test secret must be valid")
+    }
+
+    fn test_descriptor() -> SessionDescriptor {
+        SessionDescriptor::issue(1, 0, 4_242, [0x11; 16], [0x22; 16], ISSUED_AT)
+            .expect("test descriptor must be valid")
+    }
+
+    fn test_snapshot() -> MarketSnapshot {
+        let source =
+            SourceId::new(SourceKind::Exchange, "binance", 7).expect("source must be valid");
+        let instrument = InstrumentId::new(
+            VenueId::new("binance").expect("venue must be valid"),
+            "btcusdt",
+            7,
+        )
+        .expect("instrument must be valid");
+        let bid =
+            Price::new(FixedDecimal::parse_canonical("67234.1").expect("bid must be canonical"))
+                .expect("bid must be valid");
+        let ask =
+            Price::new(FixedDecimal::parse_canonical("67234.11").expect("ask must be canonical"))
+                .expect("ask must be valid");
+        MarketSnapshot::new(
+            source,
+            instrument,
+            9_001,
+            bid,
+            ask,
+            SnapshotHealth::Healthy,
+            UnixNanos::new(1_700_000_000_100_000_000),
+            UnixNanos::new(1_700_000_000_125_000_000),
+            25,
+        )
+        .expect("snapshot must be valid")
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn per_connection_concurrency_is_bounded_before_authentication() {
+        let (entered_sender, entered_receiver) = mpsc::channel();
+        let (release_sender, release_receiver) = mpsc::channel();
+        let clock = Arc::new(BlockingFirstClock {
+            first_call: AtomicBool::new(false),
+            entered: Mutex::new(Some(entered_sender)),
+            release: Mutex::new(release_receiver),
+        });
+        let descriptor = test_descriptor();
+        let authenticator = SessionAuthenticator::new(test_secret());
+        let token = authenticator.token(&descriptor);
+        let server = LoopbackServer::spawn_with_clock(
+            LOOPBACK_BIND,
+            test_secret(),
+            descriptor.clone(),
+            test_snapshot(),
+            clock,
+        )
+        .await
+        .expect("test server must start");
+        let channel = Endpoint::from_shared(format!("http://{}", server.local_addr()))
+            .expect("test endpoint must be valid")
+            .connect()
             .await
-            .map_err(|source| ServerError::Join { source })?
-            .map_err(|source| ServerError::Transport { source })
+            .expect("test connection must open");
+        let mut first_client = MarketServiceClient::new(channel.clone());
+        let mut second_client = MarketServiceClient::new(channel);
+        let first_descriptor = descriptor.clone();
+        let first_token = token.clone();
+        let first_request = tokio::spawn(async move {
+            first_client
+                .get_snapshot(insert_authentication_metadata(
+                    Request::new(GetSnapshotRequest {}),
+                    &first_descriptor,
+                    &first_token,
+                ))
+                .await
+        });
+        tokio::task::spawn_blocking(move || entered_receiver.recv_timeout(Duration::from_secs(1)))
+            .await
+            .expect("entry observer task must join")
+            .expect("first request must reach authentication");
+
+        let second_result = tokio::time::timeout(
+            Duration::from_secs(1),
+            second_client.get_snapshot(insert_authentication_metadata(
+                Request::new(GetSnapshotRequest {}),
+                &descriptor,
+                &token,
+            )),
+        )
+        .await;
+        release_sender
+            .send(())
+            .expect("first request must still be waiting");
+        first_request
+            .await
+            .expect("first request task must join")
+            .expect("first request must complete after release");
+        server.shutdown().await.expect("test server must stop");
+
+        let status = second_result
+            .expect("second request must receive a bounded response")
+            .expect_err("second concurrent request must be rejected");
+        assert_eq!(status.code(), Code::ResourceExhausted);
     }
 }
