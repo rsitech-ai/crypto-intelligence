@@ -3,7 +3,7 @@ use std::{
     io::{BufRead, BufReader, Read},
     path::Path,
     process::{Child, Command, ExitStatus, Stdio},
-    sync::mpsc::{self, Receiver},
+    sync::mpsc::{self, Receiver, TryRecvError},
     thread::{self, JoinHandle},
     time::{Duration, Instant},
 };
@@ -144,6 +144,62 @@ fn signal_during_deliberately_blocked_secret_startup_exits_without_readiness() {
     writer.stop();
 }
 
+#[test]
+fn signal_after_runtime_sync_before_readiness_suppresses_stdout() {
+    let root = runtime_root();
+    let secret_path = root.path().join("session-secret.bin");
+    fs::write(&secret_path, SECRET_BYTES).expect("session secret source must write");
+    let gate = root.path().join("pre-readiness-gate");
+    let status = Command::new("mkfifo")
+        .arg(&gate)
+        .status()
+        .expect("mkfifo helper must run");
+    assert!(status.success(), "readiness gate FIFO must create");
+    let mut writer = ChildGuard::spawn(
+        Command::new("/bin/sh")
+            .arg("-c")
+            .arg("exec 4> \"$1\"; exec sleep 30")
+            .arg("cryptoriskd-readiness-gate-writer")
+            .arg(&gate),
+    );
+    let mut daemon = DaemonProcess::spawn_with_readiness_gate(root.path(), &secret_path, &gate);
+    wait_until_executable_is_cryptoriskd(&daemon);
+    wait_for_log_event(
+        &root.path().join("logs/cmti.jsonl"),
+        "fixture_runtime_ready",
+    );
+    assert!(
+        daemon
+            .child
+            .try_wait()
+            .expect("gated daemon status must read")
+            .is_none(),
+        "daemon must remain alive at the pre-readiness gate"
+    );
+    assert!(
+        matches!(
+            daemon.readiness_receiver.try_recv(),
+            Err(TryRecvError::Empty)
+        ),
+        "gated daemon must not write readiness before the final cancellation check"
+    );
+
+    let status = daemon.signal_and_wait("-TERM", EXIT_TIMEOUT);
+    let output = daemon.capture();
+    assert!(
+        status.success(),
+        "late startup SIGTERM must be handled cleanly: status={status:?}, stderr={}",
+        output.stderr
+    );
+    assert!(
+        output.stdout.lines().next().is_none(),
+        "late cancellation must suppress readiness stdout"
+    );
+    assert!(output.stderr.is_empty());
+    assert_no_secret_material(&output);
+    writer.stop();
+}
+
 async fn assert_authenticated_snapshot(readiness: &Readiness) {
     assert_eq!(
         readiness.expiry_unix_seconds - readiness.issued_unix_seconds,
@@ -242,6 +298,23 @@ fn wait_until_executable_is_cryptoriskd(daemon: &DaemonProcess) {
     }
 }
 
+fn wait_for_log_event(path: &Path, event: &str) {
+    let deadline = Instant::now() + EXIT_TIMEOUT;
+    loop {
+        if fs::read_to_string(path)
+            .ok()
+            .is_some_and(|contents| contents.contains(event))
+        {
+            return;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "daemon log must contain {event} within five seconds"
+        );
+        thread::sleep(Duration::from_millis(10));
+    }
+}
+
 fn runtime_root() -> tempfile::TempDir {
     let root = tempfile::tempdir().expect("temporary process root must exist");
     fs::create_dir(root.path().join("data")).expect("data root must exist");
@@ -286,15 +359,42 @@ impl DaemonProcess {
         let redirect = match mode {
             SecretOpenMode::ReadOnly => "exec 3< \"$1\"",
         };
-        let script = format!("{redirect}; exec \"$2\" --approved-root \"$3\" --config \"$4\"");
-        let mut child = Command::new("/bin/sh")
+        Self::spawn_with_script(
+            root,
+            secret_path,
+            None,
+            &format!("{redirect}; exec \"$2\" --approved-root \"$3\" --config \"$4\""),
+        )
+    }
+
+    fn spawn_with_readiness_gate(root: &Path, secret_path: &Path, gate: &Path) -> Self {
+        Self::spawn_with_script(
+            root,
+            secret_path,
+            Some(gate),
+            "exec 3< \"$1\"; exec 4< \"$5\"; exec \"$2\" --approved-root \"$3\" --config \"$4\" --readiness-gate-fd 4",
+        )
+    }
+
+    fn spawn_with_script(
+        root: &Path,
+        secret_path: &Path,
+        gate: Option<&Path>,
+        script: &str,
+    ) -> Self {
+        let mut command = Command::new("/bin/sh");
+        command
             .arg("-c")
             .arg(script)
             .arg("cryptoriskd-process-test")
             .arg(secret_path)
             .arg(env!("CARGO_BIN_EXE_cryptoriskd"))
             .arg(root)
-            .arg(root.join("config.toml"))
+            .arg(root.join("config.toml"));
+        if let Some(gate) = gate {
+            command.arg(gate);
+        }
+        let mut child = command
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
