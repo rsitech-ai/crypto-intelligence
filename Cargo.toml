@@ -1,6 +1,10 @@
 [workspace]
 resolver = "2"
 members = [
+  "crates/config",
+  "crates/domain",
+  "crates/event-envelope",
+  "crates/fixed-decimal",
   "crates/system-tests",
   "xtask",
 ]

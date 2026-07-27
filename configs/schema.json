@@ -1,46 +1,96 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "AppConfig",
   "type": "object",
-  "additionalProperties": false,
   "required": [
-    "schema_version",
-    "data_root",
-    "models_root",
-    "log_root",
     "bind_address",
-    "session_secret_fd",
+    "data_root",
+    "fixture_input",
+    "ingestion_queue_capacity",
+    "log_root",
+    "maximum_concurrent_requests",
+    "maximum_request_bytes",
     "remote_export",
-    "connectors"
+    "remote_telemetry",
+    "request_timeout_seconds",
+    "schema_version",
+    "session_secret_fd",
+    "shutdown_grace_seconds"
   ],
   "properties": {
-    "schema_version": {
-      "const": 1
-    },
-    "data_root": {
-      "type": "string",
-      "minLength": 1
-    },
-    "models_root": {
-      "type": "string",
-      "minLength": 1
-    },
-    "log_root": {
-      "type": "string",
-      "minLength": 1
-    },
     "bind_address": {
       "type": "string",
-      "pattern": "^(127\\\\.0\\\\.0\\\\.1|\\\\[::1\\\\]):[0-9]+$"
+      "pattern": "^127\\.0\\.0\\.1:0$"
+    },
+    "credential_ref": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^keychain://[A-Za-z0-9._@-]{1,128}/[A-Za-z0-9._@-]{1,128}$"
+    },
+    "data_root": {
+      "type": "string"
+    },
+    "fixture_input": {
+      "type": "string"
+    },
+    "ingestion_queue_capacity": {
+      "type": "integer",
+      "format": "uint",
+      "maximum": 65536.0,
+      "minimum": 1.0
+    },
+    "log_root": {
+      "type": "string"
+    },
+    "maximum_concurrent_requests": {
+      "type": "integer",
+      "format": "uint",
+      "maximum": 1024.0,
+      "minimum": 1.0
+    },
+    "maximum_request_bytes": {
+      "type": "integer",
+      "format": "uint",
+      "maximum": 16777216.0,
+      "minimum": 1.0
+    },
+    "remote_export": {
+      "type": "boolean",
+      "enum": [
+        false
+      ]
+    },
+    "remote_telemetry": {
+      "type": "boolean",
+      "enum": [
+        false
+      ]
+    },
+    "request_timeout_seconds": {
+      "type": "integer",
+      "format": "uint64",
+      "maximum": 300.0,
+      "minimum": 1.0
+    },
+    "schema_version": {
+      "type": "integer",
+      "format": "uint32",
+      "maximum": 1.0,
+      "minimum": 1.0
     },
     "session_secret_fd": {
       "type": "integer",
-      "minimum": 3
+      "format": "uint32",
+      "minimum": 3.0
     },
-    "remote_export": {
-      "const": false
-    },
-    "connectors": {
-      "type": "array"
+    "shutdown_grace_seconds": {
+      "type": "integer",
+      "format": "uint64",
+      "maximum": 30.0,
+      "minimum": 1.0
     }
-  }
+  },
+  "additionalProperties": false
 }

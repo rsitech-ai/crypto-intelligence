@@ -44,6 +44,25 @@ enum XtaskError {
     },
     #[error("active member manifest {path} must opt into workspace lints")]
     MissingWorkspaceLints { path: PathBuf },
+    #[error("could not generate configuration schema: {source}")]
+    SchemaGenerate {
+        #[source]
+        source: config::ConfigError,
+    },
+    #[error("could not read configuration schema {path}: {source}")]
+    SchemaRead {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
+    #[error("could not write configuration schema {path}: {source}")]
+    SchemaWrite {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
+    #[error("checked-in configuration schema is out of date")]
+    SchemaOutOfDate,
 }
 
 #[derive(Debug, Deserialize)]
@@ -82,16 +101,18 @@ fn main() -> ExitCode {
 
 fn run() -> Result<(), XtaskError> {
     let arguments = env::args_os().skip(1).collect::<Vec<OsString>>();
-    let [command] = arguments.as_slice() else {
+    let Some((command, options)) = arguments.split_first() else {
         return Err(XtaskError::InvalidInvocation);
     };
 
     match command.to_string_lossy().as_ref() {
-        "help" => {
+        "help" if options.is_empty() => {
             print_help();
             Ok(())
         }
-        "workspace-check" => workspace_check(),
+        "workspace-check" if options.is_empty() => workspace_check(),
+        "generate-config-schema" => generate_config_schema(options),
+        "help" | "workspace-check" => Err(XtaskError::InvalidInvocation),
         command => Err(XtaskError::UnknownCommand {
             command: command.to_owned(),
         }),
@@ -99,7 +120,37 @@ fn run() -> Result<(), XtaskError> {
 }
 
 fn print_help() {
-    println!("xtask commands:\n  help\n  workspace-check");
+    println!("xtask commands:\n  help\n  workspace-check\n  generate-config-schema [--check]");
+}
+
+fn generate_config_schema(options: &[OsString]) -> Result<(), XtaskError> {
+    let check = match options {
+        [] => false,
+        [option] if option == "--check" => true,
+        _ => return Err(XtaskError::InvalidInvocation),
+    };
+    let generated =
+        config::schema::generate().map_err(|source| XtaskError::SchemaGenerate { source })?;
+    let path = workspace_root().join("configs/schema.json");
+
+    if check {
+        let checked_in = fs::read_to_string(&path).map_err(|source| XtaskError::SchemaRead {
+            path: path.clone(),
+            source,
+        })?;
+        if checked_in != generated {
+            return Err(XtaskError::SchemaOutOfDate);
+        }
+        println!("generate-config-schema: up to date");
+        return Ok(());
+    }
+
+    fs::write(&path, generated).map_err(|source| XtaskError::SchemaWrite {
+        path: path.clone(),
+        source,
+    })?;
+    println!("generate-config-schema: wrote {}", path.display());
+    Ok(())
 }
 
 fn workspace_check() -> Result<(), XtaskError> {
@@ -118,13 +169,10 @@ fn workspace_check() -> Result<(), XtaskError> {
 }
 
 fn read_metadata() -> Result<CargoMetadata, XtaskError> {
-    let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .expect("xtask must be nested in the workspace");
     let cargo = env::var_os("CARGO").unwrap_or_else(|| OsString::from("cargo"));
     let output = Command::new(cargo)
         .args(["metadata", "--locked", "--format-version", "1"])
-        .current_dir(workspace_root)
+        .current_dir(workspace_root())
         .output()
         .map_err(|source| XtaskError::MetadataSpawn { source })?;
 
@@ -136,6 +184,12 @@ fn read_metadata() -> Result<CargoMetadata, XtaskError> {
     }
 
     serde_json::from_slice(&output.stdout).map_err(|source| XtaskError::MetadataParse { source })
+}
+
+fn workspace_root() -> &'static Path {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("xtask must be nested in the workspace")
 }
 
 fn ensure_workspace_lints(manifest_path: &Path) -> Result<(), XtaskError> {
