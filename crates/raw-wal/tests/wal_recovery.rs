@@ -4,7 +4,7 @@ use std::{
 };
 
 use raw_wal::{
-    frame::{HEADER_LENGTH, MAGIC, SCHEMA_VERSION, encode},
+    frame::{HEADER_LENGTH, MAGIC, MAX_PAYLOAD_LENGTH, SCHEMA_VERSION, encode},
     recovery::RecoveryError,
     segment::Segment,
 };
@@ -48,7 +48,7 @@ fn append_syncs_each_frame_and_recovery_returns_payloads_in_order() {
 }
 
 #[test]
-fn recovery_truncates_an_incomplete_final_frame_only() {
+fn declared_frame_extending_past_eof_fails_without_truncation() {
     let directory = tempfile::tempdir().expect("temporary directory must exist");
     let path = directory.path().join("market.wal");
     let first_frame_length;
@@ -71,21 +71,136 @@ fn recovery_truncates_an_incomplete_final_frame_only() {
         .set_len(original_length - 3)
         .expect("test tail must truncate");
 
+    let original = fs::read(&path).expect("incomplete segment bytes must read");
     let mut segment = Segment::open(&path).expect("segment must reopen");
-    let report = segment
-        .recover()
-        .expect("incomplete final frame must be recoverable");
-
-    assert_eq!(report.records(), [b"first".as_slice()]);
+    assert!(matches!(
+        segment.recover(),
+        Err(RecoveryError::Corruption { offset }) if offset == first_frame_length
+    ));
     assert_eq!(
-        report.truncated_bytes(),
-        original_length - 3 - first_frame_length
+        fs::read(&path).expect("failed recovery must preserve bytes"),
+        original,
+        "an untrusted declared length extending beyond EOF must not authorize truncation"
     );
+}
+
+#[test]
+fn every_valid_partial_final_header_prefix_is_repaired() {
+    let second = encode(b"second").expect("second frame must encode");
+    for partial_length in 1..HEADER_LENGTH {
+        let directory = tempfile::tempdir().expect("temporary directory must exist");
+        let path = directory.path().join("market.wal");
+        let first_frame_length;
+        {
+            let mut segment = Segment::open(&path).expect("segment must open");
+            first_frame_length = segment
+                .append_synced(b"first")
+                .expect("first frame must persist");
+        }
+        OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .expect("segment must open for partial header")
+            .write_all(&second[..partial_length])
+            .expect("partial header must write");
+
+        let mut segment = Segment::open(&path).expect("segment must reopen");
+        let report = segment
+            .recover()
+            .expect("exact partial header prefix must be repairable");
+        assert_eq!(report.records(), [b"first".as_slice()]);
+        assert_eq!(report.truncated_bytes(), partial_length as u64);
+        assert_eq!(
+            fs::metadata(&path)
+                .expect("repaired segment metadata must exist")
+                .len(),
+            first_frame_length,
+            "partial header length {partial_length} must truncate to the prior frame"
+        );
+    }
+}
+
+#[test]
+fn arbitrary_short_final_junk_fails_without_truncation() {
+    for junk in [
+        b"X".as_slice(),
+        b"CMTX".as_slice(),
+        b"CMTIWAL1\x01".as_slice(),
+        b"CMTIWAL1\x00\x01\xff".as_slice(),
+    ] {
+        let directory = tempfile::tempdir().expect("temporary directory must exist");
+        let path = directory.path().join("market.wal");
+        let first_frame_length;
+        {
+            let mut segment = Segment::open(&path).expect("segment must open");
+            first_frame_length = segment
+                .append_synced(b"first")
+                .expect("first frame must persist");
+        }
+        OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .expect("segment must open for junk suffix")
+            .write_all(junk)
+            .expect("junk suffix must write");
+        let original = fs::read(&path).expect("junk segment bytes must read");
+
+        let mut segment = Segment::open(&path).expect("segment must reopen");
+        assert!(matches!(
+            segment.recover(),
+            Err(RecoveryError::Corruption { offset }) if offset == first_frame_length
+        ));
+        assert_eq!(
+            fs::read(&path).expect("failed recovery must preserve junk bytes"),
+            original
+        );
+    }
+}
+
+#[test]
+fn inflated_length_before_valid_frame_fails_without_truncation() {
+    let directory = tempfile::tempdir().expect("temporary directory must exist");
+    let path = directory.path().join("market.wal");
+    let first_frame_length;
+    {
+        let mut segment = Segment::open(&path).expect("segment must open");
+        first_frame_length = segment
+            .append_synced(b"first")
+            .expect("first frame must persist");
+        segment
+            .append_synced(b"second")
+            .expect("second frame must persist");
+        segment
+            .append_synced(b"third")
+            .expect("third frame must persist");
+    }
+    let mut file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(&path)
+        .expect("segment must reopen for length mutation");
+    file.seek(SeekFrom::Start(
+        first_frame_length + MAGIC.len() as u64 + size_of::<u16>() as u64,
+    ))
+    .expect("test mutation must seek");
+    file.write_all(
+        &u32::try_from(MAX_PAYLOAD_LENGTH)
+            .expect("maximum payload length must fit the frame field")
+            .to_be_bytes(),
+    )
+    .expect("in-range inflated length must write");
+    file.sync_data().expect("test mutation must sync");
+    drop(file);
+    let original = fs::read(&path).expect("mutated segment bytes must read");
+
+    let mut segment = Segment::open(&path).expect("segment must reopen");
+    assert!(matches!(
+        segment.recover(),
+        Err(RecoveryError::Corruption { offset }) if offset == first_frame_length
+    ));
     assert_eq!(
-        fs::metadata(&path)
-            .expect("recovered segment metadata must exist")
-            .len(),
-        first_frame_length
+        fs::read(&path).expect("failed recovery must preserve bytes"),
+        original
     );
 }
 
