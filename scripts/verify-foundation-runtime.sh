@@ -917,18 +917,50 @@ for generated_root in "${app_runtime_roots[@]}"; do
   fi
 done
 
+capture_xcresult_summary() {
+  local label="$1"
+  local bundle="$2"
+  local output="$3"
+  local external_when_automation_disabled="$4"
+  local summary_status
+  if [[ ! -d "${bundle}" ]]; then
+    if [[ "${external_when_automation_disabled}" -eq 1 ]] \
+      && [[ "${developer_mode_status}" == *"disabled"* ]]
+    then
+      record_blocker "external:${label}-missing-xcresult"
+    else
+      record_blocker "${label}:missing-xcresult"
+    fi
+    return 0
+  fi
+  set +e
+  run_bounded 30 xcrun xcresulttool get test-results summary \
+    --path "${bundle}" --compact \
+    > "${output}" 2> "${output}.stderr"
+  summary_status=$?
+  set -e
+  if [[ "${summary_status}" -ne 0 ]]; then
+    rm -f -- "${output}"
+    if [[ "${external_when_automation_disabled}" -eq 1 ]] \
+      && [[ "${developer_mode_status}" == *"disabled"* ]]
+    then
+      record_blocker "external:${label}-invalid-xcresult"
+    else
+      record_blocker "${label}:invalid-xcresult-${summary_status}"
+    fi
+  fi
+}
+
 run_gate native-unit-tests 900 scripts/test-macos.sh \
   -resultBundlePath "${temporary_root}/native-unit.xcresult" \
   -only-testing:CuspObservatoryTests test
 
 inspect_native_warnings native-unit-tests
-if [[ -d "${temporary_root}/native-unit.xcresult" ]]; then
-  xcrun xcresulttool get test-results summary \
-    --path "${temporary_root}/native-unit.xcresult" --compact \
-    > "${temporary_root}/native-unit-summary.json"
-else
-  record_blocker "native-unit-tests:missing-xcresult"
-fi
+capture_xcresult_summary \
+  native-unit-tests \
+  "${temporary_root}/native-unit.xcresult" \
+  "${temporary_root}/native-unit-summary.json" \
+  0
 
 # This is intentionally the sole current XCUITest probe. The default verifier
 # has no UI-skip mode and records the macOS authorization boundary as a failure.
@@ -942,17 +974,11 @@ if rg -q '^native-ui-tests:exit-' "${blocker_file}" \
 then
   record_blocker "external:macos-automation-authorization-disabled"
 fi
-if [[ -d "${temporary_root}/native-ui.xcresult" ]]; then
-  xcrun xcresulttool get test-results summary \
-    --path "${temporary_root}/native-ui.xcresult" --compact \
-    > "${temporary_root}/native-ui-summary.json"
-else
-  if [[ "${developer_mode_status}" == *"disabled"* ]]; then
-    record_blocker "external:native-ui-tests-missing-xcresult"
-  else
-    record_blocker "native-ui-tests:missing-xcresult"
-  fi
-fi
+capture_xcresult_summary \
+  native-ui-tests \
+  "${temporary_root}/native-ui.xcresult" \
+  "${temporary_root}/native-ui-summary.json" \
+  1
 
 run_gate unified-log-inspection 120 /usr/bin/log show \
   --style json --start "${unified_log_start}" \
