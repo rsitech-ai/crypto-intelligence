@@ -22,10 +22,11 @@ pub enum FieldName {
     Sequence,
     QueueDepth,
     DurationMicros,
+    PendingWalCompressionJobs,
 }
 
 impl FieldName {
-    pub const ALL: [Self; 17] = [
+    pub const ALL: [Self; 18] = [
         Self::Level,
         Self::Event,
         Self::Target,
@@ -43,6 +44,7 @@ impl FieldName {
         Self::Sequence,
         Self::QueueDepth,
         Self::DurationMicros,
+        Self::PendingWalCompressionJobs,
     ];
 
     pub const fn as_str(self) -> &'static str {
@@ -64,6 +66,7 @@ impl FieldName {
             Self::Sequence => "sequence",
             Self::QueueDepth => "queue_depth",
             Self::DurationMicros => "duration_micros",
+            Self::PendingWalCompressionJobs => "pending_wal_compression_jobs",
         }
     }
 

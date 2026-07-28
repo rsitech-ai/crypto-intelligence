@@ -894,6 +894,14 @@ pub(crate) fn verify_sealed_v2_segment_at(
     directory: &File,
     sealed_name: &Path,
 ) -> Result<SealedSegmentManifest, SealingError> {
+    visit_verified_sealed_v2_segment_at(directory, sealed_name, |_| {})
+}
+
+pub(crate) fn visit_verified_sealed_v2_segment_at(
+    directory: &File,
+    sealed_name: &Path,
+    visitor: impl FnMut(RecoveredRecord<'_>),
+) -> Result<SealedSegmentManifest, SealingError> {
     let manifest_name = manifest_path_for(sealed_name)?;
     let manifest_bytes = read_bounded_at(directory, &manifest_name, MAX_MANIFEST_LENGTH)?;
     let manifest = decode_manifest(&manifest_bytes)?;
@@ -901,7 +909,7 @@ pub(crate) fn verify_sealed_v2_segment_at(
         return Err(ManifestError::InvalidField("segment_file").into());
     }
     let file = open_nofollow_at(directory, sealed_name, OFlags::RDONLY)?;
-    verify_sealed_file_against_manifest(file, &manifest)?;
+    visit_sealed_file_against_manifest(file, &manifest, visitor)?;
     Ok(manifest)
 }
 
@@ -914,8 +922,16 @@ fn verify_sealed_against_manifest(
 }
 
 fn verify_sealed_file_against_manifest(
+    file: File,
+    manifest: &SealedSegmentManifest,
+) -> Result<(), SealingError> {
+    visit_sealed_file_against_manifest(file, manifest, |_| {})
+}
+
+fn visit_sealed_file_against_manifest(
     mut file: File,
     manifest: &SealedSegmentManifest,
+    mut visitor: impl FnMut(RecoveredRecord<'_>),
 ) -> Result<(), SealingError> {
     acquire_shared_lock(&file)?;
     validate_regular_single_link(&file)?;
@@ -941,7 +957,10 @@ fn verify_sealed_file_against_manifest(
         prologue_length,
         Some(WalFormat::V2),
         Some(&metadata),
-        |record| stats.observe(record),
+        |record| {
+            stats.observe(record);
+            visitor(record);
+        },
     )?;
     let (ranges, minimum, maximum) = stats.into_parts()?;
     if summary.record_count() != manifest.record_count

@@ -113,6 +113,26 @@ fn load_valid(text: &str, root: &Path) -> Result<config::EffectiveConfig, Config
 }
 
 #[test]
+fn foundation_runtime_requires_the_segmented_v2_wal_format() {
+    let root = fixture_root();
+    let v2 = valid_config().replace("wal_format = \"v1\"", "wal_format = \"v2\"");
+    let v2 = load_valid(&v2, root.path()).expect("v2 configuration must parse");
+    assert!(!matches!(
+        v2.config.validate_foundation_runtime(),
+        Err(ConfigError::UnsupportedRuntimeCapability {
+            field: "wal_format"
+        })
+    ));
+    let v1 = load_valid(&valid_config(), root.path()).expect("legacy configuration must parse");
+    assert!(matches!(
+        v1.config.validate_foundation_runtime(),
+        Err(ConfigError::UnsupportedRuntimeCapability {
+            field: "wal_format"
+        })
+    ));
+}
+
+#[test]
 fn unknown_keys_and_direct_secret_material_are_rejected() {
     let root = fixture_root();
     let unknown = format!("{}unknown_critical_key = true\n", valid_config());
@@ -425,6 +445,69 @@ fn validated_directory_handle_survives_path_replacement() {
     );
 }
 
+#[cfg(unix)]
+#[test]
+fn validated_directory_creates_a_private_child_capability_without_reopening_its_parent() {
+    use std::os::unix::fs::symlink;
+
+    let root = fixture_root();
+    let outside = tempfile::tempdir().expect("outside root");
+    let effective =
+        load_valid(&valid_config(), root.path()).expect("configuration must validate first");
+    let wal_root = effective
+        .paths
+        .data_root
+        .open_or_create_child_directory("market-wal")
+        .expect("private child directory must open");
+    assert_eq!(
+        fs::metadata(root.path().join("data/market-wal"))
+            .expect("child metadata must read")
+            .permissions()
+            .mode()
+            & 0o777,
+        0o700
+    );
+
+    fs::rename(root.path().join("data"), root.path().join("moved-data"))
+        .expect("move validated parent directory");
+    symlink(outside.path(), root.path().join("data")).expect("replace parent with outside symlink");
+    let mut sentinel = wal_root
+        .create_new_file("sentinel")
+        .expect("child capability must remain authoritative");
+    sentinel
+        .write_all(b"retained")
+        .expect("sentinel must write");
+
+    assert_eq!(
+        fs::read(root.path().join("moved-data/market-wal/sentinel"))
+            .expect("original child receives sentinel"),
+        b"retained"
+    );
+    assert!(!outside.path().join("market-wal/sentinel").exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn validated_directory_rejects_a_symlinked_child_directory() {
+    use std::os::unix::fs::symlink;
+
+    let root = fixture_root();
+    let outside = tempfile::tempdir().expect("outside root");
+    let effective =
+        load_valid(&valid_config(), root.path()).expect("configuration must validate first");
+    symlink(outside.path(), root.path().join("data/market-wal"))
+        .expect("child symlink fixture must create");
+
+    assert!(
+        effective
+            .paths
+            .data_root
+            .open_or_create_child_directory("market-wal")
+            .is_err(),
+        "a direct-child directory capability must never follow a symlink"
+    );
+}
+
 fn format_field(field: &str, value: u64) -> String {
     let name = field.split_once(" = ").expect("field assignment").0;
     format!("{name} = {value}")
@@ -497,7 +580,7 @@ fn checked_in_default_and_schema_match_the_canonical_generators() {
     .expect("checked-in default validates");
     assert_eq!(effective.config.ingestion_queue_capacity(), 1024);
     assert_eq!(
-        effective.fingerprint, "a60828375e5f6ff5c7956db401a6d75efddfeaf37e7eda2053a931b9904e26a3",
+        effective.fingerprint, "939740c1767a5f578cb1c733be1b1435f7abb68fefeff77fa855e2fc347f6804",
         "the domain-separated canonical default fingerprint is a frozen contract"
     );
     effective

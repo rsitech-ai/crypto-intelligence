@@ -144,6 +144,7 @@ pub enum VenueProduct {
 #[serde(rename_all = "kebab-case")]
 pub enum WalFormat {
     V1,
+    V2,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Deserialize, JsonSchema, Serialize)]
@@ -531,6 +532,53 @@ impl ValidatedDirectory {
         )
         .map_err(io::Error::from)?;
         Ok(File::from(owned))
+    }
+
+    pub fn open_or_create_child_directory(&self, name: impl AsRef<OsStr>) -> io::Result<Self> {
+        let name = name.as_ref();
+        if !is_single_normal_component(Path::new(name)) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "directory name must be one normal path component",
+            ));
+        }
+        let created = match rustix_fs::mkdirat(
+            self.handle.as_fd(),
+            name,
+            Mode::RUSR | Mode::WUSR | Mode::XUSR,
+        ) {
+            Ok(()) => true,
+            Err(rustix::io::Errno::EXIST) => false,
+            Err(error) => return Err(error.into()),
+        };
+        let owned = rustix_fs::openat(
+            self.handle.as_fd(),
+            name,
+            OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC | OFlags::NOFOLLOW,
+            Mode::empty(),
+        )
+        .map_err(io::Error::from)?;
+        let stat = rustix_fs::fstat(&owned).map_err(io::Error::from)?;
+        if !FileType::from_raw_mode(stat.st_mode).is_dir()
+            || stat.st_uid != rustix::process::geteuid().as_raw()
+            || stat.st_mode & 0o077 != 0
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "child directory metadata violates the local security contract",
+            ));
+        }
+        if created {
+            rustix_fs::fsync(self.handle.as_fd()).map_err(io::Error::from)?;
+        }
+        Ok(Self {
+            path: self.path.join(name),
+            handle: Arc::new(File::from(owned)),
+        })
+    }
+
+    pub fn try_clone(&self) -> io::Result<File> {
+        self.handle.try_clone()
     }
 }
 
@@ -1046,9 +1094,13 @@ impl AppConfig {
     /// Rejects configuration that the current fixture-backed foundation
     /// runtime cannot truthfully activate yet.
     pub fn validate_foundation_runtime(&self) -> Result<(), ConfigError> {
+        if self.daemon.wal_format != WalFormat::V2 {
+            return Err(ConfigError::UnsupportedRuntimeCapability {
+                field: "wal_format",
+            });
+        }
         if self.daemon.wal_flush_interval_ms != 250
             || self.daemon.max_memory_gib != 40
-            || self.daemon.wal_format != WalFormat::V1
             || self.daemon.schema_compatibility != SchemaCompatibility::Strict
             || self.daemon.database_engine != DatabaseEngine::Sqlite
             || self.daemon.runtime_threads != 4
