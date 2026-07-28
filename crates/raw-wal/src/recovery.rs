@@ -12,6 +12,7 @@ use crate::frame::{
     self, CHECKSUM_LENGTH, FrameError, HEADER_LENGTH, LEGACY_HEADER_LENGTH, LEGACY_SCHEMA_VERSION,
     MAGIC, MAX_PAYLOAD_LENGTH, RecordMetadata, SCHEMA_VERSION, WalFormat, decode,
 };
+use crate::prologue::{PrologueError, SegmentMetadata};
 
 pub const TARGET_SEGMENT_LENGTH: u64 = 256 * 1024 * 1024;
 pub const MAX_RECOVERABLE_SEGMENT_LENGTH: u64 = TARGET_SEGMENT_LENGTH
@@ -42,6 +43,8 @@ pub enum CorruptionKind {
 pub enum RecoveryError {
     #[error("WAL I/O failed: {0}")]
     Io(#[from] io::Error),
+    #[error("WAL segment prologue failed validation: {0}")]
+    Prologue(#[from] PrologueError),
     #[error("WAL corruption at byte offset {offset}: {kind:?}")]
     Corruption { offset: u64, kind: CorruptionKind },
     #[error("unsupported WAL format version {version} at byte offset {offset}")]
@@ -69,6 +72,8 @@ pub enum RecoveryError {
     },
     #[error("WAL exceeds the maximum {maximum} tracked stream/epoch pairs")]
     StreamEpochLimit { maximum: usize },
+    #[error("WAL record at byte offset {offset} references undeclared stream ID {stream_id}")]
+    UndeclaredStream { offset: u64, stream_id: u32 },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -170,27 +175,42 @@ impl RecoveryReport {
 }
 
 pub fn recover(file: &mut File) -> Result<RecoveryReport, RecoveryError> {
+    recover_from(file, 0, None, None)
+}
+
+pub(crate) fn recover_from(
+    file: &mut File,
+    record_start_offset: u64,
+    expected_format: Option<WalFormat>,
+    segment_metadata: Option<&SegmentMetadata>,
+) -> Result<RecoveryReport, RecoveryError> {
     let mut records = Vec::new();
     let mut payload_bytes = 0_usize;
     let mut collection_exceeded = false;
-    let summary = recover_with(file, |record| {
-        let next_payload_bytes = payload_bytes.checked_add(record.payload().len());
-        if collection_exceeded
-            || records.len() >= MAX_COLLECTED_RECORDS
-            || next_payload_bytes.is_none()
-            || next_payload_bytes.is_some_and(|bytes| bytes > MAX_COLLECTED_PAYLOAD_BYTES)
-        {
-            collection_exceeded = true;
-            return;
-        }
-        payload_bytes = next_payload_bytes.expect("checked payload length must be present");
-        records.push(RecoveredRecordOwned {
-            metadata: record.metadata(),
-            payload: record.payload().to_vec(),
-            offset: record.offset(),
-            next_offset: record.next_offset(),
-        });
-    })?;
+    let summary = recover_with_from(
+        file,
+        record_start_offset,
+        expected_format,
+        segment_metadata,
+        |record| {
+            let next_payload_bytes = payload_bytes.checked_add(record.payload().len());
+            if collection_exceeded
+                || records.len() >= MAX_COLLECTED_RECORDS
+                || next_payload_bytes.is_none()
+                || next_payload_bytes.is_some_and(|bytes| bytes > MAX_COLLECTED_PAYLOAD_BYTES)
+            {
+                collection_exceeded = true;
+                return;
+            }
+            payload_bytes = next_payload_bytes.expect("checked payload length must be present");
+            records.push(RecoveredRecordOwned {
+                metadata: record.metadata(),
+                payload: record.payload().to_vec(),
+                offset: record.offset(),
+                next_offset: record.next_offset(),
+            });
+        },
+    )?;
     if collection_exceeded {
         return Err(RecoveryError::CollectionLimit {
             maximum_records: MAX_COLLECTED_RECORDS,
@@ -202,22 +222,43 @@ pub fn recover(file: &mut File) -> Result<RecoveryReport, RecoveryError> {
 
 pub fn recover_with(
     file: &mut File,
+    visitor: impl FnMut(RecoveredRecord<'_>),
+) -> Result<RecoverySummary, RecoveryError> {
+    recover_with_from(file, 0, None, None, visitor)
+}
+
+pub(crate) fn recover_with_from(
+    file: &mut File,
+    record_start_offset: u64,
+    expected_format: Option<WalFormat>,
+    segment_metadata: Option<&SegmentMetadata>,
     mut visitor: impl FnMut(RecoveredRecord<'_>),
 ) -> Result<RecoverySummary, RecoveryError> {
     let actual_length = file.metadata()?.len();
-    if actual_length > MAX_RECOVERABLE_SEGMENT_LENGTH {
+    let maximum_length = MAX_RECOVERABLE_SEGMENT_LENGTH
+        .checked_add(record_start_offset)
+        .ok_or(RecoveryError::Capacity {
+            requested: u64::MAX,
+        })?;
+    if actual_length > maximum_length {
         return Err(RecoveryError::SegmentTooLarge {
             actual: actual_length,
-            maximum: MAX_RECOVERABLE_SEGMENT_LENGTH,
+            maximum: maximum_length,
         });
+    }
+    if record_start_offset > actual_length {
+        return Err(corruption(
+            record_start_offset,
+            CorruptionKind::InvalidPartialTail,
+        ));
     }
 
     let mut frame_bytes = Vec::new();
     let mut header_bytes = [0_u8; HEADER_LENGTH];
     let mut last_sequences = BTreeMap::new();
-    let mut segment_format = None;
+    let mut segment_format = expected_format;
     let mut record_count = 0_u64;
-    let mut offset = 0_u64;
+    let mut offset = record_start_offset;
 
     while offset < actual_length {
         let remaining = actual_length - offset;
@@ -312,6 +353,13 @@ pub fn recover_with(
             return Err(corruption(offset, CorruptionKind::MixedFormat));
         }
         if let Some(metadata) = decoded.metadata() {
+            if segment_metadata.is_some_and(|segment| !segment.contains_stream(metadata.stream_id))
+            {
+                return Err(RecoveryError::UndeclaredStream {
+                    offset,
+                    stream_id: metadata.stream_id,
+                });
+            }
             validate_sequence(&mut last_sequences, metadata, offset)?;
         }
 
