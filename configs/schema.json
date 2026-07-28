@@ -3,76 +3,37 @@
   "title": "AppConfig",
   "type": "object",
   "required": [
-    "bind_address",
-    "data_root",
-    "fixture_input",
-    "ingestion_queue_capacity",
-    "log_root",
-    "maximum_concurrent_requests",
-    "maximum_request_bytes",
-    "remote_export",
-    "remote_telemetry",
-    "request_timeout_seconds",
+    "alerts",
+    "coverage",
+    "daemon",
+    "models",
+    "privacy",
+    "profile",
     "schema_version",
-    "session_secret_fd",
-    "shutdown_grace_seconds"
+    "timezone",
+    "venues"
   ],
   "properties": {
-    "bind_address": {
+    "alerts": {
+      "$ref": "#/definitions/RawAlertConfig"
+    },
+    "coverage": {
+      "$ref": "#/definitions/RawCoverageConfig"
+    },
+    "daemon": {
+      "$ref": "#/definitions/RawDaemonConfig"
+    },
+    "models": {
+      "$ref": "#/definitions/RawModelConfig"
+    },
+    "privacy": {
+      "$ref": "#/definitions/RawPrivacyConfig"
+    },
+    "profile": {
       "type": "string",
-      "pattern": "^127\\.0\\.0\\.1:0$"
-    },
-    "credential_ref": {
-      "type": [
-        "string",
-        "null"
-      ],
-      "pattern": "^keychain://[A-Za-z0-9._@-]{1,128}/[A-Za-z0-9._@-]{1,128}$"
-    },
-    "data_root": {
-      "type": "string"
-    },
-    "fixture_input": {
-      "type": "string"
-    },
-    "ingestion_queue_capacity": {
-      "type": "integer",
-      "format": "uint",
-      "maximum": 65536.0,
-      "minimum": 1.0
-    },
-    "log_root": {
-      "type": "string"
-    },
-    "maximum_concurrent_requests": {
-      "type": "integer",
-      "format": "uint",
-      "maximum": 1024.0,
-      "minimum": 1.0
-    },
-    "maximum_request_bytes": {
-      "type": "integer",
-      "format": "uint",
-      "maximum": 16777216.0,
-      "minimum": 1.0
-    },
-    "remote_export": {
-      "type": "boolean",
       "enum": [
-        false
+        "production-local"
       ]
-    },
-    "remote_telemetry": {
-      "type": "boolean",
-      "enum": [
-        false
-      ]
-    },
-    "request_timeout_seconds": {
-      "type": "integer",
-      "format": "uint64",
-      "maximum": 300.0,
-      "minimum": 1.0
     },
     "schema_version": {
       "type": "integer",
@@ -80,17 +41,349 @@
       "maximum": 1.0,
       "minimum": 1.0
     },
-    "session_secret_fd": {
-      "type": "integer",
-      "format": "uint32",
-      "minimum": 3.0
+    "timezone": {
+      "type": "string",
+      "maxLength": 255,
+      "pattern": "^(UTC|[A-Za-z0-9_+\\-]{1,64}/[A-Za-z0-9_+\\-]{1,64}(?:/[A-Za-z0-9_+\\-]{1,64})*)$"
     },
-    "shutdown_grace_seconds": {
-      "type": "integer",
-      "format": "uint64",
-      "maximum": 30.0,
-      "minimum": 1.0
+    "venues": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/RawVenueConfig"
+      },
+      "minItems": 1
     }
   },
-  "additionalProperties": false
+  "additionalProperties": false,
+  "definitions": {
+    "CoverageTier": {
+      "type": "string",
+      "enum": [
+        "a",
+        "b",
+        "c"
+      ]
+    },
+    "DatabaseEngine": {
+      "type": "string",
+      "enum": [
+        "sqlite"
+      ]
+    },
+    "LogLevel": {
+      "type": "string",
+      "enum": [
+        "error",
+        "warn",
+        "info",
+        "debug",
+        "trace"
+      ]
+    },
+    "RawAlertConfig": {
+      "type": "object",
+      "required": [
+        "local_notifications",
+        "minimum_quality_ppm",
+        "outbound_webhooks"
+      ],
+      "properties": {
+        "local_notifications": {
+          "type": "boolean"
+        },
+        "minimum_quality_ppm": {
+          "type": "integer",
+          "format": "uint32",
+          "maximum": 1000000.0,
+          "minimum": 0.0
+        },
+        "outbound_webhooks": {
+          "type": "boolean",
+          "enum": [
+            false
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "RawCoverageConfig": {
+      "type": "object",
+      "required": [
+        "max_tier_a_instruments",
+        "max_tier_b_instruments",
+        "reject_over_capacity",
+        "watchlist"
+      ],
+      "properties": {
+        "max_tier_a_instruments": {
+          "type": "integer",
+          "format": "uint32",
+          "maximum": 10000.0,
+          "minimum": 1.0
+        },
+        "max_tier_b_instruments": {
+          "type": "integer",
+          "format": "uint32",
+          "maximum": 10000.0,
+          "minimum": 1.0
+        },
+        "reject_over_capacity": {
+          "type": "boolean"
+        },
+        "watchlist": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 1,
+            "pattern": "^[A-Z0-9]+$"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "RawDaemonConfig": {
+      "type": "object",
+      "required": [
+        "bind_address",
+        "data_dir",
+        "database_engine",
+        "fixture_input",
+        "ingestion_queue_capacity",
+        "log_dir",
+        "log_level",
+        "max_memory_gib",
+        "maximum_concurrent_requests",
+        "maximum_request_bytes",
+        "request_timeout_seconds",
+        "runtime_threads",
+        "schema_compatibility",
+        "session_secret_fd",
+        "shutdown_grace_seconds",
+        "wal_flush_interval_ms",
+        "wal_format"
+      ],
+      "properties": {
+        "bind_address": {
+          "type": "string",
+          "pattern": "^127\\.0\\.0\\.1:0$"
+        },
+        "data_dir": {
+          "type": "string"
+        },
+        "database_engine": {
+          "$ref": "#/definitions/DatabaseEngine"
+        },
+        "fixture_input": {
+          "type": "string"
+        },
+        "ingestion_queue_capacity": {
+          "type": "integer",
+          "format": "uint",
+          "maximum": 65536.0,
+          "minimum": 1.0
+        },
+        "log_dir": {
+          "type": "string"
+        },
+        "log_level": {
+          "$ref": "#/definitions/LogLevel"
+        },
+        "max_memory_gib": {
+          "type": "integer",
+          "format": "uint64",
+          "maximum": 512.0,
+          "minimum": 1.0
+        },
+        "maximum_concurrent_requests": {
+          "type": "integer",
+          "format": "uint",
+          "maximum": 1024.0,
+          "minimum": 1.0
+        },
+        "maximum_request_bytes": {
+          "type": "integer",
+          "format": "uint",
+          "maximum": 16777216.0,
+          "minimum": 1.0
+        },
+        "request_timeout_seconds": {
+          "type": "integer",
+          "format": "uint64",
+          "maximum": 300.0,
+          "minimum": 1.0
+        },
+        "runtime_threads": {
+          "type": "integer",
+          "format": "uint",
+          "maximum": 256.0,
+          "minimum": 1.0
+        },
+        "schema_compatibility": {
+          "$ref": "#/definitions/SchemaCompatibility"
+        },
+        "session_secret_fd": {
+          "type": "integer",
+          "format": "uint32",
+          "maximum": 2147483647.0,
+          "minimum": 3.0
+        },
+        "shutdown_grace_seconds": {
+          "type": "integer",
+          "format": "uint64",
+          "maximum": 30.0,
+          "minimum": 1.0
+        },
+        "wal_flush_interval_ms": {
+          "type": "integer",
+          "format": "uint64",
+          "maximum": 60000.0,
+          "minimum": 1.0
+        },
+        "wal_format": {
+          "$ref": "#/definitions/WalFormat"
+        }
+      },
+      "additionalProperties": false
+    },
+    "RawModelConfig": {
+      "type": "object",
+      "required": [
+        "abstain_on_incompatible_model",
+        "allow_core_ai",
+        "allow_experimental_views",
+        "allow_foundation_models",
+        "production_registry",
+        "selected_view"
+      ],
+      "properties": {
+        "abstain_on_incompatible_model": {
+          "type": "boolean"
+        },
+        "allow_core_ai": {
+          "type": "boolean"
+        },
+        "allow_experimental_views": {
+          "type": "boolean"
+        },
+        "allow_foundation_models": {
+          "type": "boolean"
+        },
+        "production_registry": {
+          "type": "string"
+        },
+        "selected_view": {
+          "type": "string",
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9._-]+$"
+        }
+      },
+      "additionalProperties": false
+    },
+    "RawPrivacyConfig": {
+      "type": "object",
+      "required": [
+        "automatic_crash_upload",
+        "remote_export",
+        "remote_telemetry"
+      ],
+      "properties": {
+        "automatic_crash_upload": {
+          "type": "boolean",
+          "enum": [
+            false
+          ]
+        },
+        "remote_export": {
+          "type": "boolean",
+          "enum": [
+            false
+          ]
+        },
+        "remote_telemetry": {
+          "type": "boolean",
+          "enum": [
+            false
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "RawVenueConfig": {
+      "type": "object",
+      "required": [
+        "coverage_tier",
+        "enabled",
+        "id",
+        "instrument_budget",
+        "products",
+        "raw_retention_days"
+      ],
+      "properties": {
+        "coverage_tier": {
+          "$ref": "#/definitions/CoverageTier"
+        },
+        "credential_ref": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^keychain://[A-Za-z0-9._@-]{1,128}/[A-Za-z0-9._@-]{1,128}$"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "id": {
+          "type": "string",
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[a-z0-9._:-]+$"
+        },
+        "instrument_budget": {
+          "type": "integer",
+          "format": "uint32",
+          "maximum": 10000.0,
+          "minimum": 1.0
+        },
+        "products": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/VenueProduct"
+          },
+          "minItems": 1
+        },
+        "raw_retention_days": {
+          "type": "integer",
+          "format": "uint32",
+          "maximum": 30.0,
+          "minimum": 7.0
+        }
+      },
+      "additionalProperties": false
+    },
+    "SchemaCompatibility": {
+      "type": "string",
+      "enum": [
+        "strict"
+      ]
+    },
+    "VenueProduct": {
+      "type": "string",
+      "enum": [
+        "spot",
+        "linear_perpetual",
+        "inverse_perpetual",
+        "future",
+        "option",
+        "derivatives"
+      ]
+    },
+    "WalFormat": {
+      "type": "string",
+      "enum": [
+        "v1"
+      ]
+    }
+  }
 }

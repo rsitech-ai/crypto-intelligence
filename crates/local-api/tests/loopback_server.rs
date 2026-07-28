@@ -1,6 +1,6 @@
 use std::{
     net::SocketAddr,
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use domain::{
@@ -23,7 +23,7 @@ use local_api::{
             SubscribeVenueStateResponse,
         },
     },
-    server::{LoopbackServer, MarketSnapshot, ServerError},
+    server::{LoopbackServer, MarketSnapshot, ServerError, ServerLimits},
     session::{SessionDescriptor, TOKEN_LIFETIME_SECONDS},
 };
 use prost::Message;
@@ -37,6 +37,18 @@ use tonic::{
 use zeroize::Zeroizing;
 
 const SECRET_BYTES: [u8; 32] = [0x6b; 32];
+
+#[test]
+fn server_limits_reject_zero_and_unrepresentable_values() {
+    for result in [
+        ServerLimits::new(0, 1, Duration::from_secs(1), Duration::from_secs(1)),
+        ServerLimits::new(1, 0, Duration::from_secs(1), Duration::from_secs(1)),
+        ServerLimits::new(1, 1, Duration::ZERO, Duration::from_secs(1)),
+        ServerLimits::new(1, 1, Duration::from_secs(1), Duration::ZERO),
+    ] {
+        assert!(matches!(result, Err(ServerError::InvalidLimits)));
+    }
+}
 
 #[derive(Clone, PartialEq, Message)]
 struct OversizedRequest {
@@ -688,11 +700,23 @@ async fn public_server_uses_system_time_to_reject_an_already_expired_session() {
 
 #[tokio::test]
 async fn oversized_empty_method_payload_is_rejected_before_service_logic() {
-    let server = LoopbackServer::spawn(
+    let request = OversizedRequest {
+        padding: vec![0_u8; 64],
+    };
+    let encoded_length = request.encoded_len();
+    let limits = ServerLimits::new(
+        encoded_length,
+        4,
+        Duration::from_secs(1),
+        Duration::from_millis(250),
+    )
+    .expect("bounded custom server limits must validate");
+    let server = LoopbackServer::spawn_with_limits(
         "127.0.0.1:0".parse().expect("bind address must parse"),
         secret(),
         descriptor(),
         snapshot(),
+        limits,
     )
     .await
     .expect("exact loopback bind must start");
@@ -701,18 +725,55 @@ async fn oversized_empty_method_payload_is_rejected_before_service_logic() {
         .await
         .expect("local RPC client must become ready");
 
-    let result: Result<tonic::Response<CheckResponse>, tonic::Status> = grpc
+    let accepted: Result<tonic::Response<CheckResponse>, tonic::Status> = grpc
         .unary(
-            Request::new(OversizedRequest {
-                padding: vec![0_u8; 1_024],
-            }),
+            Request::new(request.clone()),
             PathAndQuery::from_static("/cmti.health.v1.HealthService/Check"),
             tonic_prost::ProstCodec::default(),
         )
         .await;
     assert_eq!(
-        result
-            .expect_err("oversized payload must fail before health logic")
+        accepted
+            .expect("payload at the configured encoded boundary must pass")
+            .into_inner()
+            .status,
+        ServingStatus::Serving as i32
+    );
+    server
+        .shutdown()
+        .await
+        .expect("boundary server must shut down cleanly");
+
+    let limits = ServerLimits::new(
+        encoded_length - 1,
+        4,
+        Duration::from_secs(1),
+        Duration::from_millis(250),
+    )
+    .expect("one-byte-smaller server limit must validate");
+    let server = LoopbackServer::spawn_with_limits(
+        "127.0.0.1:0".parse().expect("bind address must parse"),
+        secret(),
+        descriptor(),
+        snapshot(),
+        limits,
+    )
+    .await
+    .expect("exact loopback bind must start");
+    let mut grpc = Grpc::new(channel(server.local_addr()).await);
+    grpc.ready()
+        .await
+        .expect("local RPC client must become ready");
+    let rejected: Result<tonic::Response<CheckResponse>, tonic::Status> = grpc
+        .unary(
+            Request::new(request),
+            PathAndQuery::from_static("/cmti.health.v1.HealthService/Check"),
+            tonic_prost::ProstCodec::default(),
+        )
+        .await;
+    assert_eq!(
+        rejected
+            .expect_err("payload one byte above the configured limit must fail")
             .code(),
         Code::OutOfRange
     );
@@ -724,12 +785,15 @@ async fn oversized_empty_method_payload_is_rejected_before_service_logic() {
 }
 
 #[tokio::test]
-async fn shutdown_forces_a_stuck_connection_closed_within_a_fixed_bound() {
-    let server = LoopbackServer::spawn(
+async fn shutdown_forces_a_stuck_connection_closed_within_the_configured_grace() {
+    let limits = ServerLimits::new(256, 1, Duration::from_secs(2), Duration::from_millis(20))
+        .expect("short shutdown test limits must validate");
+    let server = LoopbackServer::spawn_with_limits(
         "127.0.0.1:0".parse().expect("bind address must parse"),
         secret(),
         descriptor(),
         snapshot(),
+        limits,
     )
     .await
     .expect("exact loopback bind must start");
@@ -738,8 +802,13 @@ async fn shutdown_forces_a_stuck_connection_closed_within_a_fixed_bound() {
         .expect("raw loopback connection must open");
     tokio::task::yield_now().await;
 
-    tokio::time::timeout(Duration::from_secs(2), server.shutdown())
+    let started = Instant::now();
+    tokio::time::timeout(Duration::from_millis(500), server.shutdown())
         .await
-        .expect("shutdown must have a fixed internal deadline")
+        .expect("shutdown must honor the configured internal deadline")
         .expect("forced cleanup must complete successfully");
+    assert!(
+        started.elapsed() < Duration::from_millis(200),
+        "shutdown must not silently retain the old 250 ms fixed grace"
+    );
 }

@@ -24,8 +24,8 @@ mod startup;
 mod support;
 
 use runtime::{
-    INGESTION_QUEUE_CAPACITY, IngestionEngine, RuntimeError, RuntimeHealth, RuntimeOptions,
-    WalSink, ingestion_channel, start_fixture_runtime,
+    IngestionEngine, RuntimeError, RuntimeHealth, RuntimeLimits, RuntimeOptions, WalSink,
+    ingestion_channel_with_capacity, start_fixture_runtime_with_limits,
 };
 use startup::{
     StartupError, issue_session_descriptor, open_log_file, open_wal_file, parse_session_secret,
@@ -238,14 +238,17 @@ async fn cancellation_is_observed_before_wal_recovery_and_syncs_partial_state() 
         .send(true)
         .expect("startup cancellation must send");
 
-    let error = match start_fixture_runtime(RuntimeOptions {
-        fixture: File::open(fixture_path).expect("fixture must open"),
-        wal,
-        log,
-        secret: secret(),
-        descriptor: descriptor(),
-        cancellation,
-    })
+    let error = match start_fixture_runtime_with_limits(
+        RuntimeOptions {
+            fixture: File::open(fixture_path).expect("fixture must open"),
+            wal,
+            log,
+            secret: secret(),
+            descriptor: descriptor(),
+            cancellation,
+        },
+        runtime_limits(),
+    )
     .await
     {
         Ok(_) => panic!("cancelled startup must not become ready"),
@@ -403,12 +406,13 @@ fn malformed_json_and_sequence_gap_preserve_last_healthy_snapshot() {
 }
 
 #[test]
-fn ingestion_channel_backpressures_at_exactly_1024_records() {
-    let (sender, _receiver) = ingestion_channel();
-    for sequence in 0..INGESTION_QUEUE_CAPACITY {
+fn ingestion_channel_backpressures_at_the_configured_capacity() {
+    let configured_capacity = 3;
+    let (sender, _receiver) = ingestion_channel_with_capacity(configured_capacity);
+    for sequence in 0..configured_capacity {
         sender
             .try_send(sequence.to_string().into_bytes())
-            .expect("the first 1024 records must fit");
+            .expect("records up to the configured capacity must fit");
     }
     assert!(matches!(
         sender.try_send(b"overflow".to_vec()),
@@ -435,6 +439,32 @@ async fn healthy_shutdown_completes_within_five_seconds_and_syncs_logs() {
     for forbidden in ["panic", "\"level\":\"error\"", "\"level\":\"warn\""] {
         assert!(!log.contains(forbidden));
     }
+}
+
+#[tokio::test]
+async fn error_log_level_suppresses_info_lifecycle_events() {
+    let directory = tempfile::tempdir().expect("temporary runtime root must exist");
+    let limits = RuntimeLimits::new(
+        1_024,
+        256,
+        1,
+        Duration::from_secs(2),
+        Duration::from_secs(5),
+        false,
+    )
+    .expect("error-level runtime limits must validate");
+    let running = start_with_fixture_and_limits(directory.path(), descriptor(), FIXTURE, limits)
+        .await
+        .expect("runtime must start with info logs disabled");
+    running.shutdown().await.expect("runtime must stop");
+    let log = fs::read_to_string(directory.path().join("logs/cmti.jsonl"))
+        .expect("local log must remain readable");
+    assert!(
+        !log.contains("fixture_runtime_ready")
+            && !log.contains("fixture_runtime_stopped")
+            && !log.contains("fixture_runtime_cancelled"),
+        "error logging must not retain informational lifecycle events"
+    );
 }
 
 #[tokio::test]
@@ -481,6 +511,15 @@ async fn start_with_fixture(
     descriptor: SessionDescriptor,
     fixture_contents: &str,
 ) -> Result<runtime::RunningDaemon, RuntimeError> {
+    start_with_fixture_and_limits(root, descriptor, fixture_contents, runtime_limits()).await
+}
+
+async fn start_with_fixture_and_limits(
+    root: &Path,
+    descriptor: SessionDescriptor,
+    fixture_contents: &str,
+    limits: RuntimeLimits,
+) -> Result<runtime::RunningDaemon, RuntimeError> {
     fs::create_dir_all(root.join("logs")).expect("log root must exist");
     let fixture_path = root.join("fixture.jsonl");
     fs::write(&fixture_path, fixture_contents).expect("fixture copy must write");
@@ -497,30 +536,45 @@ async fn start_with_fixture(
         .append(true)
         .open(root.join("logs/cmti.jsonl"))
         .expect("local log must open");
-    start_fixture_runtime(RuntimeOptions {
-        fixture,
-        wal,
-        log,
-        secret: secret(),
-        descriptor,
-        cancellation: tokio::sync::watch::channel(false).1,
-    })
+    start_fixture_runtime_with_limits(
+        RuntimeOptions {
+            fixture,
+            wal,
+            log,
+            secret: secret(),
+            descriptor,
+            cancellation: tokio::sync::watch::channel(false).1,
+        },
+        limits,
+    )
     .await
+}
+
+fn runtime_limits() -> RuntimeLimits {
+    RuntimeLimits::new(
+        1_024,
+        256,
+        1,
+        Duration::from_secs(2),
+        Duration::from_secs(5),
+        true,
+    )
+    .expect("test runtime limits must validate")
 }
 
 fn runtime_root() -> tempfile::TempDir {
     let root = tempfile::tempdir().expect("temporary runtime root must exist");
     fs::create_dir(root.path().join("data")).expect("data root must exist");
     fs::create_dir(root.path().join("logs")).expect("log root must exist");
+    fs::create_dir_all(root.path().join("models/public-test-artifacts"))
+        .expect("model registry must exist");
     fs::write(root.path().join("fixture.jsonl"), FIXTURE).expect("fixture must exist");
     root
 }
 
 fn effective_config(root: &Path) -> config::EffectiveConfig {
-    let defaults = include_str!("../../../configs/default.toml").replace(
-        "./fixtures/exchanges/binance/manifest.toml",
-        "fixture.jsonl",
-    );
+    let defaults = include_str!("../../../configs/default.toml")
+        .replace("fixtures/binance/btcusdt-book-v1.jsonl", "fixture.jsonl");
     config::load(
         &defaults,
         "test-default",
