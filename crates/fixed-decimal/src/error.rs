@@ -1,3 +1,19 @@
-//! fixed-decimal::error implementation boundary.
-#[derive(Clone,Debug,Eq,PartialEq)] pub struct ErrorContract { pub schema_version:u32, pub identifier:String }
-impl ErrorContract { pub fn new(identifier:impl Into<String>)->Result<Self,&'static str>{let identifier=identifier.into();if identifier.is_empty()||identifier.len()>256{return Err("invalid identifier")}Ok(Self{schema_version:1,identifier})} }
+use crate::MAX_SCALE;
+use thiserror::Error;
+
+/// Failures produced by fixed-decimal parsing and checked arithmetic.
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+pub enum DecimalError {
+    #[error("decimal text is not canonical")]
+    InvalidSyntax,
+    #[error("decimal scale exceeds {MAX_SCALE}")]
+    ScaleTooLarge,
+    #[error("fixed-decimal arithmetic overflow")]
+    ArithmeticOverflow,
+    #[error("rescaling would lose precision")]
+    PrecisionLoss,
+    #[error("{0} must be positive")]
+    NonPositive(&'static str),
+    #[error("{0} must not be negative")]
+    Negative(&'static str),
+}
