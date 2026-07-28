@@ -52,7 +52,7 @@ const APPROVED_FOUNDATION_DEPENDENCY_CAPABILITIES: &[&str] =
 const APPROVED_LOCAL_API_BUILD_SCRIPT_BLAKE3: &str =
     "c763491bf93f30a5f85ceeb4c9d853053d1788facc5748df1635047fa6b87b3a";
 const APPROVED_GENERATED_BINDING_POLICY_BLAKE3: &str =
-    "cc67fe4f3dfe64e5040d2c7138c11be0b97ea4c1dacc9ba62eebc1b58c91b70e";
+    "404ef337ba5e2ccc5425f15bde4810abf7c30f4d059b90ae00a1f3e92b1aed1a";
 
 #[derive(Debug, Eq, PartialEq)]
 struct SurfaceInventory {
@@ -133,7 +133,22 @@ impl SurfaceInventory {
                     .ok_or("package omitted manifest_path")?,
             ))?;
             let package_root = manifest.parent().ok_or("manifest omitted parent")?;
-            collect_rust_sources(&package_root.join("src"), &mut active_sources)?;
+            let source_root = fs::canonicalize(package_root.join("src"))?;
+            if !source_root.starts_with(package_root) {
+                source_ownership_capabilities.push(format!(
+                    "{package_name} package/src root {} escapes package root",
+                    source_root.display()
+                ));
+            }
+            collect_owned_rust_sources(
+                package_name,
+                "package/src",
+                &source_root,
+                &source_root,
+                &mut active_sources,
+                &mut source_ownership_capabilities,
+                &mut BTreeSet::new(),
+            )?;
             let targets = package["targets"]
                 .as_array()
                 .ok_or("package targets were not an array")?;
@@ -395,16 +410,42 @@ fn resolved_dependency_capabilities(
     Ok(capabilities.into_iter().collect())
 }
 
-fn collect_rust_sources(directory: &Path, output: &mut Vec<PathBuf>) -> Result<(), Box<dyn Error>> {
-    if !directory.is_dir() {
+fn collect_owned_rust_sources(
+    package_name: &str,
+    ownership_label: &str,
+    ownership_root: &Path,
+    directory: &Path,
+    output: &mut Vec<PathBuf>,
+    ownership_violations: &mut Vec<String>,
+    visited_directories: &mut BTreeSet<PathBuf>,
+) -> Result<(), Box<dyn Error>> {
+    let directory = fs::canonicalize(directory)?;
+    if !visited_directories.insert(directory.clone()) {
         return Ok(());
     }
     for entry in fs::read_dir(directory)? {
         let path = entry?.path();
-        if path.is_dir() {
-            collect_rust_sources(&path, output)?;
+        let canonical = fs::canonicalize(&path)?;
+        if !canonical.starts_with(ownership_root) {
+            ownership_violations.push(format!(
+                "{package_name} source {} escapes {ownership_label}",
+                canonical.display()
+            ));
+        }
+        if canonical.is_dir() {
+            if canonical.starts_with(ownership_root) {
+                collect_owned_rust_sources(
+                    package_name,
+                    ownership_label,
+                    ownership_root,
+                    &canonical,
+                    output,
+                    ownership_violations,
+                    visited_directories,
+                )?;
+            }
         } else if path.extension().is_some_and(|extension| extension == "rs") {
-            output.push(path);
+            output.push(canonical);
         }
     }
     Ok(())
@@ -449,13 +490,31 @@ fn collect_production_target_sources(
             (package_root.join("src"), "package/src")
         };
         let ownership_root = fs::canonicalize(&ownership_directory)?;
+        if !ownership_root.starts_with(&package_root) {
+            ownership_violations.push(format!(
+                "{package_name} {ownership_label} root {} escapes package root",
+                ownership_root.display()
+            ));
+        }
         if !source.starts_with(&ownership_root) {
             ownership_violations.push(format!(
                 "{package_name} target {target_name} source {} escapes {ownership_label}",
                 source.display()
             ));
         }
-        active_sources.push(source);
+        if kinds.contains("example") || kinds.contains("bench") {
+            collect_owned_rust_sources(
+                package_name,
+                ownership_label,
+                &ownership_root,
+                &ownership_root,
+                active_sources,
+                ownership_violations,
+                &mut BTreeSet::new(),
+            )?;
+        } else {
+            active_sources.push(source);
+        }
     }
     Ok(())
 }
@@ -1824,7 +1883,14 @@ fn cargo_metadata_target_outside_package_src_cannot_escape_source_ownership() {
          path = \"../../remote-helper.rs\"\n\
          \n[lib]\n\
          name = \"remote_library\"\n\
-         path = \"../../remote-library.rs\"\n",
+         path = \"../../remote-library.rs\"\n\
+         \n[[example]]\n\
+         name = \"remote-example\"\n\
+         path = \"examples/remote-example/main.rs\"\n\
+         \n[[bench]]\n\
+         name = \"remote-bench\"\n\
+         path = \"benches/remote-bench/main.rs\"\n\
+         harness = false\n",
     );
     fs::write(&manifest_path, manifest).expect("mutated cryptoriskd manifest must write");
     fs::write(
@@ -1845,6 +1911,52 @@ fn cargo_metadata_target_outside_package_src_cannot_escape_source_ownership() {
         "pub const REMOTE: &str = \"https://exchange.invalid/place-order\";\n",
     )
     .expect("escaped Cargo library source must write");
+    for (kind, directory_name) in [
+        ("example", "examples/remote-example"),
+        ("bench", "benches/remote-bench"),
+    ] {
+        let target_root = directory
+            .path()
+            .join("apps/cryptoriskd")
+            .join(directory_name);
+        fs::create_dir_all(&target_root)
+            .unwrap_or_else(|error| panic!("{kind} mutation directory must write: {error}"));
+        fs::write(
+            target_root.join("main.rs"),
+            "mod payload;\nfn main() { payload::run(); }\n",
+        )
+        .unwrap_or_else(|error| panic!("{kind} mutation entrypoint must write: {error}"));
+        fs::write(
+            target_root.join("payload.rs"),
+            concat!(
+                "pub fn run() {\n",
+                "    let _ = std::process::Command::new(\"curl\")\n",
+                "        .arg(\"https://exchange.invalid/place-order\")\n",
+                "        .status();\n",
+                "}\n",
+            ),
+        )
+        .unwrap_or_else(|error| panic!("{kind} mutation payload must write: {error}"));
+    }
+    let compile = Command::new("cargo")
+        .args([
+            "test",
+            "--workspace",
+            "--all-targets",
+            "--all-features",
+            "--locked",
+            "--offline",
+            "--no-run",
+        ])
+        .current_dir(directory.path())
+        .output()
+        .expect("all-target Cargo mutation compile must run");
+    assert!(
+        compile.status.success(),
+        "all-target Cargo mutation did not compile\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&compile.stdout),
+        String::from_utf8_lossy(&compile.stderr)
+    );
 
     let inventory = SurfaceInventory::discover(directory.path())
         .expect("escaped Cargo target mutation must remain inspectable");
@@ -1855,6 +1967,17 @@ fn cargo_metadata_target_outside_package_src_cannot_escape_source_ownership() {
                 violation.contains("source ownership") && violation.contains(escaped)
             }),
             "metadata-declared production target {escaped} outside package/src escaped capability ownership: {violations:#?}"
+        );
+    }
+    for hidden_module in [
+        "examples/remote-example/payload.rs",
+        "benches/remote-bench/payload.rs",
+    ] {
+        assert!(
+            violations
+                .iter()
+                .any(|violation| violation.contains(hidden_module)),
+            "compiled all-target module {hidden_module} escaped capability ownership: {violations:#?}"
         );
     }
 }
@@ -1887,6 +2010,23 @@ fn generated_client_policy_skips_comments_between_module_tokens() {
             generated_binding_policy::grpc_client_module(generated),
             Some("market_service_client"),
             "valid commented or raw-identifier module escaped generated-client policy"
+        );
+    }
+}
+
+#[test]
+fn generated_client_policy_cannot_be_desynchronized_by_preceding_literals() {
+    for generated in [
+        "\"/*\"; pub mod market_service_client {}\n",
+        "'/'; pub mod market_service_client {}\n",
+        "r#\"/*\"#; pub mod market_service_client {}\n",
+        "b\"/*\"; pub mod market_service_client {}\n",
+        "br#\"/*\"#; pub mod market_service_client {}\n",
+    ] {
+        assert_eq!(
+            generated_binding_policy::grpc_client_module(generated),
+            Some("market_service_client"),
+            "preceding literal desynchronized generated-client policy"
         );
     }
 }
@@ -1940,8 +2080,21 @@ fn example_and_bench_targets_are_scanned_but_cannot_escape_their_roots() {
     fs::create_dir_all(package_root.join("benches")).expect("bench root must write");
     let example = package_root.join("examples/network.rs");
     let bench = package_root.join("benches/network.rs");
-    fs::write(&example, "fn main() {}\n").expect("example source must write");
-    fs::write(&bench, "fn main() {}\n").expect("bench source must write");
+    let example_payload = package_root.join("examples/payload.rs");
+    let bench_payload = package_root.join("benches/payload.rs");
+    fs::write(&example, "mod payload;\nfn main() { payload::run(); }\n")
+        .expect("example source must write");
+    fs::write(&bench, "mod payload;\nfn main() { payload::run(); }\n")
+        .expect("bench source must write");
+    let payload = concat!(
+        "pub fn run() {\n",
+        "    let _ = std::process::Command::new(\"curl\")\n",
+        "        .arg(\"https://exchange.invalid/place-order\")\n",
+        "        .status();\n",
+        "}\n",
+    );
+    fs::write(&example_payload, payload).expect("example payload must write");
+    fs::write(&bench_payload, payload).expect("bench payload must write");
     let targets = [
         serde_json::json!({
             "name": "network-example",
@@ -1971,9 +2124,28 @@ fn example_and_bench_targets_are_scanned_but_cannot_escape_their_roots() {
     assert!(violations.is_empty(), "owned all-target sources rejected");
     assert_eq!(
         active_sources.len(),
-        2,
-        "all-target entrypoints were not scanned"
+        4,
+        "all-target conventional module trees were not scanned"
     );
+    let capabilities = active_sources
+        .iter()
+        .flat_map(|source| {
+            let text = fs::read_to_string(source).expect("all-target source must read");
+            network_capability_declarations(
+                directory.path(),
+                source,
+                &production_rust_source(&text),
+            )
+        })
+        .collect::<BTreeSet<_>>();
+    for payload in ["package/examples/payload.rs", "package/benches/payload.rs"] {
+        assert!(
+            capabilities
+                .iter()
+                .any(|capability| capability.contains(payload)),
+            "hidden all-target network module escaped capability detection: {payload}"
+        );
+    }
 
     let escaped = package_root.join("escaped-example.rs");
     fs::write(&escaped, "fn main() {}\n").expect("escaped example source must write");

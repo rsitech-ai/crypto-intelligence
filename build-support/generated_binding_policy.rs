@@ -4,53 +4,27 @@
 pub fn grpc_client_module(source: &str) -> Option<&str> {
     let bytes = source.as_bytes();
     let mut index = 0;
-    while let Some((token, next)) = next_identifier(source, index) {
-        index = next;
-        if token != "pub" {
+    while index < bytes.len() {
+        if !bytes[index].is_ascii_alphabetic() && bytes[index] != b'_' {
+            index += 1;
             continue;
         }
-        let (keyword, after_keyword) = next_identifier(source, index)?;
-        if keyword != "mod" {
-            continue;
+        let start = index;
+        while bytes
+            .get(index)
+            .is_some_and(|byte| byte.is_ascii_alphanumeric() || *byte == b'_')
+        {
+            index += 1;
         }
-        let (module, after_module) = next_identifier(source, after_keyword)?;
-        let brace = skip_trivia(bytes, after_module);
-        if bytes.get(brace) == Some(&b'{') && module.ends_with("_client") {
-            return Some(module);
+        let identifier = &source[start..index];
+        if identifier.ends_with("_client") {
+            let brace = skip_trivia(bytes, index);
+            if bytes.get(brace) == Some(&b'{') {
+                return Some(identifier);
+            }
         }
     }
     None
-}
-
-fn next_identifier(source: &str, mut index: usize) -> Option<(&str, usize)> {
-    let bytes = source.as_bytes();
-    while index < bytes.len() {
-        let after_trivia = skip_trivia(bytes, index);
-        if after_trivia != index {
-            index = after_trivia;
-            continue;
-        }
-        if bytes[index..].starts_with(b"r#")
-            && bytes
-                .get(index + 2)
-                .is_some_and(|byte| byte.is_ascii_alphabetic() || *byte == b'_')
-        {
-            index += 2;
-            break;
-        }
-        if bytes[index].is_ascii_alphabetic() || bytes[index] == b'_' {
-            break;
-        }
-        index += 1;
-    }
-    let start = index;
-    while bytes
-        .get(index)
-        .is_some_and(|byte| byte.is_ascii_alphanumeric() || *byte == b'_')
-    {
-        index += 1;
-    }
-    (start != index).then(|| (&source[start..index], index))
 }
 
 fn skip_trivia(bytes: &[u8], mut index: usize) -> usize {
@@ -119,6 +93,19 @@ mod tests {
             "pub // generated visibility\nmod market_service_client {}\n",
             "pub mod market_service_client /* generated body */ {}\n",
             "pub mod r#market_service_client {}\n",
+        ] {
+            assert_eq!(grpc_client_module(generated), Some("market_service_client"));
+        }
+    }
+
+    #[test]
+    fn preceding_literals_do_not_desynchronize_client_detection() {
+        for generated in [
+            "\"/*\"; pub mod market_service_client {}\n",
+            "'/'; pub mod market_service_client {}\n",
+            "r#\"/*\"#; pub mod market_service_client {}\n",
+            "b\"/*\"; pub mod market_service_client {}\n",
+            "br#\"/*\"#; pub mod market_service_client {}\n",
         ] {
             assert_eq!(grpc_client_module(generated), Some("market_service_client"));
         }
