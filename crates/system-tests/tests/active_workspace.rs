@@ -76,6 +76,7 @@ fn active_workspace_contains_only_implemented_packages() {
             "fixed-decimal",
             "instrument-registry",
             "local-api",
+            "metadata-store",
             "observability",
             "orderbook",
             "raw-wal",

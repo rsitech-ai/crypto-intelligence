@@ -132,6 +132,7 @@ This block is checked against the Rust enums by `cargo run -p xtask -- observabi
 | `sequence` |
 | `queue_depth` |
 | `duration_micros` |
+| `pending_wal_compression_jobs` |
 
 ### Bounded metric label values
 

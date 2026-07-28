@@ -18,8 +18,8 @@ use thiserror::Error;
 
 pub use history::{
     AppendOutcome, BatchOutcome, CatalogMutation, CatalogRecord, CatalogRevision, CorrectionInput,
-    CorrectionRecord, DefinitionRecord, DefinitionRevision, RegistryLimits, RegistryLimitsInput,
-    RevisionMetadata,
+    CorrectionRecord, DefinitionRecord, DefinitionRevision, MAXIMUM_BATCH_RECORDS, RegistryLimits,
+    RegistryLimitsInput, RevisionMetadata,
 };
 pub use resolve::{CatalogSnapshot, CatalogSnapshotEntry, ResolvedInstrument};
 
@@ -85,7 +85,7 @@ impl DerivedCatalog {
 ///
 /// Publication is atomic at the `append_batch` boundary. Failed validation
 /// never changes the visible records or current revision.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct InstrumentRegistry {
     limits: RegistryLimits,
     records: Vec<CatalogRecord>,
@@ -380,6 +380,21 @@ impl InstrumentRegistry {
             appended_records,
             idempotent_records,
         ))
+    }
+
+    /// Validate and apply a batch to an isolated copy of the current registry.
+    ///
+    /// Callers that must durably commit external state before publication can
+    /// stage once, persist `staged.records()[original.records().len()..]`, and
+    /// replace the live registry only after that commit succeeds.
+    pub fn stage_batch(
+        &self,
+        expected_revision: Option<CatalogRevision>,
+        mutations: Vec<CatalogMutation>,
+    ) -> Result<(Self, BatchOutcome), RegistryError> {
+        let mut staged = self.clone();
+        let outcome = staged.append_batch(expected_revision, mutations)?;
+        Ok((staged, outcome))
     }
 
     pub fn snapshot(&self) -> Result<Arc<CatalogSnapshot>, ResolveError> {

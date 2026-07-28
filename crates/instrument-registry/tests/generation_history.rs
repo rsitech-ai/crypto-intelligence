@@ -1153,3 +1153,41 @@ fn snapshots_are_arc_owned_and_remain_stable_after_later_registry_mutation() {
     assert_eq!(snapshot.entries().len(), 1);
     assert_eq!(registry.snapshot().expect("latest").entries().len(), 2);
 }
+
+#[test]
+fn staged_batch_isolatedly_advances_the_current_registry_without_replay() {
+    let mut registry = InstrumentRegistry::new();
+    registry
+        .append_definition(
+            spot_definition("binance", "ABCUSD", 1, 100, Some(200)),
+            metadata(10, "fixture:first"),
+        )
+        .expect("first");
+    let original_revision = registry.current_revision();
+    let original_digest = *registry
+        .snapshot()
+        .expect("original snapshot")
+        .history_digest();
+
+    let (staged, outcome) = registry
+        .stage_batch(
+            original_revision,
+            vec![CatalogMutation::Definition {
+                definition: spot_definition("binance", "ABCUSD", 2, 200, None),
+                metadata: metadata(20, "fixture:staged"),
+            }],
+        )
+        .expect("stage next batch");
+
+    assert_eq!(registry.current_revision(), original_revision);
+    assert_eq!(
+        *registry
+            .snapshot()
+            .expect("unchanged original snapshot")
+            .history_digest(),
+        original_digest
+    );
+    assert_eq!(staged.records().len(), registry.records().len() + 1);
+    assert_eq!(outcome.previous_revision(), original_revision);
+    assert_eq!(outcome.committed_revision(), staged.current_revision());
+}
