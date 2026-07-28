@@ -3,7 +3,10 @@ all-features = true
 [advisories]
 version = 2
 yanked = "deny"
-ignore = []
+# Apache Parquet 59.1.0 requires paste 1.0.15 for Arrow-reader macros.
+# RUSTSEC-2024-0436 reports maintenance status only, has no vulnerability or
+# safe upgrade, and is reviewed here while Arrow/Parquet remain spec-pinned.
+ignore = ["RUSTSEC-2024-0436"]
 [licenses]
 version = 2
 confidence-threshold = 0.8
