@@ -10,7 +10,9 @@ pub enum DecimalError {
     ScaleTooLarge,
     #[error("fixed-decimal arithmetic overflow")]
     ArithmeticOverflow,
-    #[error("rescaling would lose precision")]
+    #[error("fixed-decimal division by zero")]
+    DivisionByZero,
+    #[error("fixed-decimal operation would lose precision")]
     PrecisionLoss,
     #[error("{0} must be positive")]
     NonPositive(&'static str),

@@ -205,6 +205,145 @@ fn three_factor_product_cancels_scale_globally_before_multiplication() {
     );
 }
 
+#[test]
+fn exact_division_handles_signs_scales_and_canonical_reduction() {
+    let one = FixedDecimal::new(1, 0).expect("one");
+    let two = FixedDecimal::new(2, 0).expect("two");
+    let four = FixedDecimal::new(4, 0).expect("four");
+    let twenty_five = FixedDecimal::new(25, 0).expect("twenty five");
+    let forty = FixedDecimal::new(40, 0).expect("forty");
+    let ten = FixedDecimal::new(10, 0).expect("ten");
+    let negative_six = FixedDecimal::new(-6, 0).expect("negative six");
+    let negative_eight = FixedDecimal::new(-8, 0).expect("negative eight");
+    let one_tenth = FixedDecimal::new(1, 1).expect("one tenth");
+    let one_and_a_half = FixedDecimal::new(15, 1).expect("one and a half");
+    let one_half = FixedDecimal::new(5, 1).expect("one half");
+
+    assert_eq!(
+        one.checked_div_exact(two),
+        FixedDecimal::new(5, 1),
+        "1 / 2 must be exactly 0.5"
+    );
+    assert_eq!(
+        ten.checked_div_exact(four),
+        FixedDecimal::new(25, 1),
+        "10 / 4 must be canonically reduced to 2.5"
+    );
+    assert_eq!(
+        one.checked_div_exact(twenty_five),
+        FixedDecimal::new(4, 2),
+        "1 / 25 must balance missing powers of two"
+    );
+    assert_eq!(
+        one.checked_div_exact(forty),
+        FixedDecimal::new(25, 3),
+        "1 / 40 must balance missing powers of five"
+    );
+    assert_eq!(
+        negative_six.checked_div_exact(negative_eight),
+        FixedDecimal::new(75, 2),
+        "equal signs must produce a positive quotient"
+    );
+    assert_eq!(
+        one_tenth.checked_div_exact(two),
+        FixedDecimal::new(5, 2),
+        "source scales must be retained mathematically"
+    );
+    assert_eq!(
+        one_and_a_half.checked_div_exact(one_half),
+        FixedDecimal::new(3, 0),
+        "decimal scales must cancel before division"
+    );
+}
+
+#[test]
+fn exact_division_reports_zero_non_terminating_and_scale_failures() {
+    let zero = FixedDecimal::new(0, 0).expect("zero");
+    let one = FixedDecimal::new(1, 0).expect("one");
+    let three = FixedDecimal::new(3, 0).expect("three");
+    let two_to_the_39 = FixedDecimal::new(1_i128 << 39, 0).expect("2^39");
+
+    assert_eq!(
+        one.checked_div_exact(zero),
+        Err(DecimalError::DivisionByZero)
+    );
+    assert_eq!(
+        zero.checked_div_exact(zero),
+        Err(DecimalError::DivisionByZero)
+    );
+    assert_eq!(
+        one.checked_div_exact(three),
+        Err(DecimalError::PrecisionLoss),
+        "a repeating decimal must not be rounded"
+    );
+    assert_eq!(
+        one.checked_div_exact(two_to_the_39),
+        Err(DecimalError::PrecisionLoss),
+        "an exact decimal requiring scale 39 exceeds the authoritative limit"
+    );
+}
+
+#[test]
+fn exact_division_preserves_signed_magnitude_boundaries() {
+    let minimum = FixedDecimal::new(i128::MIN, 0).expect("minimum");
+    let negative_one = FixedDecimal::new(-1, 0).expect("negative one");
+    let one = FixedDecimal::new(1, 0).expect("one");
+    let smallest_source_fraction =
+        FixedDecimal::new(1, MAX_SCALE).expect("smallest source fraction");
+    let ten_to_the_38 = FixedDecimal::new(10_i128.pow(MAX_SCALE), 0).expect("10^38");
+
+    assert_eq!(minimum.checked_div_exact(one), Ok(minimum));
+    assert_eq!(
+        minimum.checked_div_exact(negative_one),
+        Err(DecimalError::ArithmeticOverflow),
+        "the positive magnitude of i128::MIN is not representable"
+    );
+    assert_eq!(
+        one.checked_div_exact(smallest_source_fraction),
+        Ok(ten_to_the_38),
+        "scale cancellation must avoid a naive overflowing intermediate"
+    );
+}
+
+#[test]
+fn exact_division_matches_an_independent_bounded_rational_reference() {
+    for left_mantissa in -25_i128..=25 {
+        for right_mantissa in -25_i128..=25 {
+            if right_mantissa == 0 {
+                continue;
+            }
+            for left_scale in 0_u32..=2 {
+                for right_scale in 0_u32..=2 {
+                    let left = FixedDecimal::new(left_mantissa, left_scale).expect("bounded left");
+                    let right =
+                        FixedDecimal::new(right_mantissa, right_scale).expect("bounded right");
+
+                    let denominator = right.mantissa() * 10_i128.pow(left.scale());
+                    let expected = (0_u32..=10).find_map(|result_scale| {
+                        let numerator = left.mantissa() * 10_i128.pow(right.scale() + result_scale);
+                        (numerator % denominator == 0).then(|| {
+                            FixedDecimal::new(numerator / denominator, result_scale)
+                                .expect("bounded quotient")
+                        })
+                    });
+
+                    match expected {
+                        Some(expected) => {
+                            assert_eq!(left.checked_div_exact(right), Ok(expected));
+                        }
+                        None => {
+                            assert_eq!(
+                                left.checked_div_exact(right),
+                                Err(DecimalError::PrecisionLoss)
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 proptest! {
     #![proptest_config(ProptestConfig::with_failure_persistence(
         FileFailurePersistence::Direct(concat!(
@@ -270,6 +409,24 @@ proptest! {
         .expect("bounded exact reference product is representable");
 
         prop_assert_eq!(first.checked_product3(second, third), Ok(expected));
+    }
+
+    #[test]
+    fn exact_division_inverts_a_checked_product(
+        expected_mantissa in any::<i32>(),
+        expected_scale in 0_u32..=6,
+        divisor_mantissa in any::<i32>().prop_filter("divisor must be nonzero", |value| *value != 0),
+        divisor_scale in 0_u32..=6,
+    ) {
+        let expected = FixedDecimal::new(i128::from(expected_mantissa), expected_scale)
+            .expect("bounded expected value is representable");
+        let divisor = FixedDecimal::new(i128::from(divisor_mantissa), divisor_scale)
+            .expect("bounded divisor is representable");
+        let product = expected
+            .checked_mul(divisor)
+            .expect("bounded exact product is representable");
+
+        prop_assert_eq!(product.checked_div_exact(divisor), Ok(expected));
     }
 
     #[test]
