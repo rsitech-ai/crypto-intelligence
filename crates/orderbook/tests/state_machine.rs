@@ -1,4 +1,7 @@
-use event_envelope::{BookDelta, BookLevel, BookSnapshot};
+use event_envelope::{
+    BookDelta, BookLevel, BookSnapshot, EventEnvelope, QualityFlags, SnapshotKind,
+    UncheckedEventMetadata, UncheckedEventPayload,
+};
 use fixed_decimal::{FixedDecimal, Price, Quantity};
 use orderbook::{
     ApplyResult, BookClassification, BookConfig, BookError, BookSession, BookState, ChecksumPolicy,
@@ -99,6 +102,25 @@ fn stale_connection_epoch_and_generation_are_rejected_without_mutation() {
         Err(BookError::StaleInstrumentGeneration)
     );
     assert_eq!(engine.snapshot().expect("book remains trusted"), before);
+}
+
+#[test]
+fn same_symbol_spot_and_perpetual_events_never_cross_instrument_shards() {
+    let spot_event = product_snapshot_event(ProductType::Spot);
+    let perpetual_event = product_snapshot_event(ProductType::Perpetual);
+    let mut spot_engine =
+        OrderBookEngine::new(book_config_for(ProductType::Spot)).expect("spot config");
+    let mut perpetual_engine =
+        OrderBookEngine::new(book_config_for(ProductType::Perpetual)).expect("perpetual config");
+
+    assert_eq!(
+        spot_engine.apply_event(&perpetual_event),
+        Err(BookError::WrongInstrument)
+    );
+    assert_eq!(
+        perpetual_engine.apply_event(&spot_event),
+        Err(BookError::WrongInstrument)
+    );
 }
 
 #[test]
@@ -376,8 +398,18 @@ fn engine() -> OrderBookEngine {
 }
 
 fn book_config() -> BookConfig {
+    book_config_for(ProductType::Spot)
+}
+
+fn book_config_for(product_type: ProductType) -> BookConfig {
     BookConfig {
-        instrument: instrument(1),
+        instrument: InstrumentId::new_for_product(
+            VenueId::new("test").expect("venue"),
+            "BTCUSDT",
+            product_type,
+            1,
+        )
+        .expect("instrument"),
         price_tick: price("0.1"),
         quantity_step: quantity("0.1"),
         max_levels_per_side: 8,
@@ -390,6 +422,45 @@ fn book_config() -> BookConfig {
     }
 }
 
+fn product_snapshot_event(product_type: ProductType) -> EventEnvelope {
+    let venue = VenueId::new("test").expect("venue");
+    EventEnvelope::new(
+        UncheckedEventMetadata {
+            schema_version: 3,
+            source: SourceId::new(SourceKind::Exchange, "test", 1).expect("source"),
+            venue: Some(venue.clone()),
+            instrument_id: Some(
+                InstrumentId::new_for_product(venue, "BTCUSDT", product_type, 1)
+                    .expect("instrument"),
+            ),
+            exchange_timestamp: Some(UnixNanos::new(1)),
+            exchange_transaction_timestamp: None,
+            receive_wall_timestamp: UnixNanos::new(2),
+            receive_monotonic_ns: 2,
+            normalization_timestamp: UnixNanos::new(3),
+            connection_started_at: UnixNanos::new(1),
+            sequence_number: Some(1),
+            previous_sequence_number: None,
+            connection_epoch: 1,
+            subscription_epoch: 1,
+            snapshot_kind: SnapshotKind::Snapshot,
+            source_checksum: None,
+            raw_payload_hash: [1; 32],
+            parser_version: "test-parser".to_owned(),
+            normalizer_version: "test-normalizer".to_owned(),
+            ingestion_instance: "test".to_owned(),
+            quality_score_ppm: 1_000_000,
+            quality_flags: QualityFlags::NONE,
+        },
+        UncheckedEventPayload::BookSnapshot(BookSnapshot {
+            bids: Vec::new(),
+            asks: Vec::new(),
+            last_sequence: 1,
+        }),
+    )
+    .expect("product snapshot event")
+}
+
 fn session(
     connection_epoch: u64,
     subscription_epoch: u64,
@@ -400,10 +471,6 @@ fn session(
         subscription_epoch,
         instrument_generation,
     }
-}
-
-fn instrument(generation: u32) -> InstrumentId {
-    InstrumentId::new(VenueId::new("test").unwrap(), "BTCUSDT", generation).unwrap()
 }
 
 fn snapshot(last_sequence: u64, bids: &[(&str, &str)], asks: &[(&str, &str)]) -> BookSnapshot {
@@ -448,4 +515,4 @@ fn quantity(value: &str) -> Quantity {
     Quantity::new(FixedDecimal::parse_canonical(value).expect("canonical quantity"))
         .expect("nonnegative quantity")
 }
-use domain::{InstrumentId, VenueId};
+use domain::{InstrumentId, ProductType, SourceId, SourceKind, UnixNanos, VenueId};

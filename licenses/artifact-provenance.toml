@@ -27,7 +27,71 @@ sha256 = "38ea6d05b7e4b161cd065f900717aa1e0c481174a61c76d2e053f5dbbc0fcf1a"
 
 [[category.artifact]]
 path = "fixtures/exchanges/binance/manifest.toml"
-sha256 = "b23066b165bc9d43f7dcd4d702a933d47bf6dcf91cc7b1b2045117631f8791ed"
+sha256 = "e2ed77e71c06b415f0f047b68a1024372b7aadaa0fe5b45bf74b866232561940"
+
+[[category.artifact]]
+path = "fixtures/exchanges/binance/certification.json"
+sha256 = "51779dca0150f6c92f3fceeb9ed70f527cae9e64c18d8673dc3e1d84177bf990"
+
+[[category.artifact]]
+path = "fixtures/exchanges/binance/certification.sha256"
+sha256 = "9937e623394d8d2e2d8c7877656817fc277e032761f247d35607d724bdfc69ae"
+
+[[category.artifact]]
+path = "fixtures/exchanges/binance/documentation-review.toml"
+sha256 = "ecabb894b03e26ce890b1b10984b081f1f9e0e3ee56450cc9db3717e86bc863b"
+
+[[category.artifact]]
+path = "fixtures/exchanges/binance/spot-aggregate-trade.json"
+sha256 = "61fae1213183e6afd376d19bc53e1bfc0c70948b4422f61679681e6c5badf8a3"
+
+[[category.artifact]]
+path = "fixtures/exchanges/binance/spot-book-ticker.json"
+sha256 = "ff933af6c9974e7f9cd216fcccc71748d0703f81611b34e3d17e21445d41d172"
+
+[[category.artifact]]
+path = "fixtures/exchanges/binance/spot-depth-update.json"
+sha256 = "0cf55a8e418b5886fd25d6aeefe56e0effb0f076d73745fcf43c74138adc1e27"
+
+[[category.artifact]]
+path = "fixtures/exchanges/binance/spot-depth-snapshot.json"
+sha256 = "dd7a81159bb4171a2e2c3de4957a9f9d71c80f282f15cd6d8d3ef566a315ba5c"
+
+[[category.artifact]]
+path = "fixtures/exchanges/binance/spot-exchange-info.json"
+sha256 = "f57d8bae266581cadec1bdc4052732662574a9c4a4f2a7d6ce6699191a67a736"
+
+[[category.artifact]]
+path = "fixtures/exchanges/binance/system-status.json"
+sha256 = "8c75e46c3003005d68fc1b8b2f6ebc705998a38f93e3247393d2c784c57aa68a"
+
+[[category.artifact]]
+path = "fixtures/exchanges/binance/usdm-aggregate-trade.json"
+sha256 = "4675ec6ba5dd1650aaff654f96e06f8175bb563e305638d6818af960d4206610"
+
+[[category.artifact]]
+path = "fixtures/exchanges/binance/usdm-depth-update.json"
+sha256 = "95a69ac4296bb873e46c73c24e34cc89c5099f8d3aa39b1e125c598b97c0ac52"
+
+[[category.artifact]]
+path = "fixtures/exchanges/binance/usdm-depth-snapshot.json"
+sha256 = "ffe08fbe424a0e39f3e63546f1395ab99c996ef5898e1f93727ec67e4d7cddf2"
+
+[[category.artifact]]
+path = "fixtures/exchanges/binance/usdm-exchange-info.json"
+sha256 = "b92da0e747c559f92acdc6f147227dc9ef72d18cb07259f115f1e77bd57ac168"
+
+[[category.artifact]]
+path = "fixtures/exchanges/binance/usdm-liquidation.json"
+sha256 = "c7f4c29aa6c9813b8fb87b8e5f7a674e2824b233605598fb16d3e6209b65bca2"
+
+[[category.artifact]]
+path = "fixtures/exchanges/binance/usdm-mark-price.json"
+sha256 = "a653fc193f2bc3c44489262d2076c048f3427578ed7ac85607a2f1874c005bd0"
+
+[[category.artifact]]
+path = "fixtures/exchanges/binance/usdm-open-interest.json"
+sha256 = "946ed4f3eccdec4231b50b14cb365b98b5f19b7142b435d1f479da0703ed6a46"
 
 [[category.artifact]]
 path = "fixtures/exchanges/bybit/manifest.toml"

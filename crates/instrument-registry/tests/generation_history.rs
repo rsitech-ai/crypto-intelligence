@@ -63,12 +63,46 @@ fn spot_definition(
     .expect("valid fixture definition")
 }
 
+fn perpetual_definition(
+    venue: &str,
+    symbol: &str,
+    generation: u32,
+    listing: i64,
+) -> InstrumentDefinition {
+    let quote = fiat_asset("USD");
+    InstrumentDefinition::new(InstrumentDefinitionInput {
+        id: InstrumentId::new_for_product(
+            VenueId::new(venue).expect("fixture venue"),
+            symbol,
+            ProductType::Perpetual,
+            generation,
+        )
+        .expect("fixture instrument"),
+        product_type: ProductType::Perpetual,
+        base_asset: native_asset("bitcoin", "BTC"),
+        quote_asset: quote.clone(),
+        settlement_asset: quote,
+        contract_multiplier: decimal("1"),
+        contract_value_unit: ContractValueUnit::Base,
+        contract_kind: ContractKind::Linear,
+        expiry_time: None,
+        strike: None,
+        option_side: None,
+        price_tick: price("0.01"),
+        quantity_step: quantity("0.001"),
+        listing_time: UnixNanos::new(listing),
+        delisting_time: None,
+    })
+    .expect("valid fixture definition")
+}
+
 fn option_definition() -> InstrumentDefinition {
     let quote = fiat_asset("USD");
     InstrumentDefinition::new(InstrumentDefinitionInput {
-        id: InstrumentId::new(
+        id: InstrumentId::new_for_product(
             VenueId::new("deribit").expect("fixture venue"),
             "BTC-30JUN30-50000-C",
+            ProductType::Option,
             7,
         )
         .expect("fixture option"),
@@ -174,6 +208,51 @@ fn pinned_snapshots_resolve_half_open_intervals_without_guessing_across_gaps() {
             .id()
             .generation(),
         2
+    );
+}
+
+#[test]
+fn overlapping_spot_and_perpetual_symbols_resolve_only_with_product_type() {
+    let venue = VenueId::new("binance").expect("venue");
+    let mut registry = InstrumentRegistry::new();
+    registry
+        .append_definition(
+            spot_definition("binance", "BTCUSDT", 1, 100, None),
+            metadata(10, "fixture:spot"),
+        )
+        .expect("spot definition");
+    registry
+        .append_definition(
+            perpetual_definition("binance", "BTCUSDT", 1, 100),
+            metadata(10, "fixture:perpetual"),
+        )
+        .expect("perpetual definition");
+    let snapshot = registry.snapshot().expect("snapshot");
+
+    assert_eq!(
+        snapshot.resolve(&venue, "BTCUSDT", UnixNanos::new(200)),
+        Err(ResolveError::AmbiguousProductType)
+    );
+    assert_eq!(
+        snapshot
+            .resolve_for_product(&venue, "BTCUSDT", ProductType::Spot, UnixNanos::new(200))
+            .expect("spot")
+            .definition()
+            .product_type(),
+        ProductType::Spot
+    );
+    assert_eq!(
+        snapshot
+            .resolve_for_product(
+                &venue,
+                "BTCUSDT",
+                ProductType::Perpetual,
+                UnixNanos::new(200)
+            )
+            .expect("perpetual")
+            .definition()
+            .product_type(),
+        ProductType::Perpetual
     );
 }
 

@@ -66,6 +66,52 @@ public nonisolated enum Cmti_Market_V1_SnapshotHealth: SwiftProtobuf.Enum, Swift
 
 }
 
+public nonisolated enum Cmti_Market_V1_ProductType: SwiftProtobuf.Enum, Swift.CaseIterable {
+  public typealias RawValue = Int
+  case unspecified // = 0
+  case spot // = 1
+  case perpetual // = 2
+  case future // = 3
+  case option // = 4
+  case UNRECOGNIZED(Int)
+
+  public init() {
+    self = .unspecified
+  }
+
+  public init?(rawValue: Int) {
+    switch rawValue {
+    case 0: self = .unspecified
+    case 1: self = .spot
+    case 2: self = .perpetual
+    case 3: self = .future
+    case 4: self = .option
+    default: self = .UNRECOGNIZED(rawValue)
+    }
+  }
+
+  public var rawValue: Int {
+    switch self {
+    case .unspecified: return 0
+    case .spot: return 1
+    case .perpetual: return 2
+    case .future: return 3
+    case .option: return 4
+    case .UNRECOGNIZED(let i): return i
+    }
+  }
+
+  // The compiler won't synthesize support with the UNRECOGNIZED case.
+  public static let allCases: [Cmti_Market_V1_ProductType] = [
+    .unspecified,
+    .spot,
+    .perpetual,
+    .future,
+    .option,
+  ]
+
+}
+
 public nonisolated struct Cmti_Market_V1_ListAssetsRequest: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
@@ -119,6 +165,8 @@ public nonisolated struct Cmti_Market_V1_GetInstrumentRequest: Sendable {
 
   public var generation: UInt32 = 0
 
+  public var productType: Cmti_Market_V1_ProductType = .unspecified
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -152,6 +200,8 @@ public nonisolated struct Cmti_Market_V1_GetInstrumentResponse: Sendable {
   public mutating func clearQuoteAsset() {self._quoteAsset = nil}
 
   public var venueID: String = String()
+
+  public var productType: Cmti_Market_V1_ProductType = .unspecified
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -291,6 +341,8 @@ public nonisolated struct Cmti_Market_V1_GetOrderBookSnapshotResponse: Sendable 
 
   public var freshnessMillis: UInt64 = 0
 
+  public var productType: Cmti_Market_V1_ProductType = .unspecified
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -302,6 +354,10 @@ fileprivate nonisolated let _protobuf_package = "cmti.market.v1"
 
 nonisolated extension Cmti_Market_V1_SnapshotHealth: SwiftProtobuf._ProtoNameProviding {
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0SNAPSHOT_HEALTH_UNSPECIFIED\0\u{1}SNAPSHOT_HEALTH_HEALTHY\0\u{1}SNAPSHOT_HEALTH_DEGRADED\0\u{1}SNAPSHOT_HEALTH_STALE\0\u{1}SNAPSHOT_HEALTH_UNAVAILABLE\0")
+}
+
+nonisolated extension Cmti_Market_V1_ProductType: SwiftProtobuf._ProtoNameProviding {
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0PRODUCT_TYPE_UNSPECIFIED\0\u{1}PRODUCT_TYPE_SPOT\0\u{1}PRODUCT_TYPE_PERPETUAL\0\u{1}PRODUCT_TYPE_FUTURE\0\u{1}PRODUCT_TYPE_OPTION\0")
 }
 
 nonisolated extension Cmti_Market_V1_ListAssetsRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
@@ -404,7 +460,7 @@ nonisolated extension Cmti_Market_V1_ListVenuesResponse: SwiftProtobuf.Message, 
 
 nonisolated extension Cmti_Market_V1_GetInstrumentRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".GetInstrumentRequest"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}instrument_id\0\u{1}generation\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}instrument_id\0\u{1}generation\0\u{3}product_type\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -414,6 +470,7 @@ nonisolated extension Cmti_Market_V1_GetInstrumentRequest: SwiftProtobuf.Message
       switch fieldNumber {
       case 1: try { try decoder.decodeSingularStringField(value: &self.instrumentID) }()
       case 2: try { try decoder.decodeSingularUInt32Field(value: &self.generation) }()
+      case 3: try { try decoder.decodeSingularEnumField(value: &self.productType) }()
       default: break
       }
     }
@@ -426,12 +483,16 @@ nonisolated extension Cmti_Market_V1_GetInstrumentRequest: SwiftProtobuf.Message
     if self.generation != 0 {
       try visitor.visitSingularUInt32Field(value: self.generation, fieldNumber: 2)
     }
+    if self.productType != .unspecified {
+      try visitor.visitSingularEnumField(value: self.productType, fieldNumber: 3)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
   public static func ==(lhs: Cmti_Market_V1_GetInstrumentRequest, rhs: Cmti_Market_V1_GetInstrumentRequest) -> Bool {
     if lhs.instrumentID != rhs.instrumentID {return false}
     if lhs.generation != rhs.generation {return false}
+    if lhs.productType != rhs.productType {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -439,7 +500,7 @@ nonisolated extension Cmti_Market_V1_GetInstrumentRequest: SwiftProtobuf.Message
 
 nonisolated extension Cmti_Market_V1_GetInstrumentResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".GetInstrumentResponse"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}instrument_id\0\u{1}generation\0\u{3}base_asset\0\u{3}quote_asset\0\u{3}venue_id\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}instrument_id\0\u{1}generation\0\u{3}base_asset\0\u{3}quote_asset\0\u{3}venue_id\0\u{3}product_type\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -452,6 +513,7 @@ nonisolated extension Cmti_Market_V1_GetInstrumentResponse: SwiftProtobuf.Messag
       case 3: try { try decoder.decodeSingularMessageField(value: &self._baseAsset) }()
       case 4: try { try decoder.decodeSingularMessageField(value: &self._quoteAsset) }()
       case 5: try { try decoder.decodeSingularStringField(value: &self.venueID) }()
+      case 6: try { try decoder.decodeSingularEnumField(value: &self.productType) }()
       default: break
       }
     }
@@ -477,6 +539,9 @@ nonisolated extension Cmti_Market_V1_GetInstrumentResponse: SwiftProtobuf.Messag
     if !self.venueID.isEmpty {
       try visitor.visitSingularStringField(value: self.venueID, fieldNumber: 5)
     }
+    if self.productType != .unspecified {
+      try visitor.visitSingularEnumField(value: self.productType, fieldNumber: 6)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -486,6 +551,7 @@ nonisolated extension Cmti_Market_V1_GetInstrumentResponse: SwiftProtobuf.Messag
     if lhs._baseAsset != rhs._baseAsset {return false}
     if lhs._quoteAsset != rhs._quoteAsset {return false}
     if lhs.venueID != rhs.venueID {return false}
+    if lhs.productType != rhs.productType {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -722,7 +788,7 @@ nonisolated extension Cmti_Market_V1_GetOrderBookSnapshotRequest: SwiftProtobuf.
 
 nonisolated extension Cmti_Market_V1_GetOrderBookSnapshotResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".GetOrderBookSnapshotResponse"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}source\0\u{1}symbol\0\u{1}generation\0\u{1}sequence\0\u{3}best_bid\0\u{3}best_ask\0\u{1}health\0\u{3}event_unix_nanos\0\u{3}receive_unix_nanos\0\u{3}freshness_millis\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}source\0\u{1}symbol\0\u{1}generation\0\u{1}sequence\0\u{3}best_bid\0\u{3}best_ask\0\u{1}health\0\u{3}event_unix_nanos\0\u{3}receive_unix_nanos\0\u{3}freshness_millis\0\u{3}product_type\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -740,6 +806,7 @@ nonisolated extension Cmti_Market_V1_GetOrderBookSnapshotResponse: SwiftProtobuf
       case 8: try { try decoder.decodeSingularSInt64Field(value: &self.eventUnixNanos) }()
       case 9: try { try decoder.decodeSingularSInt64Field(value: &self.receiveUnixNanos) }()
       case 10: try { try decoder.decodeSingularUInt64Field(value: &self.freshnessMillis) }()
+      case 11: try { try decoder.decodeSingularEnumField(value: &self.productType) }()
       default: break
       }
     }
@@ -776,6 +843,9 @@ nonisolated extension Cmti_Market_V1_GetOrderBookSnapshotResponse: SwiftProtobuf
     if self.freshnessMillis != 0 {
       try visitor.visitSingularUInt64Field(value: self.freshnessMillis, fieldNumber: 10)
     }
+    if self.productType != .unspecified {
+      try visitor.visitSingularEnumField(value: self.productType, fieldNumber: 11)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -790,6 +860,7 @@ nonisolated extension Cmti_Market_V1_GetOrderBookSnapshotResponse: SwiftProtobuf
     if lhs.eventUnixNanos != rhs.eventUnixNanos {return false}
     if lhs.receiveUnixNanos != rhs.receiveUnixNanos {return false}
     if lhs.freshnessMillis != rhs.freshnessMillis {return false}
+    if lhs.productType != rhs.productType {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

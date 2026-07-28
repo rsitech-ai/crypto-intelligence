@@ -20,7 +20,7 @@ use connector_core::{
     SequenceSemantics, SnapshotMethod, SourceTimestampPrecision, StreamClass,
     SupervisorCommandKind, TradeSemantics, WalRejectionReason,
 };
-use domain::{InstrumentId, SourceId, SourceKind, UnixNanos, VenueId};
+use domain::{InstrumentId, ProductType, SourceId, SourceKind, UnixNanos, VenueId};
 use event_envelope::{
     BookDelta, BookSnapshot, EventEnvelope, EventType, QualityFlags, SnapshotKind,
     UncheckedEventMetadata, UncheckedEventPayload, VenueState, VenueStatus,
@@ -1198,6 +1198,68 @@ fn book_event(
     .expect("fixture book event")
 }
 
+fn product_book_event(
+    product_type: ProductType,
+    snapshot: bool,
+    sequence: u64,
+    raw_payload_hash: [u8; 32],
+) -> EventEnvelope {
+    let venue = VenueId::new("binance").expect("fixture venue");
+    let payload = if snapshot {
+        UncheckedEventPayload::BookSnapshot(BookSnapshot {
+            bids: Vec::new(),
+            asks: Vec::new(),
+            last_sequence: sequence,
+        })
+    } else {
+        UncheckedEventPayload::BookDelta(BookDelta {
+            bids: Vec::new(),
+            asks: Vec::new(),
+            first_sequence: sequence,
+            last_sequence: sequence,
+        })
+    };
+    EventEnvelope::new(
+        UncheckedEventMetadata {
+            schema_version: 3,
+            source: source(),
+            venue: Some(venue.clone()),
+            instrument_id: Some(
+                InstrumentId::new_for_product(venue, "BTCUSDT", product_type, 1)
+                    .expect("fixture instrument"),
+            ),
+            exchange_timestamp: Some(UnixNanos::new(1)),
+            exchange_transaction_timestamp: None,
+            receive_wall_timestamp: UnixNanos::new(2),
+            receive_monotonic_ns: 2,
+            normalization_timestamp: UnixNanos::new(3),
+            connection_started_at: UnixNanos::new(1),
+            sequence_number: Some(sequence),
+            previous_sequence_number: if snapshot {
+                None
+            } else {
+                sequence.checked_sub(1)
+            },
+            connection_epoch: 3,
+            subscription_epoch: 1,
+            snapshot_kind: if snapshot {
+                SnapshotKind::Snapshot
+            } else {
+                SnapshotKind::Delta
+            },
+            source_checksum: None,
+            raw_payload_hash,
+            parser_version: "parser-v1".to_owned(),
+            normalizer_version: "normalizer-v1".to_owned(),
+            ingestion_instance: "ingestion-1".to_owned(),
+            quality_score_ppm: 1_000_000,
+            quality_flags: QualityFlags::NONE,
+        },
+        payload,
+    )
+    .expect("fixture product-aware book event")
+}
+
 #[tokio::test]
 async fn raw_capture_is_not_acknowledged_until_the_wal_worker_supplies_a_position() {
     let wal = wal_proof(b"raw");
@@ -1228,6 +1290,8 @@ async fn raw_capture_is_not_acknowledged_until_the_wal_worker_supplies_a_positio
         .expect("durable receipt must arrive");
     assert_eq!(receipt.source(), &source());
     assert_eq!(receipt.payload_hash(), blake3::hash(b"raw").as_bytes());
+    assert_eq!(receipt.receive_wall_time(), UnixNanos::new(2));
+    assert_eq!(receipt.receive_monotonic_ns(), 2);
 }
 
 #[tokio::test]
@@ -1270,7 +1334,7 @@ async fn wal_stream_source_cannot_acknowledge_capture_for_another_source() {
             wal.authority.clone(),
             foreign.clone(),
             NonZeroU32::new(7).expect("stream"),
-            1,
+            2,
             64,
         )
         .expect("bounded raw channel");
@@ -1677,6 +1741,49 @@ async fn required_book_delta_overflow_stays_invalid_until_resynchronized() {
 }
 
 #[tokio::test]
+async fn same_symbol_spot_and_perpetual_book_streams_do_not_share_loss_state() {
+    let receipt = acknowledged_receipt(source(), NonZeroU64::new(3).expect("epoch"), b"raw").await;
+    let venue = VenueId::new("binance").expect("venue");
+    let subscription = NonZeroU64::new(1).expect("subscription");
+    let channel = BoundedNormalizedChannel::with_book_streams(
+        1,
+        16_384,
+        std::num::NonZeroUsize::new(2).expect("nonzero"),
+        [ProductType::Spot, ProductType::Perpetual].map(|product| {
+            BookStreamKey::new(
+                source(),
+                InstrumentId::new_for_product(venue.clone(), "BTCUSDT", product, 1)
+                    .expect("instrument"),
+                subscription,
+            )
+        }),
+    )
+    .expect("product-aware channel");
+    let (sink, mut receiver) = channel.split();
+    let raw_hash = *blake3::hash(b"raw").as_bytes();
+    let spot_delta = NormalizedOutput::try_new(
+        receipt.clone(),
+        product_book_event(ProductType::Spot, false, 2, raw_hash),
+    )
+    .expect("spot delta");
+    let perpetual_delta = NormalizedOutput::try_new(
+        receipt,
+        product_book_event(ProductType::Perpetual, false, 2, raw_hash),
+    )
+    .expect("perpetual delta");
+
+    sink.try_send(spot_delta.clone())
+        .expect("fill required lane");
+    assert_eq!(
+        sink.try_send(spot_delta),
+        Err(ChannelError::ResynchronizationRequired)
+    );
+    receiver.recv().await.expect("drain spot event");
+    sink.try_send(perpetual_delta)
+        .expect("perpetual stream remains independently trusted");
+}
+
+#[tokio::test]
 async fn snapshot_from_another_receiver_cannot_clear_invalidation() {
     let receipt = acknowledged_receipt(source(), NonZeroU64::new(3).expect("epoch"), b"raw").await;
     let venue = VenueId::new("binance").expect("venue");
@@ -1838,7 +1945,7 @@ async fn lossy_capacity_outcomes_are_auditable_and_retain_the_original_output() 
             source(),
             3,
             1,
-            1,
+            2,
             Some("BTCUSDT"),
             *blake3::hash(b"loss").as_bytes(),
         ),
@@ -1882,7 +1989,7 @@ async fn lossy_capacity_outcomes_are_auditable_and_retain_the_original_output() 
             source(),
             3,
             1,
-            3,
+            2,
             Some("SOLUSDT"),
             *blake3::hash(b"loss").as_bytes(),
         ),
@@ -1906,7 +2013,7 @@ async fn lossy_capacity_outcomes_are_auditable_and_retain_the_original_output() 
             source(),
             3,
             1,
-            4,
+            2,
             Some("XRPUSDT"),
             *blake3::hash(b"loss").as_bytes(),
         ),
@@ -1943,7 +2050,7 @@ async fn sampling_is_scoped_per_stream_and_has_a_hard_registry_bound() {
                 source(),
                 3,
                 1,
-                10,
+                2,
                 Some(symbol),
                 *blake3::hash(b"selectors").as_bytes(),
             ),
@@ -1966,7 +2073,7 @@ async fn sampling_is_scoped_per_stream_and_has_a_hard_registry_bound() {
             source(),
             next_epoch.get(),
             1,
-            1,
+            2,
             Some("BTCUSDT"),
             *blake3::hash(b"next-selector").as_bytes(),
         ),
@@ -1991,7 +2098,7 @@ async fn sampling_is_scoped_per_stream_and_has_a_hard_registry_bound() {
                 source(),
                 3,
                 1,
-                1,
+                2,
                 Some(&symbol),
                 *blake3::hash(b"selectors").as_bytes(),
             ),
@@ -2009,7 +2116,7 @@ async fn sampling_is_scoped_per_stream_and_has_a_hard_registry_bound() {
             source(),
             3,
             1,
-            1,
+            2,
             Some("OVERFLOW"),
             *blake3::hash(b"selectors").as_bytes(),
         ),

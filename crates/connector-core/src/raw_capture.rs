@@ -7,7 +7,9 @@ use std::{
 };
 
 use domain::{SourceId, UnixNanos};
-use raw_wal::manager::{WalAppendAuthority, WalAppendProof, WalIdentity, WalPosition};
+use raw_wal::manager::{
+    VerifiedRecoveredRecord, WalAppendAuthority, WalAppendProof, WalIdentity, WalPosition,
+};
 use thiserror::Error;
 use tokio::sync::{
     OwnedSemaphorePermit, Semaphore,
@@ -119,9 +121,43 @@ pub struct DurableRawReference {
     stream_id: NonZeroU32,
     connection_epoch: NonZeroU64,
     record_sequence: NonZeroU64,
+    receive_wall_time: UnixNanos,
+    receive_monotonic_ns: u64,
 }
 
 impl DurableRawReference {
+    pub fn try_from_recovered(
+        source: SourceId,
+        record: &VerifiedRecoveredRecord<'_>,
+    ) -> Result<Self, RawCaptureError> {
+        let metadata = record.metadata();
+        let stream_id =
+            NonZeroU32::new(metadata.stream_id).ok_or(RawCaptureError::WalProofMismatch)?;
+        let connection_epoch =
+            NonZeroU64::new(metadata.connection_epoch).ok_or(RawCaptureError::WalProofMismatch)?;
+        let record_sequence =
+            NonZeroU64::new(metadata.record_sequence).ok_or(RawCaptureError::WalProofMismatch)?;
+        if metadata.flags != 0
+            || record.stream_source_name() != wal_stream_source_identity(&source)
+            || record.payload().is_empty()
+            || record.payload().len() > MAX_RAW_CAPTURE_BYTES
+            || record.payload_hash() != blake3::hash(record.payload()).as_bytes()
+        {
+            return Err(RawCaptureError::WalProofMismatch);
+        }
+        Ok(Self {
+            wal_identity: record.wal_identity(),
+            position: record.position(),
+            payload_hash: *record.payload_hash(),
+            source,
+            stream_id,
+            connection_epoch,
+            record_sequence,
+            receive_wall_time: UnixNanos::new(metadata.receive_wall_time_ns),
+            receive_monotonic_ns: metadata.receive_monotonic_time_ns,
+        })
+    }
+
     pub const fn wal_identity(&self) -> WalIdentity {
         self.wal_identity
     }
@@ -148,6 +184,14 @@ impl DurableRawReference {
 
     pub const fn record_sequence(&self) -> NonZeroU64 {
         self.record_sequence
+    }
+
+    pub const fn receive_wall_time(&self) -> UnixNanos {
+        self.receive_wall_time
+    }
+
+    pub const fn receive_monotonic_ns(&self) -> u64 {
+        self.receive_monotonic_ns
     }
 }
 
@@ -203,6 +247,10 @@ pub struct DurableRawCaptureClient {
 }
 
 impl DurableRawCaptureClient {
+    pub const fn stream_id(&self) -> NonZeroU32 {
+        self.stream_id
+    }
+
     pub async fn submit(
         &self,
         capture: RawCapture,
@@ -327,6 +375,8 @@ impl PendingRawCapture {
             stream_id: self.capture.stream_id,
             connection_epoch: self.capture.connection_epoch,
             record_sequence: self.capture.record_sequence,
+            receive_wall_time: self.capture.receive_wall_time,
+            receive_monotonic_ns: self.capture.receive_monotonic_ns,
         };
         self.receipt
             .send(Ok(reference))

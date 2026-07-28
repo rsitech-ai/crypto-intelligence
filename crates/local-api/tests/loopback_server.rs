@@ -18,7 +18,7 @@ use local_api::{
         },
         health_v1::{CheckRequest, CheckResponse, ServingStatus},
         market_v1::{
-            GetOrderBookSnapshotRequest, GetOrderBookSnapshotResponse, SnapshotHealth,
+            GetOrderBookSnapshotRequest, GetOrderBookSnapshotResponse, ProductType, SnapshotHealth,
             SubscribeAssetStateRequest, SubscribeAssetStateResponse, SubscribeVenueStateRequest,
             SubscribeVenueStateResponse,
         },
@@ -318,6 +318,7 @@ async fn authenticated_snapshot_returns_only_canonical_authoritative_fields() {
     assert_eq!(response.source, "binance");
     assert_eq!(response.symbol, "BTCUSDT");
     assert_eq!(response.generation, 7);
+    assert_eq!(response.product_type, ProductType::Spot as i32);
     assert_eq!(response.sequence, 9_001);
     assert_eq!(response.best_bid, "67234.1");
     assert_eq!(response.best_ask, "67234.11");

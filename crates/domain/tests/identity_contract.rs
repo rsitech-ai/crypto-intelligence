@@ -1,4 +1,4 @@
-use domain::{DomainError, InstrumentId, SourceId, SourceKind, VenueId};
+use domain::{DomainError, InstrumentId, ProductType, SourceId, SourceKind, VenueId};
 
 #[test]
 fn generation_zero_is_rejected() {
@@ -61,4 +61,34 @@ fn identities_reject_whitespace_and_punctuation_outside_the_contract() {
 
     let venue = VenueId::new("binance").expect("venue is valid");
     assert!(InstrumentId::new(venue, "BTC/USDT", 1).is_err());
+}
+
+#[test]
+fn product_type_is_part_of_instrument_identity_and_legacy_ids_remain_spot() {
+    let venue = VenueId::new("binance").expect("venue");
+    let spot = InstrumentId::new(venue.clone(), "BTCUSDT", 1).expect("spot identity");
+    let perpetual = InstrumentId::new_for_product(venue, "BTCUSDT", ProductType::Perpetual, 1)
+        .expect("perpetual identity");
+
+    assert_ne!(spot, perpetual);
+    assert_eq!(spot.product_type(), ProductType::Spot);
+    assert_eq!(perpetual.product_type(), ProductType::Perpetual);
+    assert_eq!(spot.to_string(), "binance:BTCUSDT:1");
+    assert_eq!(perpetual.to_string(), "binance:perpetual:BTCUSDT:1");
+
+    let legacy = r#"{"venue":"binance","venue_symbol":"BTCUSDT","generation":1}"#;
+    assert_eq!(
+        serde_json::from_str::<InstrumentId>(legacy).expect("legacy identity"),
+        spot
+    );
+    assert_eq!(
+        serde_json::to_value(&spot).expect("legacy spot identity serializes"),
+        serde_json::json!({
+            "venue": "binance",
+            "venue_symbol": "BTCUSDT",
+            "generation": 1
+        })
+    );
+    let encoded = serde_json::to_string(&perpetual).expect("identity serializes");
+    assert!(encoded.contains(r#""product_type":"perpetual""#));
 }

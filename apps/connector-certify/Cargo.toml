@@ -7,9 +7,16 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+connector-binance = { path = "../../crates/connector-binance" }
+connector-core = { path = "../../crates/connector-core" }
 clap.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
+toml.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
 
 [lints]
 workspace = true

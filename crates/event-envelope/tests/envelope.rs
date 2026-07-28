@@ -152,7 +152,7 @@ fn complete_timing_epoch_and_sequence_contract_fails_closed() {
     assert!(EventEnvelope::new(invalid, trade_payload()).is_err());
 
     let mut invalid = valid.clone();
-    invalid.schema_version = 3;
+    invalid.schema_version = 4;
     assert!(EventEnvelope::new(invalid, trade_payload()).is_err());
 
     let mut invalid = valid;
@@ -822,6 +822,29 @@ fn futures_delta_preserves_the_source_previous_final_sequence() {
         EventEnvelope::new(event_metadata, payload).is_err(),
         "the previous final must precede the delta range"
     );
+}
+
+#[test]
+fn product_aware_instruments_require_schema_three() {
+    let mut event_metadata = metadata();
+    event_metadata.instrument_id = Some(
+        InstrumentId::new_for_product(
+            VenueId::new("binance").expect("venue"),
+            "BTCUSDT",
+            ProductType::Perpetual,
+            1,
+        )
+        .expect("perpetual"),
+    );
+    event_metadata.schema_version = 2;
+    assert!(
+        EventEnvelope::new(event_metadata.clone(), trade_payload()).is_err(),
+        "schema 2 did not encode product type"
+    );
+
+    event_metadata.schema_version = 3;
+    EventEnvelope::new(event_metadata, trade_payload())
+        .expect("schema 3 carries product-aware identity");
 }
 
 #[test]

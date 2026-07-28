@@ -86,9 +86,11 @@ This file is generated from the reviewed descriptor by `cargo run -p xtask -- ge
 | `cmti.health.v1.SubscribeQualityResponse` | `stream` | 1 | Active |
 | `cmti.market.v1.GetInstrumentRequest` | `generation` | 2 | Active |
 | `cmti.market.v1.GetInstrumentRequest` | `instrument_id` | 1 | Active |
+| `cmti.market.v1.GetInstrumentRequest` | `product_type` | 3 | Active |
 | `cmti.market.v1.GetInstrumentResponse` | `base_asset` | 3 | Active |
 | `cmti.market.v1.GetInstrumentResponse` | `generation` | 2 | Active |
 | `cmti.market.v1.GetInstrumentResponse` | `instrument_id` | 1 | Active |
+| `cmti.market.v1.GetInstrumentResponse` | `product_type` | 6 | Active |
 | `cmti.market.v1.GetInstrumentResponse` | `quote_asset` | 4 | Active |
 | `cmti.market.v1.GetInstrumentResponse` | `venue_id` | 5 | Active |
 | `cmti.market.v1.GetOrderBookSnapshotResponse` | `best_ask` | 6 | Active |
@@ -97,6 +99,7 @@ This file is generated from the reviewed descriptor by `cargo run -p xtask -- ge
 | `cmti.market.v1.GetOrderBookSnapshotResponse` | `freshness_millis` | 10 | Active |
 | `cmti.market.v1.GetOrderBookSnapshotResponse` | `generation` | 3 | Active |
 | `cmti.market.v1.GetOrderBookSnapshotResponse` | `health` | 7 | Active |
+| `cmti.market.v1.GetOrderBookSnapshotResponse` | `product_type` | 11 | Active |
 | `cmti.market.v1.GetOrderBookSnapshotResponse` | `receive_unix_nanos` | 9 | Active |
 | `cmti.market.v1.GetOrderBookSnapshotResponse` | `sequence` | 4 | Active |
 | `cmti.market.v1.GetOrderBookSnapshotResponse` | `source` | 1 | Active |
@@ -268,6 +271,11 @@ This file is generated from the reviewed descriptor by `cargo run -p xtask -- ge
 | `cmti.health.v1.ServingStatus` | `SERVING_STATUS_NOT_SERVING` | 2 | Active |
 | `cmti.health.v1.ServingStatus` | `SERVING_STATUS_SERVING` | 1 | Active |
 | `cmti.health.v1.ServingStatus` | `SERVING_STATUS_UNSPECIFIED` | 0 | Active |
+| `cmti.market.v1.ProductType` | `PRODUCT_TYPE_FUTURE` | 3 | Active |
+| `cmti.market.v1.ProductType` | `PRODUCT_TYPE_OPTION` | 4 | Active |
+| `cmti.market.v1.ProductType` | `PRODUCT_TYPE_PERPETUAL` | 2 | Active |
+| `cmti.market.v1.ProductType` | `PRODUCT_TYPE_SPOT` | 1 | Active |
+| `cmti.market.v1.ProductType` | `PRODUCT_TYPE_UNSPECIFIED` | 0 | Active |
 | `cmti.market.v1.SnapshotHealth` | `SNAPSHOT_HEALTH_DEGRADED` | 2 | Active |
 | `cmti.market.v1.SnapshotHealth` | `SNAPSHOT_HEALTH_HEALTHY` | 1 | Active |
 | `cmti.market.v1.SnapshotHealth` | `SNAPSHOT_HEALTH_STALE` | 3 | Active |

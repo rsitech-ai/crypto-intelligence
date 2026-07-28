@@ -8,7 +8,7 @@ use std::{
 
 use local_api::{
     auth::{SessionAuthenticator, SessionSecret, insert_authentication_metadata},
-    proto::market_v1::{GetOrderBookSnapshotRequest, SnapshotHealth},
+    proto::market_v1::{GetOrderBookSnapshotRequest, ProductType, SnapshotHealth},
     session::SessionDescriptor,
 };
 use observability::{
@@ -117,6 +117,7 @@ async fn runtime_serves_exact_authenticated_fixture_snapshot_without_secret_outp
     assert_eq!(response.source, "binance-fixture");
     assert_eq!(response.symbol, "BTCUSDT");
     assert_eq!(response.generation, 1);
+    assert_eq!(response.product_type, ProductType::Spot as i32);
     assert_eq!(response.sequence, 102);
     assert_eq!(response.best_bid, "60000.1");
     assert_eq!(response.best_ask, "60000.2");

@@ -13,7 +13,7 @@ use std::{
     sync::Arc,
 };
 
-use domain::{DomainError, InstrumentDefinition, InstrumentId, UnixNanos, VenueId};
+use domain::{DomainError, InstrumentDefinition, InstrumentId, ProductType, UnixNanos, VenueId};
 use thiserror::Error;
 
 pub use history::{
@@ -34,16 +34,20 @@ struct EffectiveDefinition {
 #[derive(Clone, Debug, Default)]
 struct DerivedCatalog {
     by_id: HashMap<InstrumentId, EffectiveDefinition>,
-    by_symbol: BTreeMap<(VenueId, String), Vec<InstrumentId>>,
+    by_symbol: BTreeMap<(VenueId, String, ProductType), Vec<InstrumentId>>,
 }
 
 impl DerivedCatalog {
     fn rebuild_symbol_index(&mut self) {
-        let mut by_symbol = BTreeMap::<(VenueId, String), Vec<InstrumentId>>::new();
+        let mut by_symbol = BTreeMap::<(VenueId, String, ProductType), Vec<InstrumentId>>::new();
         for definition in self.by_id.values() {
             let id = definition.definition.id();
             by_symbol
-                .entry((id.venue().clone(), id.venue_symbol().to_owned()))
+                .entry((
+                    id.venue().clone(),
+                    id.venue_symbol().to_owned(),
+                    id.product_type(),
+                ))
                 .or_default()
                 .push(id.clone());
         }
@@ -58,7 +62,7 @@ impl DerivedCatalog {
         self.by_symbol = by_symbol;
     }
 
-    fn validate_symbol(&self, key: &(VenueId, String)) -> Result<(), RegistryError> {
+    fn validate_symbol(&self, key: &(VenueId, String, ProductType)) -> Result<(), RegistryError> {
         let Some(ids) = self.by_symbol.get(key) else {
             return Ok(());
         };
@@ -224,7 +228,11 @@ impl InstrumentRegistry {
                     }
 
                     let id = definition.id().clone();
-                    let key = (id.venue().clone(), id.venue_symbol().to_owned());
+                    let key = (
+                        id.venue().clone(),
+                        id.venue_symbol().to_owned(),
+                        id.product_type(),
+                    );
                     let existing_ids = derived.by_symbol.get(&key);
                     match existing_ids {
                         None if derived.by_symbol.len() >= self.limits.maximum_symbol_keys() => {
@@ -563,6 +571,7 @@ impl RegistryError {
             | ResolveError::CatalogRevisionUnavailable
             | ResolveError::UnknownVenue
             | ResolveError::UnknownSymbol
+            | ResolveError::AmbiguousProductType
             | ResolveError::UnknownInstrument
             | ResolveError::NotListedAtTime
             | ResolveError::InvalidIdentity(_) => Self::InternalInvariant,
@@ -580,6 +589,8 @@ pub enum ResolveError {
     UnknownVenue,
     #[error("venue symbol is unknown in this snapshot")]
     UnknownSymbol,
+    #[error("venue symbol resolves to more than one product type")]
+    AmbiguousProductType,
     #[error("instrument generation is unknown in this snapshot")]
     UnknownInstrument,
     #[error("instrument is not listed at the requested event time")]
