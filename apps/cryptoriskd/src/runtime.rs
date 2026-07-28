@@ -27,7 +27,6 @@ use raw_wal::{
     frame::RecordMetadata,
     manager::{ManagerError, RotationPolicy, SegmentedWalWriter},
     prologue::{PrologueError, SegmentMetadata, StreamDescriptor},
-    seal::CompressionJob,
 };
 use serde::Serialize;
 use thiserror::Error;
@@ -239,8 +238,9 @@ impl<W: WalSink> IngestionEngine<W> {
 struct SegmentSink {
     writer: SegmentedWalWriter,
     clock: Instant,
+    connection_epoch: u64,
     next_sequence: u64,
-    pending_compression_jobs: Vec<CompressionJob>,
+    pending_compression_jobs: u64,
 }
 
 impl WalSink for SegmentSink {
@@ -255,7 +255,7 @@ impl WalSink for SegmentSink {
         let metadata = RecordMetadata {
             flags: 0,
             stream_id: 7,
-            connection_epoch: 1,
+            connection_epoch: self.connection_epoch,
             record_sequence: self.next_sequence,
             receive_wall_time_ns,
             receive_monotonic_time_ns,
@@ -269,8 +269,8 @@ impl WalSink for SegmentSink {
                 receive_wall_time_ns,
             )
             .map_err(manager_io_error)?;
-        if let Some(job) = outcome.compression_job() {
-            self.pending_compression_jobs.push(job.clone());
+        if outcome.compression_job().is_some() {
+            self.increment_pending_compression_jobs()?;
         }
         self.next_sequence = following_sequence;
         Ok(())
@@ -289,9 +289,30 @@ impl SegmentSink {
             .writer
             .poll_rotation(now_monotonic_ns, current_wall_time_ns()?)
             .map_err(manager_io_error)?;
-        if let Some(job) = job {
-            self.pending_compression_jobs.push(job);
+        if job.is_some() {
+            self.increment_pending_compression_jobs()?;
         }
+        Ok(())
+    }
+
+    fn seal_for_shutdown(&mut self) -> io::Result<()> {
+        let now_monotonic_ns = u64::try_from(self.clock.elapsed().as_nanos())
+            .map_err(|_| io::Error::other("monotonic timestamp overflow"))?;
+        let job = self
+            .writer
+            .seal_active(now_monotonic_ns, current_wall_time_ns()?)
+            .map_err(manager_io_error)?;
+        if job.is_some() {
+            self.increment_pending_compression_jobs()?;
+        }
+        Ok(())
+    }
+
+    fn increment_pending_compression_jobs(&mut self) -> io::Result<()> {
+        self.pending_compression_jobs = self
+            .pending_compression_jobs
+            .checked_add(1)
+            .ok_or_else(|| io::Error::other("pending WAL compression job count overflow"))?;
         Ok(())
     }
 }
@@ -322,6 +343,7 @@ impl RunningDaemon {
 
     pub async fn shutdown(mut self) -> Result<(), RuntimeError> {
         let server_result = self.server.shutdown().await;
+        let seal_result = self.wal.seal_for_shutdown();
         let wal_result = self.wal.sync();
         self.tracing.with_default(|| {
             tracing::info!(
@@ -333,6 +355,7 @@ impl RunningDaemon {
         let log_shutdown_result = self.tracing.shutdown();
 
         server_result?;
+        seal_result.map_err(RuntimeError::Persistence)?;
         wal_result.map_err(RuntimeError::Persistence)?;
         log_shutdown_result?;
         Ok(())
@@ -388,43 +411,62 @@ pub async fn start_fixture_runtime_with_limits(
     }
     let clock = Instant::now();
     let initial_metadata = initial_segment_metadata()?;
-    let mut writer = SegmentedWalWriter::open_or_create_in(
+    let mut recovered_count = 0_usize;
+    let mut recovery_mismatch = false;
+    let mut previous_capture: Option<(u64, u64, u64)> = None;
+    let writer = SegmentedWalWriter::open_or_create_in_with_replay(
         wal_directory,
         &wal_path,
         initial_metadata,
         wal_policy,
         0,
+        current_wall_time_ns()?,
+        |record| {
+            let payload_matches = fixture_records
+                .get(recovered_count)
+                .is_some_and(|expected| record.payload() == expected);
+            let metadata_matches = record.metadata().is_some_and(|metadata| {
+                let position_matches = match previous_capture {
+                    None => metadata.connection_epoch == 1 && metadata.record_sequence == 1,
+                    Some((previous_epoch, previous_sequence, previous_monotonic))
+                        if metadata.connection_epoch == previous_epoch =>
+                    {
+                        metadata.record_sequence == previous_sequence.saturating_add(1)
+                            && metadata.receive_monotonic_time_ns >= previous_monotonic
+                    }
+                    Some((previous_epoch, _, _)) => {
+                        metadata.connection_epoch == previous_epoch.saturating_add(1)
+                            && metadata.record_sequence == 1
+                    }
+                };
+                if position_matches {
+                    previous_capture = Some((
+                        metadata.connection_epoch,
+                        metadata.record_sequence,
+                        metadata.receive_monotonic_time_ns,
+                    ));
+                }
+                metadata.flags == 0 && metadata.stream_id == 7 && position_matches
+            });
+            recovery_mismatch |= !payload_matches || !metadata_matches;
+            recovered_count = recovered_count.saturating_add(1);
+        },
     )?;
     if is_cancelled(&cancellation) {
+        let pending_compression_jobs = u64::try_from(writer.pending_compression_job_count()?)
+            .map_err(|_| RuntimeError::RecordSequenceOverflow)?;
         cancel_startup(
             SegmentSink {
                 writer,
                 clock,
+                connection_epoch: 1,
                 next_sequence: 1,
-                pending_compression_jobs: Vec::new(),
+                pending_compression_jobs,
             },
             tracing,
         )?;
         return Err(RuntimeError::Cancelled);
     }
-    let mut recovered_count = 0_usize;
-    let mut recovery_mismatch = false;
-    writer.visit_records(|record| {
-        let payload_matches = fixture_records
-            .get(recovered_count)
-            .is_some_and(|expected| record.payload() == expected);
-        let expected_sequence = u64::try_from(recovered_count)
-            .ok()
-            .and_then(|count| count.checked_add(1));
-        let metadata_matches = record.metadata().is_some_and(|metadata| {
-            metadata.flags == 0
-                && metadata.stream_id == 7
-                && metadata.connection_epoch == 1
-                && Some(metadata.record_sequence) == expected_sequence
-        });
-        recovery_mismatch |= !payload_matches || !metadata_matches;
-        recovered_count = recovered_count.saturating_add(1);
-    })?;
     if recovery_mismatch || recovered_count > fixture_records.len() {
         return Err(RuntimeError::RecoveryMismatch);
     }
@@ -432,16 +474,20 @@ pub async fn start_fixture_runtime_with_limits(
     let observability = ObservabilityHandle::default();
     let metrics = observability.metrics().clone();
     initialize_runtime_metrics(&metrics)?;
-    let next_sequence = u64::try_from(recovered_count)
-        .ok()
-        .and_then(|count| count.checked_add(1))
-        .ok_or(RuntimeError::RecordSequenceOverflow)?;
-    let pending_compression_jobs = writer.take_recovered_compression_jobs()?;
+    let connection_epoch = match previous_capture {
+        Some((epoch, _, _)) => epoch
+            .checked_add(1)
+            .ok_or(RuntimeError::RecordSequenceOverflow)?,
+        None => 1,
+    };
+    let pending_compression_jobs = u64::try_from(writer.pending_compression_job_count()?)
+        .map_err(|_| RuntimeError::RecordSequenceOverflow)?;
     let mut engine = IngestionEngine::new(
         SegmentSink {
             writer,
             clock,
-            next_sequence,
+            connection_epoch,
+            next_sequence: 1,
             pending_compression_jobs,
         },
         metrics.clone(),
@@ -519,8 +565,7 @@ pub async fn start_fixture_runtime_with_limits(
     )
     .await?;
     let readiness = Readiness::new(server.local_addr(), &descriptor);
-    let pending_wal_compression_jobs = u64::try_from(wal.pending_compression_jobs.len())
-        .expect("pending job count fits the supported 64-bit platform");
+    let pending_wal_compression_jobs = wal.pending_compression_jobs;
     tracing.with_default(|| {
         tracing::info!(
             event = "fixture_runtime_ready",

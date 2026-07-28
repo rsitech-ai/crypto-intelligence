@@ -1,6 +1,6 @@
 use std::{
     fs::{self, File, OpenOptions},
-    io::Write,
+    io::{Read, Write},
     os::unix::fs::{PermissionsExt, symlink},
     sync::{Arc, Barrier},
     thread,
@@ -87,7 +87,7 @@ fn reference_pending_manifest() -> Vec<u8> {
         .poll_rotation(300_000_000_011, CREATED_WALL_NS + 2)
         .expect("poll must succeed")
         .expect("poll must rotate");
-    fs::read(rotated.manifest_path()).expect("reference manifest must read")
+    fs::read(rotated.manifest_display_path()).expect("reference manifest must read")
 }
 
 #[test]
@@ -119,12 +119,12 @@ fn byte_rotation_happens_before_append_and_returns_cross_segment_position_and_jo
     let job = second
         .compression_job()
         .expect("rotation must return a compression job");
-    assert!(job.manifest_path().exists());
-    assert!(job.source_path().exists());
-    assert!(!job.destination_path().exists());
+    assert!(job.manifest_display_path().exists());
+    assert!(job.source_display_path().exists());
+    assert!(!job.destination_display_path().exists());
 
     let first_manifest =
-        verify_sealed_v2_segment(job.source_path()).expect("first segment must verify");
+        verify_sealed_v2_segment(&job.source_display_path()).expect("first segment must verify");
     assert_eq!(first_manifest.segment_ordinal(), 1);
     assert!(first_manifest.predecessor().is_none());
     assert_eq!(writer.active_ordinal(), 2);
@@ -141,6 +141,7 @@ fn capability_open_or_create_recovers_existing_chain_instead_of_reinitializing()
         metadata(),
         policy,
         10,
+        CREATED_WALL_NS,
     )
     .expect("empty capability directory must create a chain");
     writer
@@ -166,12 +167,37 @@ fn capability_open_or_create_recovers_existing_chain_instead_of_reinitializing()
         replacement_initial_metadata,
         policy,
         20,
+        CREATED_WALL_NS + 1_000,
     )
     .expect("existing capability directory must recover");
 
-    assert_eq!(recovered.active_ordinal(), 1);
-    assert_eq!(recovered.active_record_count(), 1);
-    assert_eq!(recovered.active_length(), first_length);
+    assert_eq!(recovered.active_ordinal(), 2);
+    assert_eq!(recovered.active_record_count(), 0);
+    assert!(recovered.active_length() < first_length);
+}
+
+#[test]
+fn recovery_conservatively_seals_a_nonempty_active_segment_once() {
+    let directory = tempfile::tempdir().expect("temporary directory must exist");
+    let policy = RotationPolicy::default();
+    {
+        let mut writer = SegmentedWalWriter::create(directory.path(), metadata(), policy, 10)
+            .expect("writer must create");
+        writer
+            .append(record(1), b"one", 11, CREATED_WALL_NS + 1)
+            .expect("record must append");
+    }
+
+    let first = SegmentedWalWriter::recover(directory.path(), policy, 20, CREATED_WALL_NS + 100)
+        .expect("nonempty active segment must recover");
+    assert_eq!(first.active_ordinal(), 2);
+    assert_eq!(first.active_record_count(), 0);
+    drop(first);
+
+    let second = SegmentedWalWriter::recover(directory.path(), policy, 30, CREATED_WALL_NS + 200)
+        .expect("empty successor must recover without another rotation");
+    assert_eq!(second.active_ordinal(), 2);
+    assert_eq!(second.active_record_count(), 0);
 }
 
 #[test]
@@ -194,17 +220,21 @@ fn validated_replay_visits_sealed_then_active_records_in_chain_order() {
         }
     }
 
-    let mut recovered =
-        SegmentedWalWriter::recover(directory.path(), policy, 20).expect("chain must recover");
     let mut payloads = Vec::new();
-    recovered
-        .visit_records(|record| payloads.push(record.payload().to_vec()))
-        .expect("validated records must replay");
+    let recovered = SegmentedWalWriter::recover_with_replay(
+        directory.path(),
+        policy,
+        20,
+        CREATED_WALL_NS + 100,
+        |record| payloads.push(record.payload().to_vec()),
+    )
+    .expect("validated records must replay during recovery");
 
     assert_eq!(
         payloads,
         [b"one".to_vec(), b"two".to_vec(), b"tri".to_vec()]
     );
+    assert_eq!(recovered.active_record_count(), 0);
 }
 
 #[test]
@@ -221,7 +251,8 @@ fn manager_sync_is_explicit_and_keeps_records_recoverable() {
     }
 
     let mut recovered =
-        SegmentedWalWriter::recover(directory.path(), policy, 20).expect("chain must recover");
+        SegmentedWalWriter::recover(directory.path(), policy, 20, CREATED_WALL_NS + 100)
+            .expect("chain must recover");
     let mut payloads = Vec::new();
     recovered
         .visit_records(|record| payloads.push(record.payload().to_vec()))
@@ -250,7 +281,7 @@ fn monotonic_idle_poll_rotates_exactly_at_age_boundary_despite_wall_clock_jumps(
         .poll_rotation(105, CREATED_WALL_NS - 20_000)
         .expect("boundary poll must succeed")
         .expect("boundary poll must rotate");
-    assert!(job.manifest_path().exists());
+    assert!(job.manifest_display_path().exists());
     assert_eq!(writer.active_ordinal(), 2);
     assert_eq!(writer.active_record_count(), 0);
     assert!(
@@ -392,10 +423,11 @@ fn recovering_a_clean_chain_restores_active_position_and_global_sequence_state()
             .expect("second append must rotate");
     }
 
-    let mut recovered = SegmentedWalWriter::recover(directory.path(), policy, 20)
-        .expect("clean chain must recover");
-    assert_eq!(recovered.active_ordinal(), 2);
-    assert_eq!(recovered.active_record_count(), 1);
+    let mut recovered =
+        SegmentedWalWriter::recover(directory.path(), policy, 20, CREATED_WALL_NS + 100)
+            .expect("clean chain must recover");
+    assert_eq!(recovered.active_ordinal(), 3);
+    assert_eq!(recovered.active_record_count(), 0);
     let length_before = recovered.active_length();
     assert!(matches!(
         recovered.append(record(2), b"duplicate", 21, CREATED_WALL_NS + 3),
@@ -434,7 +466,7 @@ fn a_second_live_manager_is_rejected_by_the_directory_lock() {
         .expect("first writer must create");
 
     assert!(matches!(
-        SegmentedWalWriter::recover(directory.path(), policy, 20),
+        SegmentedWalWriter::recover(directory.path(), policy, 20, CREATED_WALL_NS + 100),
         Err(ManagerError::AlreadyOpen)
     ));
 }
@@ -482,7 +514,7 @@ fn live_writer_fails_closed_after_directory_rename_and_path_replacement() {
             .starts_with(&original)
     );
     assert!(matches!(
-        SegmentedWalWriter::recover(&moved, policy, 30),
+        SegmentedWalWriter::recover(&moved, policy, 30, CREATED_WALL_NS + 100),
         Err(ManagerError::AlreadyOpen)
     ));
 }
@@ -590,17 +622,11 @@ fn concurrent_directory_replacement_never_redirects_rotation_artifacts() {
     match result {
         Ok(Some(job)) => {
             assert!(
-                job.source_path().exists() && job.manifest_path().exists(),
+                job.source_display_path().exists() && job.manifest_display_path().exists(),
                 "a successful handoff must never expose stale full paths"
             );
-            let source_name = job
-                .source_path()
-                .file_name()
-                .expect("sealed filename must exist");
-            let manifest_name = job
-                .manifest_path()
-                .file_name()
-                .expect("manifest filename must exist");
+            let source_name = job.source_name();
+            let manifest_name = job.manifest_name();
             assert!(moved.join(source_name).exists());
             assert!(moved.join(manifest_name).exists());
             assert_eq!(writer.active_ordinal(), 2);
@@ -632,15 +658,16 @@ fn concurrent_directory_replacement_never_redirects_rotation_artifacts() {
                 1
             );
             drop(writer);
-            let mut recovered = SegmentedWalWriter::recover(&moved, policy, 20)
+            let recovered = SegmentedWalWriter::recover(&moved, policy, 20, CREATED_WALL_NS + 100)
                 .expect("typed committed rotation must recover at the moved path");
-            let recovered_jobs = recovered
-                .take_recovered_compression_jobs()
+            let mut recovered_jobs = Vec::new();
+            recovered
+                .visit_pending_compression_jobs(|job| recovered_jobs.push(job))
                 .expect("moved recovery path must remain anchored");
             assert_eq!(recovered_jobs.len(), 1);
-            assert!(recovered_jobs[0].source_path().exists());
-            assert!(recovered_jobs[0].manifest_path().exists());
-            assert!(recovered_jobs[0].source_path().starts_with(&moved));
+            assert!(recovered_jobs[0].source_display_path().exists());
+            assert!(recovered_jobs[0].manifest_display_path().exists());
+            assert!(recovered_jobs[0].source_display_path().starts_with(&moved));
         }
         Err(ManagerError::DirectoryReplaced) => {
             assert!(moved.join(first_active_name).exists());
@@ -675,15 +702,15 @@ fn concurrent_directory_replacement_never_exposes_stale_recovery_jobs() {
     let recovery_path = original.clone();
     let recovery_thread = thread::spawn(move || {
         recovery_barrier.wait();
-        SegmentedWalWriter::recover(&recovery_path, policy, 20)
+        SegmentedWalWriter::recover(&recovery_path, policy, 20, CREATED_WALL_NS + 100)
     });
 
     barrier.wait();
     fs::rename(&original, &moved).expect("managed directory must move");
     fs::create_dir(&original).expect("replacement directory must create");
     match recovery_thread.join().expect("recovery thread must finish") {
-        Ok(mut recovered) => assert!(matches!(
-            recovered.take_recovered_compression_jobs(),
+        Ok(recovered) => assert!(matches!(
+            recovered.pending_compression_job_count(),
             Err(ManagerError::DirectoryReplaced)
         )),
         Err(ManagerError::DirectoryReplacedAfterRecovery | ManagerError::DirectoryReplaced) => {}
@@ -732,7 +759,7 @@ fn recovery_rejects_unknown_symlink_and_hardlink_artifacts_without_mutation() {
     )
     .expect("unknown artifact must write");
     assert!(matches!(
-        SegmentedWalWriter::recover(unknown_directory.path(), policy, 20),
+        SegmentedWalWriter::recover(unknown_directory.path(), policy, 20, CREATED_WALL_NS + 100,),
         Err(ManagerError::Inventory(InventoryError::UnknownArtifact))
     ));
     assert!(unknown_active.exists());
@@ -749,7 +776,10 @@ fn recovery_rejects_unknown_symlink_and_hardlink_artifacts_without_mutation() {
     let symlink_target = symlink_directory.path().join("outside-contract");
     fs::rename(&symlink_active, &symlink_target).expect("active must move for fixture");
     symlink(&symlink_target, &symlink_active).expect("active symlink must create");
-    assert!(SegmentedWalWriter::recover(symlink_directory.path(), policy, 20).is_err());
+    assert!(
+        SegmentedWalWriter::recover(symlink_directory.path(), policy, 20, CREATED_WALL_NS + 100,)
+            .is_err()
+    );
     assert!(
         fs::symlink_metadata(&symlink_active)
             .expect("symlink must remain")
@@ -772,7 +802,7 @@ fn recovery_rejects_unknown_symlink_and_hardlink_artifacts_without_mutation() {
             .join(format!("{:020}-{}.active.wal", 2, hex::encode([0x41; 16])));
     fs::hard_link(&hardlink_active, &hardlink).expect("hardlink fixture must create");
     assert!(matches!(
-        SegmentedWalWriter::recover(hardlink_directory.path(), policy, 20),
+        SegmentedWalWriter::recover(hardlink_directory.path(), policy, 20, CREATED_WALL_NS + 100,),
         Err(ManagerError::Inventory(InventoryError::UnsafeArtifact))
     ));
     assert!(hardlink_active.exists());
@@ -801,8 +831,9 @@ fn recovery_creates_the_deterministic_successor_after_a_durable_seal() {
     };
     fs::remove_file(&missing_successor).expect("fixture must remove unacknowledged successor");
 
-    let mut recovered = SegmentedWalWriter::recover(directory.path(), policy, 20)
-        .expect("sealed chain without active must recover");
+    let mut recovered =
+        SegmentedWalWriter::recover(directory.path(), policy, 20, CREATED_WALL_NS + 100)
+            .expect("sealed chain without active must recover");
     assert_eq!(recovered.active_ordinal(), 2);
     assert_eq!(
         recovered
@@ -811,12 +842,13 @@ fn recovery_creates_the_deterministic_successor_after_a_durable_seal() {
         missing_successor
     );
     assert!(missing_successor.exists());
-    let jobs = recovered
-        .take_recovered_compression_jobs()
+    let mut jobs = Vec::new();
+    recovered
+        .visit_pending_compression_jobs(|job| jobs.push(job))
         .expect("recovery path must remain anchored");
     assert_eq!(jobs.len(), 1);
-    assert!(jobs[0].source_path().exists());
-    assert!(jobs[0].manifest_path().exists());
+    assert!(jobs[0].source_display_path().exists());
+    assert!(jobs[0].manifest_display_path().exists());
     recovered
         .append(record(2), b"two", 21, CREATED_WALL_NS + 3)
         .expect("recovered successor must accept the next global sequence");
@@ -850,8 +882,9 @@ fn recovery_resumes_pending_seals_before_and_after_the_active_rename() {
             fs::rename(&active, &sealed).expect("fixture must simulate active rename");
         }
 
-        let mut recovered = SegmentedWalWriter::recover(directory.path(), policy, 20)
-            .expect("pending transition must recover");
+        let mut recovered =
+            SegmentedWalWriter::recover(directory.path(), policy, 20, CREATED_WALL_NS + 100)
+                .expect("pending transition must recover");
         assert_eq!(recovered.active_ordinal(), 2);
         assert!(!active.exists());
         assert!(!pending.exists());
@@ -859,12 +892,13 @@ fn recovery_resumes_pending_seals_before_and_after_the_active_rename() {
         let manifest = manifest_path_for(&sealed).expect("manifest path must derive");
         assert!(manifest.exists());
         verify_sealed_v2_segment(&sealed).expect("resumed seal must verify");
-        let jobs = recovered
-            .take_recovered_compression_jobs()
+        let mut jobs = Vec::new();
+        recovered
+            .visit_pending_compression_jobs(|job| jobs.push(job))
             .expect("recovery path must remain anchored");
         assert_eq!(jobs.len(), 1);
-        assert_eq!(jobs[0].source_path(), sealed);
-        assert_eq!(jobs[0].manifest_path(), manifest);
+        assert_eq!(jobs[0].source_display_path(), sealed);
+        assert_eq!(jobs[0].manifest_display_path(), manifest);
         recovered
             .append(record(2), b"two", 21, CREATED_WALL_NS + 3)
             .expect("recovered successor must accept next sequence");
@@ -916,14 +950,14 @@ fn recovery_rejects_pending_cross_segment_sequence_regression_before_publication
         CREATED_WALL_NS + 3,
     )
     .expect("second fixture segment must seal");
-    let second_sealed = second.compression_job().source_path().to_owned();
-    let final_manifest = second.compression_job().manifest_path().to_owned();
+    let second_sealed = second.compression_job().source_display_path();
+    let final_manifest = second.compression_job().manifest_display_path();
     let pending =
         pending_manifest_path_for(&second_sealed).expect("pending manifest path must derive");
     fs::rename(&final_manifest, &pending).expect("fixture must simulate unpublished manifest");
 
     assert!(matches!(
-        SegmentedWalWriter::recover(directory.path(), policy, 20),
+        SegmentedWalWriter::recover(directory.path(), policy, 20, CREATED_WALL_NS + 100),
         Err(ManagerError::Inventory(
             InventoryError::CrossSegmentSequenceRegression
         ))
@@ -965,16 +999,18 @@ fn recovery_repairs_only_an_incomplete_final_active_frame_and_resumes() {
             > valid_length
     );
 
-    let mut recovered = SegmentedWalWriter::recover(directory.path(), policy, 20)
-        .expect("incomplete final frame must recover");
-    assert_eq!(recovered.active_length(), valid_length);
+    let mut recovered =
+        SegmentedWalWriter::recover(directory.path(), policy, 20, CREATED_WALL_NS + 100)
+            .expect("incomplete final frame must recover");
+    assert!(recovered.active_length() < valid_length);
     assert_eq!(
-        fs::metadata(&active)
-            .expect("repaired active metadata must read")
+        fs::metadata(sealed_path_for(&active).expect("sealed path must derive"))
+            .expect("repaired and sealed segment metadata must read")
             .len(),
         valid_length
     );
-    assert_eq!(recovered.active_record_count(), 1);
+    assert!(!active.exists());
+    assert_eq!(recovered.active_record_count(), 0);
     recovered
         .append(record(2), b"two", 21, CREATED_WALL_NS + 2)
         .expect("recovered writer must accept the missing next record");
@@ -1016,7 +1052,7 @@ fn recovery_does_not_repair_a_tail_when_the_active_chain_sequence_is_invalid() {
     let bytes_before = fs::read(&second_active).expect("invalid active bytes must read");
 
     assert!(matches!(
-        SegmentedWalWriter::recover(directory.path(), policy, 20),
+        SegmentedWalWriter::recover(directory.path(), policy, 20, CREATED_WALL_NS + 100),
         Err(ManagerError::Inventory(
             InventoryError::CrossSegmentSequenceRegression
         ))
@@ -1025,6 +1061,67 @@ fn recovery_does_not_repair_a_tail_when_the_active_chain_sequence_is_invalid() {
         fs::read(&second_active).expect("invalid active bytes must remain"),
         bytes_before
     );
+}
+
+#[test]
+fn compression_handoff_remains_anchored_after_directory_move_and_replacement() {
+    let parent = tempfile::tempdir().expect("temporary parent must exist");
+    let original = parent.path().join("wal");
+    let moved = parent.path().join("wal-moved");
+    fs::create_dir(&original).expect("managed directory must create");
+    let policy =
+        RotationPolicy::new(segment_limit_for_one(b"one"), 5).expect("policy must be valid");
+    let job = {
+        let mut writer = SegmentedWalWriter::create(&original, metadata(), policy, 10)
+            .expect("writer must create");
+        writer
+            .append(record(1), b"one", 11, CREATED_WALL_NS + 1)
+            .expect("record must append");
+        writer
+            .poll_rotation(15, CREATED_WALL_NS + 2)
+            .expect("rotation must succeed")
+            .expect("nonempty segment must rotate")
+    };
+    let expected_source_length = job.expected_uncompressed_bytes();
+
+    fs::rename(&original, &moved).expect("managed directory must move");
+    fs::create_dir(&original).expect("replacement directory must create");
+    fs::write(original.join(job.source_name()), b"replacement")
+        .expect("replacement source fixture must write");
+    fs::write(original.join(job.manifest_name()), b"replacement")
+        .expect("replacement manifest fixture must write");
+
+    let mut source = job
+        .open_source()
+        .expect("capability must still open the moved original source");
+    let mut source_bytes = Vec::new();
+    source
+        .read_to_end(&mut source_bytes)
+        .expect("capability-owned source must read");
+    assert_eq!(
+        u64::try_from(source_bytes.len()).expect("source length must fit"),
+        expected_source_length
+    );
+    assert_ne!(source_bytes, b"replacement");
+
+    let mut manifest = job
+        .open_manifest()
+        .expect("capability must still open the moved original manifest");
+    let mut manifest_bytes = Vec::new();
+    manifest
+        .read_to_end(&mut manifest_bytes)
+        .expect("capability-owned manifest must read");
+    assert!(manifest_bytes.starts_with(b"{"));
+
+    let moved_source = moved.join(job.source_name());
+    let displaced_source = moved.join("displaced.wal");
+    fs::rename(&moved_source, &displaced_source).expect("original source must move aside");
+    fs::write(&moved_source, b"same-directory replacement")
+        .expect("same-directory replacement must write");
+    assert!(matches!(
+        job.open_source(),
+        Err(raw_wal::seal::SealingError::UnsafeFile)
+    ));
 }
 
 #[test]
@@ -1038,7 +1135,12 @@ fn rejected_directory_inventory_is_not_mutated_by_lock_acquisition() {
         .collect::<Vec<_>>();
 
     assert!(matches!(
-        SegmentedWalWriter::recover(directory.path(), RotationPolicy::default(), 20),
+        SegmentedWalWriter::recover(
+            directory.path(),
+            RotationPolicy::default(),
+            20,
+            CREATED_WALL_NS + 100,
+        ),
         Err(ManagerError::Inventory(InventoryError::UnknownArtifact))
     ));
     let entries_after = fs::read_dir(directory.path())
@@ -1084,8 +1186,13 @@ fn recovery_removes_only_exact_private_protocol_temporary_files() {
     fs::write(&successor_temp, b"unpublished").expect("successor temp must write");
     fs::set_permissions(&successor_temp, fs::Permissions::from_mode(0o600))
         .expect("successor temp must be private");
-    let recovered = SegmentedWalWriter::recover(successor_directory.path(), policy, 20)
-        .expect("successor temp state must recover");
+    let recovered = SegmentedWalWriter::recover(
+        successor_directory.path(),
+        policy,
+        20,
+        CREATED_WALL_NS + 100,
+    )
+    .expect("successor temp state must recover");
     assert_eq!(
         recovered
             .active_path()
@@ -1120,14 +1227,17 @@ fn recovery_removes_only_exact_private_protocol_temporary_files() {
     fs::write(&pending_temp, b"unpublished").expect("pending temp must write");
     fs::set_permissions(&pending_temp, fs::Permissions::from_mode(0o600))
         .expect("pending temp must be private");
-    let recovered = SegmentedWalWriter::recover(pending_directory.path(), policy, 20)
-        .expect("pending temp state must recover");
-    assert_eq!(
+    let recovered =
+        SegmentedWalWriter::recover(pending_directory.path(), policy, 20, CREATED_WALL_NS + 100)
+            .expect("pending temp state must recover");
+    assert_eq!(recovered.active_ordinal(), 2);
+    assert_ne!(
         recovered
             .active_path()
-            .expect("active path must remain anchored"),
+            .expect("recovered successor must remain anchored"),
         active
     );
+    assert!(!active.exists());
     assert!(!pending_temp.exists());
 }
 
@@ -1158,7 +1268,7 @@ fn recovery_rejects_multiple_active_segments() {
     drop(Segment::create_v2(&extra_path, extra_metadata).expect("extra segment must create"));
 
     assert!(matches!(
-        SegmentedWalWriter::recover(directory.path(), policy, 20),
+        SegmentedWalWriter::recover(directory.path(), policy, 20, CREATED_WALL_NS + 100),
         Err(ManagerError::Inventory(
             InventoryError::MultipleActiveSegments
         ))
@@ -1244,7 +1354,7 @@ fn recovery_rejects_a_deterministic_active_id_with_changed_segment_metadata() {
     drop(Segment::create_v2(&active, changed).expect("replacement active must create"));
 
     assert!(matches!(
-        SegmentedWalWriter::recover(directory.path(), policy, 20),
+        SegmentedWalWriter::recover(directory.path(), policy, 20, CREATED_WALL_NS + 100),
         Err(ManagerError::Inventory(
             InventoryError::SegmentMetadataMismatch { ordinal: 2 }
         ))
@@ -1299,7 +1409,12 @@ fn recovery_rejects_a_predecessor_bound_but_nondeterministic_segment_id() {
     .expect("predecessor-bound second segment must seal");
 
     assert!(matches!(
-        SegmentedWalWriter::recover(directory.path(), RotationPolicy::default(), 20),
+        SegmentedWalWriter::recover(
+            directory.path(),
+            RotationPolicy::default(),
+            20,
+            CREATED_WALL_NS + 100,
+        ),
         Err(ManagerError::Inventory(
             InventoryError::SegmentIdentityMismatch { ordinal: 2 }
         ))

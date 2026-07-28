@@ -195,6 +195,7 @@ async fn fresh_runtime_persists_a_validated_segmented_v2_chain() {
         &wal_directory,
         raw_wal::manager::RotationPolicy::default(),
         1,
+        test_wall_time_ns(),
     )
     .expect("segmented chain must recover");
     let mut payloads = Vec::new();
@@ -267,6 +268,86 @@ async fn recovery_rejects_a_payload_prefix_with_unexpected_capture_metadata() {
 }
 
 #[tokio::test]
+async fn partial_restart_advances_the_connection_epoch_before_monotonic_time_restarts() {
+    let directory = tempfile::tempdir().expect("temporary runtime root must exist");
+    let wal_directory = directory.path().join("market-wal");
+    fs::create_dir(&wal_directory).expect("segmented WAL directory must exist");
+    fs::set_permissions(&wal_directory, fs::Permissions::from_mode(0o700))
+        .expect("segmented WAL mode must be private");
+    let metadata = raw_wal::prologue::SegmentMetadata::new(
+        [0x31; 16],
+        1,
+        "fixture-json-v1",
+        "foundation-fixture",
+        "cryptoriskd-test",
+        vec![
+            raw_wal::prologue::StreamDescriptor::new(7, "binance", "spot-btcusdt")
+                .expect("stream descriptor must be valid"),
+        ],
+    )
+    .expect("segment metadata must be valid");
+    let mut writer = raw_wal::manager::SegmentedWalWriter::create(
+        &wal_directory,
+        metadata,
+        raw_wal::manager::RotationPolicy::default(),
+        0,
+    )
+    .expect("segmented writer must create");
+    writer
+        .append(
+            raw_wal::frame::RecordMetadata {
+                flags: 0,
+                stream_id: 7,
+                connection_epoch: 1,
+                record_sequence: 1,
+                receive_wall_time_ns: 1,
+                receive_monotonic_time_ns: 10_000_000_000,
+            },
+            FIXTURE
+                .lines()
+                .next()
+                .expect("fixture must have a record")
+                .as_bytes(),
+            10_000_000_000,
+            1,
+        )
+        .expect("first capture epoch record must persist");
+    drop(writer);
+
+    let running = start(directory.path(), descriptor())
+        .await
+        .expect("partial fixture must resume in a new connection epoch");
+    running.shutdown().await.expect("runtime must stop cleanly");
+
+    let mut recovered = raw_wal::manager::SegmentedWalWriter::recover(
+        &wal_directory,
+        raw_wal::manager::RotationPolicy::default(),
+        1,
+        test_wall_time_ns(),
+    )
+    .expect("completed segmented chain must recover");
+    let mut capture_positions = Vec::new();
+    recovered
+        .visit_records(|record| {
+            let metadata = record.metadata().expect("v2 record metadata must exist");
+            capture_positions.push((
+                metadata.connection_epoch,
+                metadata.record_sequence,
+                metadata.receive_monotonic_time_ns,
+            ));
+        })
+        .expect("capture records must replay");
+
+    assert_eq!(capture_positions.len(), 3);
+    assert_eq!(capture_positions[0], (1, 1, 10_000_000_000));
+    assert_eq!(capture_positions[1].0, 2);
+    assert_eq!(capture_positions[1].1, 1);
+    assert_eq!(capture_positions[2].0, 2);
+    assert_eq!(capture_positions[2].1, 2);
+    assert!(capture_positions[2].2 >= capture_positions[1].2);
+}
+
+#[tokio::test]
 async fn runtime_rotates_across_segments_and_retains_safe_compression_handoffs() {
     let directory = tempfile::tempdir().expect("temporary runtime root must exist");
     let policy = raw_wal::manager::RotationPolicy::new(1, 300_000_000_000)
@@ -287,7 +368,7 @@ async fn runtime_rotates_across_segments_and_retains_safe_compression_handoffs()
         .await
         .expect("restarted rotating runtime must stop");
 
-    assert_eq!(ready_pending_jobs(directory.path()), 2);
+    assert_eq!(ready_pending_jobs(directory.path()), 3);
     assert_eq!(segmented_wal_state(directory.path()), first_state);
 }
 
@@ -817,6 +898,7 @@ fn segmented_wal_payloads(root: &Path) -> Vec<Vec<u8>> {
         &root.join("market-wal"),
         raw_wal::manager::RotationPolicy::default(),
         1,
+        test_wall_time_ns(),
     )
     .expect("segmented WAL must recover");
     let mut payloads = Vec::new();
@@ -873,6 +955,16 @@ fn descriptor() -> SessionDescriptor {
         .as_secs() as i64;
     SessionDescriptor::issue(1, 0, std::process::id(), [0x11; 16], [0x22; 16], now)
         .expect("test descriptor must be valid")
+}
+
+fn test_wall_time_ns() -> i64 {
+    i64::try_from(
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("test wall clock must follow the Unix epoch")
+            .as_nanos(),
+    )
+    .expect("test wall time must fit i64")
 }
 
 fn secret() -> SessionSecret {
