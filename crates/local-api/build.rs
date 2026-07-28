@@ -6,6 +6,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
+#[path = "../../build-support/generated_binding_policy.rs"]
+mod generated_binding_policy;
 #[path = "../../build-support/protoc_toolchain.rs"]
 mod protoc_toolchain;
 
@@ -36,6 +38,12 @@ fn main() -> Result<(), Box<dyn Error>> {
         "cargo:rerun-if-changed={}",
         workspace_root
             .join("build-support/protoc_toolchain.rs")
+            .display()
+    );
+    println!(
+        "cargo:rerun-if-changed={}",
+        workspace_root
+            .join("build-support/generated_binding_policy.rs")
             .display()
     );
     println!("cargo:rerun-if-env-changed=PATH");
@@ -109,12 +117,10 @@ fn verify_generated_outputs(output_dir: &Path) -> Result<(), io::Error> {
 fn verify_server_only_outputs(output_dir: &Path) -> Result<(), io::Error> {
     for generated_file in GENERATED_FILES {
         let generated = fs::read_to_string(output_dir.join(generated_file))?;
-        for forbidden in ["_client"] {
-            if generated.contains(forbidden) {
-                return Err(io::Error::other(format!(
-                    "generated protobuf output {generated_file} contains forbidden client surface {forbidden}"
-                )));
-            }
+        if let Some(module) = generated_binding_policy::grpc_client_module(&generated) {
+            return Err(io::Error::other(format!(
+                "generated protobuf output {generated_file} contains forbidden client module {module}"
+            )));
         }
     }
     Ok(())

@@ -47,7 +47,9 @@ const APPROVED_FOUNDATION_NETWORK_CAPABILITIES: &[&str] = &[
 const APPROVED_FOUNDATION_DEPENDENCY_CAPABILITIES: &[&str] =
     &["rustix@1.1.4:features=alloc,default,fs,process,std"];
 const APPROVED_LOCAL_API_BUILD_SCRIPT_BLAKE3: &str =
-    "896708918b854ad28bed13883905060b9c368f6ef0174e740e0f72000935083a";
+    "c763491bf93f30a5f85ceeb4c9d853053d1788facc5748df1635047fa6b87b3a";
+const APPROVED_GENERATED_BINDING_POLICY_BLAKE3: &str =
+    "90b952b25faa485f030faa410b0ddb496c913ce3360ff08fd0ffabe1f74f4216";
 
 #[derive(Debug, Eq, PartialEq)]
 struct SurfaceInventory {
@@ -426,6 +428,15 @@ fn generated_binding_capabilities(
         if digest != APPROVED_LOCAL_API_BUILD_SCRIPT_BLAKE3 {
             capabilities.insert(format!("{relative} build policy digest {digest}"));
         }
+    }
+    let generated_policy = root.join("build-support/generated_binding_policy.rs");
+    let generated_policy_digest = blake3::hash(&fs::read(&generated_policy)?)
+        .to_hex()
+        .to_string();
+    if generated_policy_digest != APPROVED_GENERATED_BINDING_POLICY_BLAKE3 {
+        capabilities.insert(format!(
+            "build-support/generated_binding_policy.rs digest {generated_policy_digest}"
+        ));
     }
     Ok(capabilities.into_iter().collect())
 }
@@ -1665,6 +1676,20 @@ fn production_custom_build_output_policy_rejects_appended_client_generation() {
             .expect("build script must have parent"),
     )
     .expect("custom-build mutation directory must write");
+    let generated_policy = directory
+        .path()
+        .join("build-support/generated_binding_policy.rs");
+    fs::create_dir_all(
+        generated_policy
+            .parent()
+            .expect("generated policy must have parent"),
+    )
+    .expect("generated policy mutation directory must write");
+    fs::copy(
+        workspace.join("build-support/generated_binding_policy.rs"),
+        &generated_policy,
+    )
+    .expect("approved generated policy must copy");
     let mut mutated = fs::read_to_string(workspace.join("crates/local-api/build.rs"))
         .expect("approved local-api build script must read");
     mutated.push_str(
