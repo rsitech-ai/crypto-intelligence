@@ -125,14 +125,45 @@ struct AppModelTests {
     #expect(await runtime.forceTerminationCount == 1)
   }
 
-  @Test("runtime privacy defaults remain local and remote-disabled")
-  func privacyDefaultsAreLocalOnly() {
-    let configuration = AppEnvironment.runtimeConfiguration
+  @Test("runtime preparation stages the canonical local-only configuration")
+  func privacyDefaultsAreLocalOnly() throws {
+    let runtimeRoot = FileManager.default.temporaryDirectory.appending(
+      path: UUID().uuidString,
+      directoryHint: .isDirectory
+    )
+    defer { try? FileManager.default.removeItem(at: runtimeRoot) }
+    let prepared = try AppEnvironment.prepareRuntimeRoot(
+      runtimeRoot,
+      bundle: Bundle(for: AppDelegate.self),
+      fileManager: .default
+    )
+    let configuration = try String(
+      contentsOf: prepared.configuration,
+      encoding: .utf8
+    )
 
+    #expect(configuration.contains("[daemon]"))
+    #expect(configuration.contains("[coverage]"))
+    #expect(configuration.contains("[models]"))
+    #expect(configuration.contains("[privacy]"))
     #expect(configuration.contains(#"bind_address = "127.0.0.1:0""#))
     #expect(configuration.contains("session_secret_fd = 3"))
     #expect(configuration.contains("remote_export = false"))
     #expect(configuration.contains("remote_telemetry = false"))
+    #expect(
+      FileManager.default.fileExists(
+        atPath: runtimeRoot.appending(
+          path: "fixtures/binance/btcusdt-book-v1.jsonl"
+        ).path
+      )
+    )
+    #expect(
+      FileManager.default.fileExists(
+        atPath: runtimeRoot.appending(
+          path: "models/public-test-artifacts"
+        ).path
+      )
+    )
     #expect(!configuration.contains("0.0.0.0"))
     #expect(!configuration.contains("https://"))
   }

@@ -21,6 +21,7 @@
 		886A8BCCFD75CD33201A6A91 /* FailureStateUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 92587276237A317F29A3DFD6 /* FailureStateUITests.swift */; };
 		96D191C89B6740EDEDD8571A /* TransitionClient in Frameworks */ = {isa = PBXBuildFile; productRef = BF81FBEB94CAA1702A828431 /* TransitionClient */; };
 		9998D396BBC5EC9D5E61B3B0 /* SessionBootstrap.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA8B5CDBEF8AA121126E0185 /* SessionBootstrap.swift */; };
+		B2ECD80941183684D924F808 /* default.toml in Resources */ = {isa = PBXBuildFile; fileRef = B756A13DE3FB438B44051507 /* default.toml */; };
 		BEA4CFD8BD138995D8A14C08 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE5F67F951D17709133B630A /* AppModel.swift */; };
 		E2E8B3DFB0D319ABCD21D531 /* CuspObservatoryApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD83A4BBC48D7DE4524DAC86 /* CuspObservatoryApp.swift */; };
 		F221C2D230C62CA428E9EDF8 /* AppEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AD259A0BB7CBC8161ACE53A /* AppEnvironment.swift */; };
@@ -76,6 +77,7 @@
 		AC231682FB917A14CD580A4C /* DesignTokens.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignTokens.swift; sourceTree = "<group>"; };
 		AE5F67F951D17709133B630A /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
 		B48B4E1101FC29FC6519A51B /* cryptoriskd */ = {isa = PBXFileReference; path = cryptoriskd; sourceTree = "<group>"; };
+		B756A13DE3FB438B44051507 /* default.toml */ = {isa = PBXFileReference; path = default.toml; sourceTree = "<group>"; };
 		C093AC4A2ED5FB3F61F495F2 /* CuspObservatoryUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = CuspObservatoryUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		CD83A4BBC48D7DE4524DAC86 /* CuspObservatoryApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CuspObservatoryApp.swift; sourceTree = "<group>"; };
 		DF0ABF5CECB896B29B6BAA73 /* btcusdt-book-v1.jsonl */ = {isa = PBXFileReference; path = "btcusdt-book-v1.jsonl"; sourceTree = "<group>"; };
@@ -110,6 +112,14 @@
 				836DE8CFB534D0018782F765 /* MarketOverviewModelTests.swift */,
 			);
 			path = CuspObservatoryTests;
+			sourceTree = "<group>";
+		};
+		1855D95660068CB65A317478 /* configs */ = {
+			isa = PBXGroup;
+			children = (
+				B756A13DE3FB438B44051507 /* default.toml */,
+			);
+			path = configs;
 			sourceTree = "<group>";
 		};
 		194210E61A495920D6807B6D /* fixtures */ = {
@@ -251,6 +261,7 @@
 		FB80F9881C8F2F21DB34E292 /* foundation-runtime */ = {
 			isa = PBXGroup;
 			children = (
+				1855D95660068CB65A317478 /* configs */,
 				194210E61A495920D6807B6D /* fixtures */,
 				501502D83183FD0B9F332969 /* target */,
 			);
@@ -371,6 +382,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				4267A74F9EB512F86B9F3806 /* btcusdt-book-v1.jsonl in Resources */,
+				B2ECD80941183684D924F808 /* default.toml in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
