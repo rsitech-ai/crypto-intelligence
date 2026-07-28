@@ -45,13 +45,18 @@ The repository now has a tested foundation runtime: canonical identities and
 event envelopes, layered configuration, local observability, an authenticated
 loopback API, crash-safe segmented WAL persistence and replay, a fixture-backed
 daemon, the native macOS foundation shell, and fail-closed connector runtime
-contracts.
+contracts. The Phase 1 in-memory instrument registry now also provides bounded,
+append-only definition/correction history, generation-aware event-time
+resolution, whole-batch point-in-time snapshots, and deterministic catalog and
+history identities.
 
 This is still an incremental implementation of the approved Phase 00–08
-specification, not a complete research product or release candidate. The
-current fail-closed verification evidence records 357 later-phase scaffold
-findings. Fresh XCUITest is also blocked on macOS automation authorization, and
-an upstream SwiftNIO CNIOWindows warning remains a release gate. Live venue
+specification, not a complete research product or release candidate. The last
+clean-commit fail-closed verification evidence records 357 later-phase scaffold
+findings; the current registry tree reduces the direct static-audit inventory
+to 354. Fresh XCUITest is also blocked on macOS automation authorization, and
+an upstream SwiftNIO CNIOWindows warning remains a release gate. Durable
+instrument-registry persistence and connector enforcement, live venue
 connectors, analytical/model layers, full product flows, signing, notarization,
 and release qualification remain out of scope for the validated foundation
 slice.
