@@ -45,21 +45,21 @@ The repository now has a tested foundation runtime: canonical identities and
 event envelopes, layered configuration, local observability, an authenticated
 loopback API, crash-safe segmented WAL persistence and replay, a fixture-backed
 daemon, the native macOS foundation shell, and fail-closed connector runtime
-contracts. The Phase 1 in-memory instrument registry now also provides bounded,
-append-only definition/correction history, generation-aware event-time
-resolution, whole-batch point-in-time snapshots, and deterministic catalog and
-history identities.
+contracts. The Phase 1 instrument registry provides bounded, append-only
+definition/correction history, generation-aware event-time resolution,
+whole-batch point-in-time snapshots, and deterministic catalog and history
+identities. Its single-writer SQLite metadata store atomically persists catalog
+commits with append-only audit evidence and rehydrates identical validated
+snapshots after restart.
 
 This is still an incremental implementation of the approved Phase 00–08
 specification, not a complete research product or release candidate. The latest
 clean-implementation fail-closed verification evidence records 354 later-phase
 scaffold findings. Fresh XCUITest is also blocked on macOS automation
 authorization, and an upstream SwiftNIO CNIOWindows warning remains a release
-gate. Durable
-instrument-registry persistence and connector enforcement, live venue
-connectors, analytical/model layers, full product flows, signing, notarization,
-and release qualification remain out of scope for the validated foundation
-slice.
+gate. Connector enforcement of the durable catalog, live venue connectors,
+analytical/model layers, full product flows, signing, notarization, and release
+qualification remain out of scope for the validated foundation slice.
 
 See:
 

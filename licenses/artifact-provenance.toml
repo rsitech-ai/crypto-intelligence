@@ -171,3 +171,37 @@ sha256 = "53ab4b7f9add0b13c39b86a748a7ce71878d648702f409f6b5818e26bd775fbe"
 [[category.artifact]]
 path = "apps/macos/Vendor/grpc-swift-nio-transport/Package.swift"
 sha256 = "ada6e61ca9649fa34fdef619242fc0e21ab3a8bfde664f11611173d28ac2ad76"
+
+[[category]]
+name = "vendored-sqlite"
+status = "tracked"
+scope = "vendor/libsqlite3-sys"
+origin = "libsqlite3-sys 0.37.0 from crates.io with official SQLite 3.53.4 generated sources from rusqlite commit 901f9946efdaaa289e6b1c5bd56dc67f4b651e51"
+license = "MIT AND LicenseRef-SQLite-Public-Domain AND BSD-3-Clause"
+redistribution = "allowed-with-license-and-provenance"
+ownership = "rusqlite and SQLite upstream; no repository-authored database engine code"
+version = "libsqlite3-sys-0.37.0+sqlite-3.53.4"
+retention = "pinned Rust 1.88-compatible bundled SQLite source"
+evidence = [
+  "vendor/libsqlite3-sys/CMTI_FILES.sha256",
+  "vendor/libsqlite3-sys/CMTI_PROVENANCE.md",
+  "vendor/libsqlite3-sys/LICENSE",
+  "vendor/libsqlite3-sys/sqlcipher/LICENSE",
+]
+verification = "scripts/verify-vendored-sqlite.sh"
+
+[[category.artifact]]
+path = "vendor/libsqlite3-sys/CMTI_FILES.sha256"
+sha256 = "a30928ae9854de94ab53b894ead9a9cdb1aa782760e4bf34e11b906c94b08c51"
+
+[[category.artifact]]
+path = "vendor/libsqlite3-sys/CMTI_PROVENANCE.md"
+sha256 = "fcc9e7334698b373cfbf0f7fab5832b322b5f96146fa42fcf997ba821547ccd8"
+
+[[category.artifact]]
+path = "vendor/libsqlite3-sys/LICENSE"
+sha256 = "c10c1f27337546471e5f7e4e97fdd398b35b9d4e126115dcd22de8d8e65abf6f"
+
+[[category.artifact]]
+path = "vendor/libsqlite3-sys/sqlcipher/LICENSE"
+sha256 = "ea4fcb309f14a22065e1ea45362d494d320012249ed865fe9c7c0946db754131"

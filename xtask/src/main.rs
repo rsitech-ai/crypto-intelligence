@@ -419,6 +419,7 @@ fn validate_license_inventory(root: &Path, source: &str) -> Result<(), XtaskErro
         "fixture",
         "generated-schema",
         "model",
+        "vendored-sqlite",
         "vendored-source",
     ]);
     let actual_categories = inventory
@@ -510,6 +511,15 @@ fn validate_license_inventory(root: &Path, source: &str) -> Result<(), XtaskErro
                     "allowed-with-license-and-notices",
                 )?;
                 validate_vendor_verification(root, category)?;
+            }
+            "vendored-sqlite" => {
+                require_category_state(category, "tracked", "vendor/libsqlite3-sys", true)?;
+                require_category_license(
+                    category,
+                    "MIT AND LicenseRef-SQLite-Public-Domain AND BSD-3-Clause",
+                    "allowed-with-license-and-provenance",
+                )?;
+                validate_sqlite_vendor_verification(root, category)?;
             }
             _ => {
                 return Err(license_policy(format!(
@@ -839,6 +849,83 @@ fn validate_vendor_verification(
     if covered != actual {
         return Err(license_policy(format!(
             "vendored-source scope does not match its upstream integrity coverage: expected {covered:?}, found {actual:?}"
+        )));
+    }
+    Ok(())
+}
+
+fn validate_sqlite_vendor_verification(
+    root: &Path,
+    category: &ArtifactCategory,
+) -> Result<(), XtaskError> {
+    let expected = "scripts/verify-vendored-sqlite.sh";
+    if category.verification.as_deref() != Some(expected) {
+        return Err(license_policy(format!(
+            "vendored-sqlite verification must be {expected}"
+        )));
+    }
+
+    let output = Command::new(root.join(expected))
+        .current_dir(root)
+        .output()
+        .map_err(|error| license_policy(format!("could not run {expected}: {error}")))?;
+    if !output.status.success() {
+        return Err(license_policy(format!(
+            "{expected} failed with {}: {}",
+            output.status,
+            String::from_utf8_lossy(&output.stderr).trim()
+        )));
+    }
+
+    let manifest_path = root.join("vendor/libsqlite3-sys/CMTI_FILES.sha256");
+    let manifest = fs::read_to_string(&manifest_path).map_err(|error| {
+        license_policy(format!(
+            "could not read vendored SQLite integrity manifest {}: {error}",
+            manifest_path.display()
+        ))
+    })?;
+    let mut covered = category
+        .artifact
+        .iter()
+        .map(|artifact| PathBuf::from(&artifact.path))
+        .collect::<BTreeSet<_>>();
+    let mut manifest_paths = BTreeSet::new();
+    for (index, line) in manifest.lines().enumerate() {
+        let Some((digest, path)) = line.split_once("  ") else {
+            return Err(license_policy(format!(
+                "vendored SQLite integrity manifest line {} is malformed",
+                index + 1
+            )));
+        };
+        if digest.len() != 64
+            || !digest
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        {
+            return Err(license_policy(format!(
+                "vendored SQLite integrity manifest line {} has an invalid SHA-256 digest",
+                index + 1
+            )));
+        }
+        validate_safe_relative_path(path)?;
+        if !Path::new(path).starts_with(&category.scope) {
+            return Err(license_policy(format!(
+                "vendored SQLite integrity path is outside its scope: {path}"
+            )));
+        }
+        if !manifest_paths.insert(PathBuf::from(path)) {
+            return Err(license_policy(format!(
+                "vendored SQLite integrity path is listed more than once: {path}"
+            )));
+        }
+    }
+    covered.extend(manifest_paths);
+
+    let mut actual = BTreeSet::new();
+    collect_regular_files(root, &root.join(&category.scope), &mut actual)?;
+    if covered != actual {
+        return Err(license_policy(format!(
+            "vendored-sqlite scope does not match its integrity coverage: expected {covered:?}, found {actual:?}"
         )));
     }
     Ok(())
