@@ -130,6 +130,53 @@ impl FixedDecimal {
         Self::new(signed_magnitude(magnitude, negative)?, scale)
     }
 
+    /// Divides without rounding and returns a canonical finite decimal.
+    ///
+    /// A quotient whose reduced denominator contains factors other than two
+    /// and five, or whose exact representation requires more than
+    /// [`MAX_SCALE`] fractional digits, returns [`DecimalError::PrecisionLoss`].
+    pub fn checked_div_exact(self, rhs: Self) -> Result<Self, DecimalError> {
+        if rhs.is_zero() {
+            return Err(DecimalError::DivisionByZero);
+        }
+        if self.is_zero() {
+            return Self::new(0, 0);
+        }
+
+        let mut numerator = self.mantissa.unsigned_abs();
+        let mut denominator = rhs.mantissa.unsigned_abs();
+        let common_factor = greatest_common_divisor(numerator, denominator);
+        numerator /= common_factor;
+        denominator /= common_factor;
+
+        let denominator_twos = remove_factor(&mut denominator, 2);
+        let denominator_fives = remove_factor(&mut denominator, 5);
+        if denominator != 1 {
+            return Err(DecimalError::PrecisionLoss);
+        }
+
+        let decimal_places = denominator_twos.max(denominator_fives);
+        let result_scale = i64::from(decimal_places) + i64::from(self.scale) - i64::from(rhs.scale);
+        if result_scale > i64::from(MAX_SCALE) {
+            return Err(DecimalError::PrecisionLoss);
+        }
+
+        numerator = checked_multiply_power(numerator, 2, decimal_places - denominator_twos)?;
+        numerator = checked_multiply_power(numerator, 5, decimal_places - denominator_fives)?;
+
+        let scale = if result_scale < 0 {
+            let integer_places =
+                u32::try_from(-result_scale).map_err(|_| DecimalError::ArithmeticOverflow)?;
+            numerator = checked_multiply_power(numerator, 10, integer_places)?;
+            0
+        } else {
+            u32::try_from(result_scale).map_err(|_| DecimalError::ArithmeticOverflow)?
+        };
+
+        let negative = self.is_negative() ^ rhs.is_negative();
+        Self::new(signed_magnitude(numerator, negative)?, scale)
+    }
+
     /// Multiplies three factors after globally cancelling exact decimal scale.
     ///
     /// Global cancellation avoids rejecting a representable final value merely
@@ -457,6 +504,32 @@ fn checked_scale_up_magnitude(value: u128, power: u32) -> Result<u128, DecimalEr
                 .ok_or(DecimalError::ArithmeticOverflow)?,
         )
         .ok_or(DecimalError::ArithmeticOverflow)
+}
+
+fn checked_multiply_power(value: u128, factor: u128, power: u32) -> Result<u128, DecimalError> {
+    value
+        .checked_mul(
+            factor
+                .checked_pow(power)
+                .ok_or(DecimalError::ArithmeticOverflow)?,
+        )
+        .ok_or(DecimalError::ArithmeticOverflow)
+}
+
+fn greatest_common_divisor(mut left: u128, mut right: u128) -> u128 {
+    while right != 0 {
+        (left, right) = (right, left % right);
+    }
+    left
+}
+
+fn remove_factor(value: &mut u128, factor: u128) -> u32 {
+    let mut count = 0;
+    while (*value).is_multiple_of(factor) {
+        *value /= factor;
+        count += 1;
+    }
+    count
 }
 
 fn factor_count(mut value: u128, factor: u128) -> u32 {
