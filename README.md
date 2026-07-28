@@ -41,16 +41,20 @@ cannot create or alter probabilities.
 
 ## Repository status
 
-The `implementation/full-system-v3` candidate is a path-complete scaffold, not
-a working Phase 00–08 implementation. A 2026-07-27 independent audit found an
-invalid Cargo workspace and Xcode project, placeholder services and native
-surfaces, tautological tests, non-executable CI workflows, and no-op release
-scripts. No daemon, native app, end-to-end forecast flow, or release artifact is
-currently runtime-proven.
+The repository now has a tested foundation runtime: canonical identities and
+event envelopes, layered configuration, local observability, an authenticated
+loopback API, crash-safe segmented WAL persistence and replay, a fixture-backed
+daemon, the native macOS foundation shell, and fail-closed connector runtime
+contracts.
 
-The portable Swift package compiles a narrow contract/model-host subset under
-Swift 6 strict concurrency. That result does not compile or test the native
-SwiftUI sources and must not be represented as native product readiness.
+This is still an incremental implementation of the approved Phase 00–08
+specification, not a complete research product or release candidate. The
+current fail-closed verification evidence records 357 later-phase scaffold
+findings. Fresh XCUITest is also blocked on macOS automation authorization, and
+an upstream SwiftNIO CNIOWindows warning remains a release gate. Live venue
+connectors, analytical/model layers, full product flows, signing, notarization,
+and release qualification remain out of scope for the validated foundation
+slice.
 
 See:
 
@@ -64,21 +68,18 @@ See:
 ## Available verification
 
 ```bash
-python3 scripts/static-audit.py
-python3 scripts/security-audit.py
-swift test --package-path apps/macos \
-  -Xswiftc -warnings-as-errors \
-  -Xswiftc -strict-concurrency=complete
+cargo +1.88.0 check --workspace --all-targets --all-features --locked
+cargo +1.88.0 clippy --workspace --all-targets --all-features --locked -- -D warnings
+cargo +1.88.0 test --workspace --all-targets --all-features --locked
+swift test --package-path apps/macos/Packages/TransitionClient
+scripts/verify-foundation-runtime-twice.py
 ```
 
-The hardened static audit is expected to fail until scaffold placeholders and
-invalid project structures are replaced with behavioral implementations. The
-security audit is only a secret-pattern and required-file-presence scan; it does
-not verify runtime security.
-
-Run the commands in `docs/implementation/VERIFICATION-DEBT.md` only after Cargo,
-Buf, and Xcode can load their projects. A passing placeholder or file-existence
-check is not release evidence.
+The two-run verifier starts from a clean commit, executes the repository gates,
+builds and exercises the packaged macOS app and daemon, inspects logs and
+process cleanup, and writes the exact result to
+`release/evidence/foundation-runtime-verification.json`. A blocked evidence
+record must not be represented as release readiness.
 
 ## License
 
