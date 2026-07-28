@@ -345,16 +345,15 @@ fn validate_instrument(input: &InstrumentDefinitionInput) -> Result<(), DomainEr
             field: "listing and delisting time",
         });
     }
-    if let Some(expiry) = input.expiry_time {
-        if expiry.value() <= input.listing_time.value()
+    if let Some(expiry) = input.expiry_time
+        && (expiry.value() <= input.listing_time.value()
             || input
                 .delisting_time
-                .is_some_and(|delisting| expiry.value() > delisting.value())
-        {
-            return Err(DomainError::InvalidLifecycle {
-                field: "listing, expiry, and delisting time",
-            });
-        }
+                .is_some_and(|delisting| expiry.value() > delisting.value()))
+    {
+        return Err(DomainError::InvalidLifecycle {
+            field: "listing, expiry, and delisting time",
+        });
     }
     Ok(())
 }

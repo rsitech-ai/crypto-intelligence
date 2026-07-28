@@ -1031,6 +1031,10 @@ impl AppConfig {
         self.daemon.runtime_threads
     }
 
+    pub const fn max_memory_gib(&self) -> u64 {
+        self.daemon.max_memory_gib
+    }
+
     pub fn venues(&self) -> &[VenueConfig] {
         &self.venues
     }
@@ -1095,6 +1099,22 @@ impl VenueConfig {
 
     pub fn credential_ref(&self) -> Option<&KeychainReference> {
         self.credential_ref.as_ref()
+    }
+
+    pub const fn enabled(&self) -> bool {
+        self.enabled
+    }
+
+    pub const fn coverage_tier(&self) -> CoverageTier {
+        self.coverage_tier
+    }
+
+    pub const fn instrument_budget(&self) -> u32 {
+        self.instrument_budget
+    }
+
+    pub const fn raw_retention_days(&self) -> u32 {
+        self.raw_retention_days
     }
 }
 
@@ -1526,11 +1546,11 @@ fn merge(base: &mut toml::Value, overlay: toml::Value) {
 }
 
 fn apply_override<T: PartialEq>(target: &mut T, value: Option<T>, changed: &mut bool) {
-    if let Some(value) = value {
-        if *target != value {
-            *target = value;
-            *changed = true;
-        }
+    if let Some(value) = value
+        && *target != value
+    {
+        *target = value;
+        *changed = true;
     }
 }
 
