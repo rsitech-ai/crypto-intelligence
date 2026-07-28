@@ -120,6 +120,16 @@ pub fn encode(metadata: RecordMetadata, payload: &[u8]) -> Result<Vec<u8>, Frame
     Ok(encoded)
 }
 
+pub fn encoded_length(
+    metadata: RecordMetadata,
+    payload_length: usize,
+) -> Result<usize, FrameError> {
+    if metadata.flags != SUPPORTED_FLAGS {
+        return Err(FrameError::UnsupportedFlags(metadata.flags));
+    }
+    checked_encoded_length(HEADER_LENGTH, payload_length)
+}
+
 pub fn encode_legacy(payload: &[u8]) -> Result<Vec<u8>, FrameError> {
     if payload.len() > MAX_PAYLOAD_LENGTH {
         return Err(FrameError::PayloadTooLarge);

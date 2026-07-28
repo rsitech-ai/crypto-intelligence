@@ -1,6 +1,7 @@
 //! Durable, versioned raw market-data write-ahead log.
 
 pub mod frame;
+pub mod manager;
 pub mod prologue;
 pub mod recovery;
 pub mod seal;

@@ -5,6 +5,7 @@ use std::{
     ffi::OsString,
     fs::{self, File, OpenOptions},
     io::{self, Read, Seek, SeekFrom, Write},
+    os::unix::fs::OpenOptionsExt,
     path::{Path, PathBuf},
     sync::atomic::{AtomicU64, Ordering},
 };
@@ -504,6 +505,25 @@ pub fn pending_manifest_path_for(sealed_path: &Path) -> Result<PathBuf, SealingE
     Ok(sealed_path.with_file_name(format!("{base}{PENDING_MANIFEST_SUFFIX}")))
 }
 
+struct SealPaths {
+    active: PathBuf,
+    sealed: PathBuf,
+    manifest: PathBuf,
+    pending: PathBuf,
+}
+
+impl SealPaths {
+    fn new(active_path: &Path) -> Result<Self, SealingError> {
+        let sealed = sealed_path_for(active_path)?;
+        Ok(Self {
+            active: active_path.to_owned(),
+            manifest: manifest_path_for(&sealed)?,
+            pending: pending_manifest_path_for(&sealed)?,
+            sealed,
+        })
+    }
+}
+
 pub fn seal_v2_segment(
     active_path: &Path,
     sealed_wall_time_ns: i64,
@@ -524,20 +544,18 @@ fn seal_v2_segment_with_predecessor(
     predecessor: Option<SegmentPredecessor>,
     sealed_wall_time_ns: i64,
 ) -> Result<SealedSegment, SealingError> {
-    let sealed_path = sealed_path_for(active_path)?;
-    let manifest_path = manifest_path_for(&sealed_path)?;
-    let pending_path = pending_manifest_path_for(&sealed_path)?;
+    let paths = SealPaths::new(active_path)?;
     let active_exists = path_entry_exists(active_path)?;
-    let sealed_exists = path_entry_exists(&sealed_path)?;
-    let manifest_exists = path_entry_exists(&manifest_path)?;
-    let pending_exists = path_entry_exists(&pending_path)?;
+    let sealed_exists = path_entry_exists(&paths.sealed)?;
+    let manifest_exists = path_entry_exists(&paths.manifest)?;
+    let pending_exists = path_entry_exists(&paths.pending)?;
 
     if !active_exists && sealed_exists && manifest_exists {
-        let manifest = verify_sealed_v2_segment(&sealed_path)?;
-        return sealed_result(manifest, manifest_path, sealed_path);
+        let manifest = verify_sealed_v2_segment(&paths.sealed)?;
+        return sealed_result(manifest, paths.manifest, paths.sealed);
     }
     if !active_exists && sealed_exists && pending_exists && !manifest_exists {
-        return resume_pending_seal(&sealed_path, &manifest_path, &pending_path);
+        return resume_pending_seal(&paths.sealed, &paths.manifest, &paths.pending);
     }
     if !active_exists && sealed_exists && !manifest_exists {
         return Err(SealingError::ManifestMissing);
@@ -548,24 +566,158 @@ fn seal_v2_segment_with_predecessor(
     if sealed_exists {
         return Err(SealingError::SealedExists);
     }
-    let pending_manifest = if pending_exists {
-        let encoded = read_bounded(&pending_path, MAX_MANIFEST_LENGTH)?;
-        let manifest = decode_manifest(&encoded)?;
-        if manifest.segment_file() != utf8_file_name(&sealed_path)?
-            || manifest.predecessor() != predecessor.as_ref()
-        {
-            return Err(SealingError::PendingConflict);
-        }
-        Some(manifest)
-    } else {
-        None
-    };
-
-    let (ordinal, filename_segment_id) =
-        parse_active_identity(active_path).ok_or(SealingError::InvalidPath)?;
+    let pending_manifest = load_pending_manifest(&paths, predecessor.as_ref(), pending_exists)?;
     let active_file = open_nofollow(active_path, OFlags::RDWR)?;
     let active_identity = validate_regular_single_link(&active_file)?;
-    let mut segment = Segment::open_v2_file(active_file)?;
+    let segment = Segment::open_v2_file(active_file)?;
+    finish_locked_seal(
+        &paths,
+        predecessor,
+        sealed_wall_time_ns,
+        pending_manifest,
+        segment,
+        active_identity,
+    )
+}
+
+pub(crate) fn seal_v2_segment_at(
+    directory: &File,
+    display_directory: &Path,
+    active_name: &Path,
+    predecessor: Option<SegmentPredecessor>,
+    sealed_wall_time_ns: i64,
+) -> Result<SealedSegment, SealingError> {
+    let paths = SealPaths::new(active_name)?;
+    let active_exists = path_entry_exists_at(directory, &paths.active)?;
+    let sealed_exists = path_entry_exists_at(directory, &paths.sealed)?;
+    let manifest_exists = path_entry_exists_at(directory, &paths.manifest)?;
+    let pending_exists = path_entry_exists_at(directory, &paths.pending)?;
+    if !active_exists && sealed_exists && manifest_exists {
+        let manifest = verify_sealed_v2_segment_at(directory, &paths.sealed)?;
+        return sealed_result(
+            manifest,
+            display_directory.join(&paths.manifest),
+            display_directory.join(&paths.sealed),
+        );
+    }
+    if !active_exists && sealed_exists && pending_exists && !manifest_exists {
+        return resume_pending_seal_at(directory, display_directory, &paths);
+    }
+    if !active_exists && sealed_exists && !manifest_exists {
+        return Err(SealingError::ManifestMissing);
+    }
+    if manifest_exists {
+        return Err(SealingError::ManifestExists);
+    }
+    if sealed_exists {
+        return Err(SealingError::SealedExists);
+    }
+    let pending_manifest =
+        load_pending_manifest_at(directory, &paths, predecessor.as_ref(), pending_exists)?;
+    let active_file = open_nofollow_at(directory, &paths.active, OFlags::RDWR)?;
+    let active_identity = validate_regular_single_link(&active_file)?;
+    let segment = Segment::open_v2_file(active_file)?;
+    finish_locked_seal_at(
+        directory,
+        display_directory,
+        &paths,
+        predecessor,
+        sealed_wall_time_ns,
+        pending_manifest,
+        segment,
+        active_identity,
+    )
+}
+
+pub(crate) fn seal_owned_v2_segment_at(
+    directory: &File,
+    display_directory: &Path,
+    active_name: &Path,
+    segment: Segment,
+    predecessor: Option<SegmentPredecessor>,
+    sealed_wall_time_ns: i64,
+) -> Result<SealedSegment, SealingError> {
+    let paths = SealPaths::new(active_name)?;
+    if !path_entry_exists_at(directory, &paths.active)? {
+        return Err(SealingError::InvalidPath);
+    }
+    if path_entry_exists_at(directory, &paths.manifest)? {
+        return Err(SealingError::ManifestExists);
+    }
+    if path_entry_exists_at(directory, &paths.sealed)? {
+        return Err(SealingError::SealedExists);
+    }
+    let pending_exists = path_entry_exists_at(directory, &paths.pending)?;
+    let pending_manifest =
+        load_pending_manifest_at(directory, &paths, predecessor.as_ref(), pending_exists)?;
+    let active_identity = validate_regular_single_link(segment.file())?;
+    finish_locked_seal_at(
+        directory,
+        display_directory,
+        &paths,
+        predecessor,
+        sealed_wall_time_ns,
+        pending_manifest,
+        segment,
+        active_identity,
+    )
+}
+
+fn load_pending_manifest(
+    paths: &SealPaths,
+    predecessor: Option<&SegmentPredecessor>,
+    pending_exists: bool,
+) -> Result<Option<SealedSegmentManifest>, SealingError> {
+    if !pending_exists {
+        return Ok(None);
+    }
+    let encoded = read_bounded(&paths.pending, MAX_MANIFEST_LENGTH)?;
+    let manifest = decode_manifest(&encoded)?;
+    if manifest.segment_file() != utf8_file_name(&paths.sealed)?
+        || manifest.predecessor() != predecessor
+    {
+        return Err(SealingError::PendingConflict);
+    }
+    Ok(Some(manifest))
+}
+
+fn load_pending_manifest_at(
+    directory: &File,
+    paths: &SealPaths,
+    predecessor: Option<&SegmentPredecessor>,
+    pending_exists: bool,
+) -> Result<Option<SealedSegmentManifest>, SealingError> {
+    if !pending_exists {
+        return Ok(None);
+    }
+    let encoded = read_bounded_at(directory, &paths.pending, MAX_MANIFEST_LENGTH)?;
+    let manifest = decode_manifest(&encoded)?;
+    if manifest.segment_file() != utf8_file_name(&paths.sealed)?
+        || manifest.predecessor() != predecessor
+    {
+        return Err(SealingError::PendingConflict);
+    }
+    Ok(Some(manifest))
+}
+
+pub(crate) fn read_pending_manifest_for_recovery_at(
+    directory: &File,
+    pending_name: &Path,
+) -> Result<SealedSegmentManifest, SealingError> {
+    let encoded = read_bounded_at(directory, pending_name, MAX_MANIFEST_LENGTH)?;
+    decode_manifest(&encoded).map_err(SealingError::from)
+}
+
+fn finish_locked_seal(
+    paths: &SealPaths,
+    predecessor: Option<SegmentPredecessor>,
+    sealed_wall_time_ns: i64,
+    pending_manifest: Option<SealedSegmentManifest>,
+    mut segment: Segment,
+    active_identity: FileIdentity,
+) -> Result<SealedSegment, SealingError> {
+    let (ordinal, filename_segment_id) =
+        parse_active_identity(&paths.active).ok_or(SealingError::InvalidPath)?;
     let metadata = segment
         .segment_metadata()
         .cloned()
@@ -594,7 +746,7 @@ fn seal_v2_segment_with_predecessor(
         u64::try_from(prologue::encode(&metadata)?.len()).map_err(|_| ManifestError::TooLarge)?;
     let (sequence_ranges, min_receive_wall_time_ns, max_receive_wall_time_ns) =
         stats.into_parts()?;
-    let segment_file = utf8_file_name(&sealed_path)?.to_owned();
+    let segment_file = utf8_file_name(&paths.sealed)?.to_owned();
     let mut manifest = SealedSegmentManifest {
         segment_ordinal: ordinal,
         segment_file,
@@ -615,22 +767,116 @@ fn seal_v2_segment_with_predecessor(
     validate_manifest(&manifest)?;
     manifest.manifest_blake3 = digest_body(&manifest.to_body_wire())?;
     let encoded = manifest.encode()?;
-    prepare_pending_manifest(&pending_path, &encoded)?;
+    prepare_pending_manifest(&paths.pending, &encoded)?;
 
-    verify_path_identity(active_path, active_identity)?;
-    rustix::fs::renameat_with(CWD, active_path, CWD, &sealed_path, RenameFlags::NOREPLACE)
-        .map_err(|error| {
-            if error == rustix::io::Errno::EXIST {
-                SealingError::SealedExists
-            } else {
-                SealingError::Io(error.into())
-            }
-        })?;
-    let parent = usable_parent(&sealed_path)?;
+    verify_path_identity(&paths.active, active_identity)?;
+    rustix::fs::renameat_with(
+        CWD,
+        &paths.active,
+        CWD,
+        &paths.sealed,
+        RenameFlags::NOREPLACE,
+    )
+    .map_err(|error| {
+        if error == rustix::io::Errno::EXIST {
+            SealingError::SealedExists
+        } else {
+            SealingError::Io(error.into())
+        }
+    })?;
+    let parent = usable_parent(&paths.sealed)?;
     File::open(parent)?.sync_all()?;
-    verify_path_identity(&sealed_path, active_identity)?;
-    install_pending_manifest(&pending_path, &manifest_path)?;
-    sealed_result(manifest, manifest_path, sealed_path)
+    verify_path_identity(&paths.sealed, active_identity)?;
+    install_pending_manifest(&paths.pending, &paths.manifest)?;
+    sealed_result(manifest, paths.manifest.clone(), paths.sealed.clone())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn finish_locked_seal_at(
+    directory: &File,
+    display_directory: &Path,
+    paths: &SealPaths,
+    predecessor: Option<SegmentPredecessor>,
+    sealed_wall_time_ns: i64,
+    pending_manifest: Option<SealedSegmentManifest>,
+    mut segment: Segment,
+    active_identity: FileIdentity,
+) -> Result<SealedSegment, SealingError> {
+    let (ordinal, filename_segment_id) =
+        parse_active_identity(&paths.active).ok_or(SealingError::InvalidPath)?;
+    let metadata = segment
+        .segment_metadata()
+        .cloned()
+        .ok_or(SealingError::InvalidPath)?;
+    if metadata.segment_id() != &filename_segment_id {
+        return Err(SealingError::SegmentIdMismatch);
+    }
+    let sealed_wall_time_ns = pending_manifest.as_ref().map_or(
+        sealed_wall_time_ns,
+        SealedSegmentManifest::sealed_wall_time_ns,
+    );
+    if sealed_wall_time_ns < metadata.created_wall_time_ns() {
+        return Err(ManifestError::InvalidField("sealed_wall_time_ns").into());
+    }
+    validate_predecessor(ordinal, metadata.segment_id(), predecessor.as_ref())?;
+
+    let mut stats = ScanStats::default();
+    let summary = segment.verify_without_repair(|record| stats.observe(record))?;
+    segment.sync_all()?;
+    let segment_length = segment.file_mut().metadata()?.len();
+    if summary.last_valid_offset() != segment_length {
+        return Err(ManifestError::InvalidField("end_offset").into());
+    }
+    let segment_blake3 = hash_file(segment.file_mut())?;
+    let prologue_length =
+        u64::try_from(prologue::encode(&metadata)?.len()).map_err(|_| ManifestError::TooLarge)?;
+    let (sequence_ranges, min_receive_wall_time_ns, max_receive_wall_time_ns) =
+        stats.into_parts()?;
+    let segment_file = utf8_file_name(&paths.sealed)?.to_owned();
+    let mut manifest = SealedSegmentManifest {
+        segment_ordinal: ordinal,
+        segment_file,
+        metadata,
+        predecessor,
+        sealed_wall_time_ns,
+        segment_length,
+        segment_blake3,
+        prologue_length,
+        record_count: summary.record_count(),
+        first_record_offset: prologue_length,
+        next_offset: summary.last_valid_offset(),
+        sequence_ranges,
+        min_receive_wall_time_ns,
+        max_receive_wall_time_ns,
+        manifest_blake3: [0_u8; 32],
+    };
+    validate_manifest(&manifest)?;
+    manifest.manifest_blake3 = digest_body(&manifest.to_body_wire())?;
+    let encoded = manifest.encode()?;
+    prepare_pending_manifest_at(directory, &paths.pending, &encoded)?;
+    verify_name_identity_at(directory, &paths.active, active_identity)?;
+    rustix::fs::renameat_with(
+        directory,
+        &paths.active,
+        directory,
+        &paths.sealed,
+        RenameFlags::NOREPLACE,
+    )
+    .map_err(|error| {
+        if error == rustix::io::Errno::EXIST {
+            SealingError::SealedExists
+        } else {
+            SealingError::Io(error.into())
+        }
+    })?;
+    directory.sync_all()?;
+    verify_name_identity_at(directory, &paths.sealed, active_identity)?;
+    install_pending_manifest_at(directory, &paths.pending, &paths.manifest)?;
+    sealed_result(
+        manifest,
+        display_directory.join(&paths.manifest),
+        display_directory.join(&paths.sealed),
+    )
 }
 
 pub fn verify_sealed_v2_segment(sealed_path: &Path) -> Result<SealedSegmentManifest, SealingError> {
@@ -644,11 +890,33 @@ pub fn verify_sealed_v2_segment(sealed_path: &Path) -> Result<SealedSegmentManif
     Ok(manifest)
 }
 
+pub(crate) fn verify_sealed_v2_segment_at(
+    directory: &File,
+    sealed_name: &Path,
+) -> Result<SealedSegmentManifest, SealingError> {
+    let manifest_name = manifest_path_for(sealed_name)?;
+    let manifest_bytes = read_bounded_at(directory, &manifest_name, MAX_MANIFEST_LENGTH)?;
+    let manifest = decode_manifest(&manifest_bytes)?;
+    if manifest.segment_file() != utf8_file_name(sealed_name)? {
+        return Err(ManifestError::InvalidField("segment_file").into());
+    }
+    let file = open_nofollow_at(directory, sealed_name, OFlags::RDONLY)?;
+    verify_sealed_file_against_manifest(file, &manifest)?;
+    Ok(manifest)
+}
+
 fn verify_sealed_against_manifest(
     sealed_path: &Path,
     manifest: &SealedSegmentManifest,
 ) -> Result<(), SealingError> {
-    let mut file = open_nofollow(sealed_path, OFlags::RDONLY)?;
+    let file = open_nofollow(sealed_path, OFlags::RDONLY)?;
+    verify_sealed_file_against_manifest(file, manifest)
+}
+
+fn verify_sealed_file_against_manifest(
+    mut file: File,
+    manifest: &SealedSegmentManifest,
+) -> Result<(), SealingError> {
     acquire_shared_lock(&file)?;
     validate_regular_single_link(&file)?;
     let actual_length = file.metadata()?.len();
@@ -922,6 +1190,15 @@ fn sealed_result(
     })
 }
 
+pub(crate) fn compression_job_for_verified_segment(
+    sealed_path: &Path,
+    manifest: &SealedSegmentManifest,
+) -> Result<CompressionJob, SealingError> {
+    let manifest_path = manifest_path_for(sealed_path)?;
+    sealed_result(manifest.clone(), manifest_path, sealed_path.to_owned())
+        .map(|sealed| sealed.compression_job)
+}
+
 fn resume_pending_seal(
     sealed_path: &Path,
     manifest_path: &Path,
@@ -937,11 +1214,50 @@ fn resume_pending_seal(
     sealed_result(manifest, manifest_path.to_owned(), sealed_path.to_owned())
 }
 
+fn resume_pending_seal_at(
+    directory: &File,
+    display_directory: &Path,
+    paths: &SealPaths,
+) -> Result<SealedSegment, SealingError> {
+    let encoded = read_bounded_at(directory, &paths.pending, MAX_MANIFEST_LENGTH)?;
+    let manifest = decode_manifest(&encoded)?;
+    if manifest.segment_file() != utf8_file_name(&paths.sealed)? {
+        return Err(ManifestError::InvalidField("segment_file").into());
+    }
+    let file = open_nofollow_at(directory, &paths.sealed, OFlags::RDONLY)?;
+    verify_sealed_file_against_manifest(file, &manifest)?;
+    install_pending_manifest_at(directory, &paths.pending, &paths.manifest)?;
+    sealed_result(
+        manifest,
+        display_directory.join(&paths.manifest),
+        display_directory.join(&paths.sealed),
+    )
+}
+
 fn prepare_pending_manifest(path: &Path, expected: &[u8]) -> Result<(), SealingError> {
     match publish_new_file(path, expected) {
         Ok(()) => Ok(()),
         Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
             let existing = read_bounded(path, MAX_MANIFEST_LENGTH)?;
+            if existing == expected {
+                Ok(())
+            } else {
+                Err(SealingError::PendingConflict)
+            }
+        }
+        Err(error) => Err(error.into()),
+    }
+}
+
+fn prepare_pending_manifest_at(
+    directory: &File,
+    name: &Path,
+    expected: &[u8],
+) -> Result<(), SealingError> {
+    match publish_new_file_at(directory, name, expected) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
+            let existing = read_bounded_at(directory, name, MAX_MANIFEST_LENGTH)?;
             if existing == expected {
                 Ok(())
             } else {
@@ -971,6 +1287,29 @@ fn install_pending_manifest(pending_path: &Path, manifest_path: &Path) -> Result
     Ok(())
 }
 
+fn install_pending_manifest_at(
+    directory: &File,
+    pending_name: &Path,
+    manifest_name: &Path,
+) -> Result<(), SealingError> {
+    rustix::fs::renameat_with(
+        directory,
+        pending_name,
+        directory,
+        manifest_name,
+        RenameFlags::NOREPLACE,
+    )
+    .map_err(|error| {
+        if error == rustix::io::Errno::EXIST {
+            SealingError::ManifestExists
+        } else {
+            SealingError::Io(error.into())
+        }
+    })?;
+    directory.sync_all()?;
+    Ok(())
+}
+
 fn publish_new_file(path: &Path, bytes: &[u8]) -> Result<(), io::Error> {
     let parent = usable_parent(path)?;
     let file_name = path
@@ -983,6 +1322,51 @@ fn publish_new_file(path: &Path, bytes: &[u8]) -> Result<(), io::Error> {
         .map_err(io::Error::from)?;
     temporary.installed = true;
     File::open(parent)?.sync_all()
+}
+
+fn publish_new_file_at(directory: &File, final_name: &Path, bytes: &[u8]) -> io::Result<()> {
+    let process_id = std::process::id();
+    let first_sequence = TEMP_SEQUENCE.fetch_add(TEMP_CREATE_ATTEMPTS, Ordering::Relaxed);
+    for attempt in 0..TEMP_CREATE_ATTEMPTS {
+        let mut temporary_name = OsString::from(".");
+        temporary_name.push(final_name.as_os_str());
+        temporary_name.push(format!(
+            ".create-{process_id}-{}.tmp",
+            first_sequence.wrapping_add(attempt)
+        ));
+        let file = match rustix::fs::openat(
+            directory,
+            &temporary_name,
+            OFlags::CREATE | OFlags::EXCL | OFlags::RDWR | OFlags::CLOEXEC | OFlags::NOFOLLOW,
+            Mode::RUSR | Mode::WUSR,
+        ) {
+            Ok(file) => File::from(file),
+            Err(error) if error == rustix::io::Errno::EXIST => continue,
+            Err(error) => return Err(error.into()),
+        };
+        let mut file = file;
+        let result = (|| -> io::Result<()> {
+            file.write_all(bytes)?;
+            file.sync_all()?;
+            rustix::fs::renameat_with(
+                directory,
+                &temporary_name,
+                directory,
+                final_name,
+                RenameFlags::NOREPLACE,
+            )
+            .map_err(io::Error::from)?;
+            directory.sync_all()
+        })();
+        if result.is_err() {
+            let _ = rustix::fs::unlinkat(directory, &temporary_name, AtFlags::empty());
+        }
+        return result;
+    }
+    Err(io::Error::new(
+        io::ErrorKind::AlreadyExists,
+        "could not allocate a unique temporary manifest name",
+    ))
 }
 
 struct TemporaryFile {
@@ -1014,6 +1398,7 @@ fn create_temporary_file(parent: &Path, final_name: &std::ffi::OsStr) -> io::Res
             .create_new(true)
             .read(true)
             .write(true)
+            .mode(0o600)
             .open(&path)
         {
             Ok(file) => {
@@ -1060,12 +1445,55 @@ fn read_bounded(path: &Path, maximum: usize) -> Result<Vec<u8>, SealingError> {
     Ok(bytes)
 }
 
+fn read_bounded_at(directory: &File, name: &Path, maximum: usize) -> Result<Vec<u8>, SealingError> {
+    let mut file = open_nofollow_at(directory, name, OFlags::RDONLY).map_err(|error| {
+        if matches!(
+            &error,
+            SealingError::Io(source) if source.kind() == io::ErrorKind::NotFound
+        ) {
+            SealingError::ManifestMissing
+        } else {
+            error
+        }
+    })?;
+    validate_regular_single_link(&file)?;
+    let length = file.metadata()?.len();
+    if length > maximum as u64 {
+        return Err(ManifestError::TooLarge.into());
+    }
+    let length = usize::try_from(length).map_err(|_| ManifestError::TooLarge)?;
+    let mut bytes = vec![0_u8; length];
+    file.read_exact(&mut bytes)?;
+    let mut trailing = [0_u8; 1];
+    if file.read(&mut trailing)? != 0 {
+        return Err(ManifestError::InvalidField("manifest_length").into());
+    }
+    Ok(bytes)
+}
+
 type FileIdentity = rustix::fs::Stat;
 
 fn open_nofollow(path: &Path, access: OFlags) -> Result<File, SealingError> {
     rustix::fs::openat(
         CWD,
         path,
+        access | OFlags::CLOEXEC | OFlags::NOFOLLOW,
+        Mode::empty(),
+    )
+    .map(File::from)
+    .map_err(|error| {
+        if error == rustix::io::Errno::LOOP {
+            SealingError::UnsafeFile
+        } else {
+            SealingError::Io(error.into())
+        }
+    })
+}
+
+fn open_nofollow_at(directory: &File, name: &Path, access: OFlags) -> Result<File, SealingError> {
+    rustix::fs::openat(
+        directory,
+        name,
         access | OFlags::CLOEXEC | OFlags::NOFOLLOW,
         Mode::empty(),
     )
@@ -1100,11 +1528,36 @@ fn verify_path_identity(path: &Path, expected: FileIdentity) -> Result<(), Seali
     Ok(())
 }
 
+fn verify_name_identity_at(
+    directory: &File,
+    name: &Path,
+    expected: FileIdentity,
+) -> Result<(), SealingError> {
+    let actual =
+        rustix::fs::statat(directory, name, AtFlags::SYMLINK_NOFOLLOW).map_err(io::Error::from)?;
+    if !FileType::from_raw_mode(actual.st_mode).is_file()
+        || actual.st_nlink != 1
+        || actual.st_dev != expected.st_dev
+        || actual.st_ino != expected.st_ino
+    {
+        return Err(SealingError::UnsafeFile);
+    }
+    Ok(())
+}
+
 fn path_entry_exists(path: &Path) -> Result<bool, io::Error> {
     match fs::symlink_metadata(path) {
         Ok(_) => Ok(true),
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(false),
         Err(error) => Err(error),
+    }
+}
+
+fn path_entry_exists_at(directory: &File, name: &Path) -> Result<bool, io::Error> {
+    match rustix::fs::statat(directory, name, AtFlags::SYMLINK_NOFOLLOW) {
+        Ok(_) => Ok(true),
+        Err(error) if error == rustix::io::Errno::NOENT => Ok(false),
+        Err(error) => Err(error.into()),
     }
 }
 

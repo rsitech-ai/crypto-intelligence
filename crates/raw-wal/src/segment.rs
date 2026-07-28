@@ -5,11 +5,12 @@ use std::{
     ffi::OsString,
     fs::{self, File, OpenOptions},
     io::{self, Read, Seek, SeekFrom, Write},
+    os::unix::fs::OpenOptionsExt,
     path::{Path, PathBuf},
     sync::atomic::{AtomicU64, Ordering},
 };
 
-use rustix::fs::{CWD, FlockOperation, RenameFlags};
+use rustix::fs::{AtFlags, CWD, FlockOperation, Mode, OFlags, RenameFlags};
 use thiserror::Error;
 
 use crate::{
@@ -98,6 +99,7 @@ impl Segment {
             .read(true)
             .write(true)
             .truncate(false)
+            .mode(0o600)
             .open(path)?;
         Self::from_file(file)
     }
@@ -114,6 +116,41 @@ impl Segment {
             .map_err(io::Error::from)?;
         let file = temporary.into_file();
         File::open(parent)?.sync_all()?;
+        Ok(Self {
+            file,
+            segment_metadata: Some(metadata),
+            record_start_offset: encoded.len() as u64,
+            v2_sequences: Some(BTreeMap::new()),
+            poisoned: false,
+        })
+    }
+
+    pub(crate) fn create_v2_at(
+        directory: &File,
+        file_name: &std::ffi::OsStr,
+        metadata: SegmentMetadata,
+    ) -> Result<Self, SegmentError> {
+        let encoded = prologue::encode(&metadata)?;
+        let (temporary_name, mut file) = create_temporary_segment_at(directory, file_name)?;
+        let result = (|| -> Result<(), SegmentError> {
+            acquire_exclusive_lock(&file)?;
+            file.write_all(&encoded)?;
+            file.sync_all()?;
+            rustix::fs::renameat_with(
+                directory,
+                &temporary_name,
+                directory,
+                file_name,
+                RenameFlags::NOREPLACE,
+            )
+            .map_err(io::Error::from)?;
+            directory.sync_all()?;
+            Ok(())
+        })();
+        if let Err(error) = result {
+            let _ = rustix::fs::unlinkat(directory, &temporary_name, AtFlags::empty());
+            return Err(error);
+        }
         Ok(Self {
             file,
             segment_metadata: Some(metadata),
@@ -305,6 +342,10 @@ impl Segment {
 
     pub(crate) fn file_mut(&mut self) -> &mut File {
         &mut self.file
+    }
+
+    pub(crate) const fn file(&self) -> &File {
+        &self.file
     }
 
     fn append_encoded_range(&mut self, encoded: &[u8]) -> Result<(u64, u64), SegmentError> {
@@ -521,6 +562,7 @@ fn create_temporary_segment(
             .create_new(true)
             .read(true)
             .write(true)
+            .mode(0o600)
             .open(&temporary_path)
         {
             Ok(file) => {
@@ -536,6 +578,36 @@ fn create_temporary_segment(
     Err(io::Error::new(
         io::ErrorKind::AlreadyExists,
         "could not allocate a unique temporary WAL segment path",
+    ))
+}
+
+fn create_temporary_segment_at(
+    directory: &File,
+    final_name: &std::ffi::OsStr,
+) -> Result<(OsString, File), io::Error> {
+    let process_id = std::process::id();
+    let first_sequence = TEMP_SEQUENCE.fetch_add(TEMP_CREATE_ATTEMPTS, Ordering::Relaxed);
+    for attempt in 0..TEMP_CREATE_ATTEMPTS {
+        let mut temporary_name = OsString::from(".");
+        temporary_name.push(final_name);
+        temporary_name.push(format!(
+            ".create-{process_id}-{}.tmp",
+            first_sequence.wrapping_add(attempt)
+        ));
+        match rustix::fs::openat(
+            directory,
+            &temporary_name,
+            OFlags::CREATE | OFlags::EXCL | OFlags::RDWR | OFlags::CLOEXEC | OFlags::NOFOLLOW,
+            Mode::RUSR | Mode::WUSR,
+        ) {
+            Ok(file) => return Ok((temporary_name, File::from(file))),
+            Err(error) if error == rustix::io::Errno::EXIST => {}
+            Err(error) => return Err(error.into()),
+        }
+    }
+    Err(io::Error::new(
+        io::ErrorKind::AlreadyExists,
+        "could not allocate a unique temporary WAL segment name",
     ))
 }
 
