@@ -1,30 +1,13 @@
 //! Checked fixed-point values for authoritative monetary boundaries.
 
+mod error;
+
+pub use error::DecimalError;
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error as _};
 use std::{cmp::Ordering, fmt, str::FromStr};
-use thiserror::Error;
 
 /// Maximum supported count of fractional decimal digits.
 pub const MAX_SCALE: u32 = 38;
-
-/// Failures produced by fixed-decimal parsing and checked arithmetic.
-#[derive(Clone, Debug, Eq, Error, PartialEq)]
-pub enum DecimalError {
-    #[error("decimal text is not canonical")]
-    InvalidSyntax,
-    #[error("decimal scale exceeds {MAX_SCALE}")]
-    ScaleTooLarge,
-    #[error("fixed-decimal arithmetic overflow")]
-    ArithmeticOverflow,
-    #[error("rescaling would lose precision")]
-    PrecisionLoss,
-    #[error("division by zero")]
-    DivisionByZero,
-    #[error("{0} must be positive")]
-    NonPositive(&'static str),
-    #[error("{0} must not be negative")]
-    Negative(&'static str),
-}
 
 /// A canonical signed fixed-point decimal backed by `i128`.
 ///
@@ -113,19 +96,11 @@ impl FixedDecimal {
     }
 
     pub fn checked_add(self, rhs: Self) -> Result<Self, DecimalError> {
-        let (left, right, scale) = self.aligned_with(rhs)?;
-        let mantissa = left
-            .checked_add(right)
-            .ok_or(DecimalError::ArithmeticOverflow)?;
-        Self::new(mantissa, scale)
+        self.checked_sum(rhs, false)
     }
 
     pub fn checked_sub(self, rhs: Self) -> Result<Self, DecimalError> {
-        let (left, right, scale) = self.aligned_with(rhs)?;
-        let mantissa = left
-            .checked_sub(right)
-            .ok_or(DecimalError::ArithmeticOverflow)?;
-        Self::new(mantissa, scale)
+        self.checked_sum(rhs, true)
     }
 
     pub fn checked_mul(self, rhs: Self) -> Result<Self, DecimalError> {
@@ -213,6 +188,34 @@ impl FixedDecimal {
             checked_scale_up(rhs.mantissa, scale - rhs.scale)?,
             scale,
         ))
+    }
+
+    fn checked_sum(self, rhs: Self, subtract_rhs: bool) -> Result<Self, DecimalError> {
+        let mut scale = self.scale.max(rhs.scale);
+        let left = checked_scale_up_magnitude(self.mantissa.unsigned_abs(), scale - self.scale)?;
+        let right = checked_scale_up_magnitude(rhs.mantissa.unsigned_abs(), scale - rhs.scale)?;
+        let left_negative = self.is_negative();
+        let right_negative = rhs.is_negative() ^ subtract_rhs;
+
+        let (mut magnitude, negative) = if left_negative == right_negative {
+            (
+                left.checked_add(right)
+                    .ok_or(DecimalError::ArithmeticOverflow)?,
+                left_negative,
+            )
+        } else {
+            match left.cmp(&right) {
+                Ordering::Less => (right - left, right_negative),
+                Ordering::Equal => (0, false),
+                Ordering::Greater => (left - right, left_negative),
+            }
+        };
+        while scale > 0 && magnitude.is_multiple_of(10) {
+            magnitude /= 10;
+            scale -= 1;
+        }
+
+        Self::new(signed_magnitude(magnitude, negative)?, scale)
     }
 }
 
@@ -406,6 +409,16 @@ fn checked_power_of_ten(power: u32) -> Result<i128, DecimalError> {
 fn checked_scale_up(value: i128, power: u32) -> Result<i128, DecimalError> {
     value
         .checked_mul(checked_power_of_ten(power)?)
+        .ok_or(DecimalError::ArithmeticOverflow)
+}
+
+fn checked_scale_up_magnitude(value: u128, power: u32) -> Result<u128, DecimalError> {
+    value
+        .checked_mul(
+            10_u128
+                .checked_pow(power)
+                .ok_or(DecimalError::ArithmeticOverflow)?,
+        )
         .ok_or(DecimalError::ArithmeticOverflow)
 }
 
