@@ -1,3 +1,356 @@
-//! domain::instrument implementation boundary.
-#[derive(Clone,Debug,Eq,PartialEq)] pub struct InstrumentContract { pub schema_version:u32, pub identifier:String }
-impl InstrumentContract { pub fn new(identifier:impl Into<String>)->Result<Self,&'static str>{let identifier=identifier.into();if identifier.is_empty()||identifier.len()>256{return Err("invalid identifier")}Ok(Self{schema_version:1,identifier})} }
+use crate::{AssetId, DomainError, UnixNanos, VenueId, ensure_generation, id::normalize_upper};
+use fixed_decimal::{FixedDecimal, Notional, Price, Quantity};
+use serde::{Deserialize, Deserializer, Serialize, de::Error as _};
+use std::fmt;
+
+const MAX_SYMBOL_LENGTH: usize = 96;
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize)]
+pub struct InstrumentId {
+    venue: VenueId,
+    venue_symbol: String,
+    generation: u32,
+}
+
+impl InstrumentId {
+    pub fn new(
+        venue: VenueId,
+        venue_symbol: impl AsRef<str>,
+        generation: u32,
+    ) -> Result<Self, DomainError> {
+        ensure_generation(generation)?;
+        Ok(Self {
+            venue,
+            venue_symbol: normalize_upper(
+                venue_symbol.as_ref(),
+                "venue symbol",
+                MAX_SYMBOL_LENGTH,
+            )?,
+            generation,
+        })
+    }
+
+    pub fn venue(&self) -> &VenueId {
+        &self.venue
+    }
+
+    pub fn venue_symbol(&self) -> &str {
+        &self.venue_symbol
+    }
+
+    pub const fn generation(&self) -> u32 {
+        self.generation
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct InstrumentIdWire {
+    venue: VenueId,
+    venue_symbol: String,
+    generation: u32,
+}
+
+impl<'de> Deserialize<'de> for InstrumentId {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let wire = InstrumentIdWire::deserialize(deserializer)?;
+        Self::new(wire.venue, wire.venue_symbol, wire.generation).map_err(D::Error::custom)
+    }
+}
+
+impl fmt::Display for InstrumentId {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            formatter,
+            "{}:{}:{}",
+            self.venue, self.venue_symbol, self.generation
+        )
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProductType {
+    Spot,
+    Perpetual,
+    Future,
+    Option,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ContractKind {
+    None,
+    Linear,
+    Inverse,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ContractValueUnit {
+    Base,
+    Quote,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OptionSide {
+    Call,
+    Put,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct InstrumentDefinitionInput {
+    pub id: InstrumentId,
+    pub product_type: ProductType,
+    pub base_asset: AssetId,
+    pub quote_asset: AssetId,
+    pub settlement_asset: AssetId,
+    pub contract_multiplier: FixedDecimal,
+    pub contract_value_unit: ContractValueUnit,
+    pub contract_kind: ContractKind,
+    pub expiry_time: Option<UnixNanos>,
+    pub strike: Option<Price>,
+    pub option_side: Option<OptionSide>,
+    pub price_tick: Price,
+    pub quantity_step: Quantity,
+    pub listing_time: UnixNanos,
+    pub delisting_time: Option<UnixNanos>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct InstrumentDefinition {
+    id: InstrumentId,
+    product_type: ProductType,
+    base_asset: AssetId,
+    quote_asset: AssetId,
+    settlement_asset: AssetId,
+    contract_multiplier: FixedDecimal,
+    contract_value_unit: ContractValueUnit,
+    contract_kind: ContractKind,
+    expiry_time: Option<UnixNanos>,
+    strike: Option<Price>,
+    option_side: Option<OptionSide>,
+    price_tick: Price,
+    quantity_step: Quantity,
+    listing_time: UnixNanos,
+    delisting_time: Option<UnixNanos>,
+}
+
+impl InstrumentDefinition {
+    pub fn new(input: InstrumentDefinitionInput) -> Result<Self, DomainError> {
+        validate_instrument(&input)?;
+        Ok(Self {
+            id: input.id,
+            product_type: input.product_type,
+            base_asset: input.base_asset,
+            quote_asset: input.quote_asset,
+            settlement_asset: input.settlement_asset,
+            contract_multiplier: input.contract_multiplier,
+            contract_value_unit: input.contract_value_unit,
+            contract_kind: input.contract_kind,
+            expiry_time: input.expiry_time,
+            strike: input.strike,
+            option_side: input.option_side,
+            price_tick: input.price_tick,
+            quantity_step: input.quantity_step,
+            listing_time: input.listing_time,
+            delisting_time: input.delisting_time,
+        })
+    }
+
+    pub fn id(&self) -> &InstrumentId {
+        &self.id
+    }
+
+    pub const fn product_type(&self) -> ProductType {
+        self.product_type
+    }
+
+    pub fn base_asset(&self) -> &AssetId {
+        &self.base_asset
+    }
+
+    pub fn quote_asset(&self) -> &AssetId {
+        &self.quote_asset
+    }
+
+    pub fn settlement_asset(&self) -> &AssetId {
+        &self.settlement_asset
+    }
+
+    pub const fn contract_multiplier(&self) -> FixedDecimal {
+        self.contract_multiplier
+    }
+
+    pub const fn contract_value_unit(&self) -> ContractValueUnit {
+        self.contract_value_unit
+    }
+
+    pub const fn contract_kind(&self) -> ContractKind {
+        self.contract_kind
+    }
+
+    pub const fn expiry_time(&self) -> Option<UnixNanos> {
+        self.expiry_time
+    }
+
+    pub const fn strike(&self) -> Option<Price> {
+        self.strike
+    }
+
+    pub const fn option_side(&self) -> Option<OptionSide> {
+        self.option_side
+    }
+
+    pub const fn price_tick(&self) -> Price {
+        self.price_tick
+    }
+
+    pub const fn quantity_step(&self) -> Quantity {
+        self.quantity_step
+    }
+
+    pub const fn listing_time(&self) -> UnixNanos {
+        self.listing_time
+    }
+
+    pub const fn delisting_time(&self) -> Option<UnixNanos> {
+        self.delisting_time
+    }
+
+    /// Returns the exact notional denominated in the instrument's quote asset.
+    ///
+    /// For spot and linear contracts, the multiplier is base-denominated, so
+    /// quote notional includes `price`. For inverse contracts, the multiplier
+    /// is already quote-denominated, so quote notional is independent of
+    /// `price`. Converting inverse quote notional to base exposure requires
+    /// division by price and an explicit rounding policy; that is deliberately
+    /// outside this API.
+    pub fn quote_notional(
+        &self,
+        price: Price,
+        quantity: Quantity,
+    ) -> Result<Notional, DomainError> {
+        let value = match self.contract_kind {
+            ContractKind::Inverse => quantity
+                .value()
+                .checked_mul(self.contract_multiplier)
+                .map_err(DomainError::Decimal)?,
+            ContractKind::None | ContractKind::Linear => price
+                .value()
+                .checked_product3(quantity.value(), self.contract_multiplier)
+                .map_err(DomainError::Decimal)?,
+        };
+        Notional::new(value).map_err(DomainError::Decimal)
+    }
+}
+
+impl<'de> Deserialize<'de> for InstrumentDefinition {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Self::new(InstrumentDefinitionInput::deserialize(deserializer)?).map_err(D::Error::custom)
+    }
+}
+
+fn validate_instrument(input: &InstrumentDefinitionInput) -> Result<(), DomainError> {
+    if input.base_asset == input.quote_asset {
+        return Err(DomainError::InvalidInstrument {
+            field: "base and quote assets",
+        });
+    }
+    if !input.contract_multiplier.is_positive() {
+        return Err(DomainError::InvalidInstrument {
+            field: "contract multiplier",
+        });
+    }
+    if !input.quantity_step.value().is_positive() {
+        return Err(DomainError::InvalidInstrument {
+            field: "quantity step",
+        });
+    }
+
+    match input.contract_kind {
+        ContractKind::None => {
+            if input.product_type != ProductType::Spot
+                || input.contract_value_unit != ContractValueUnit::Base
+                || input.settlement_asset != input.quote_asset
+            {
+                return Err(DomainError::InvalidInstrument {
+                    field: "spot contract metadata",
+                });
+            }
+        }
+        ContractKind::Linear => {
+            if input.product_type == ProductType::Spot
+                || input.contract_value_unit != ContractValueUnit::Base
+                || input.settlement_asset != input.quote_asset
+            {
+                return Err(DomainError::InvalidInstrument {
+                    field: "linear contract metadata",
+                });
+            }
+        }
+        ContractKind::Inverse => {
+            if input.product_type == ProductType::Spot
+                || input.contract_value_unit != ContractValueUnit::Quote
+                || input.settlement_asset != input.base_asset
+            {
+                return Err(DomainError::InvalidInstrument {
+                    field: "inverse contract metadata",
+                });
+            }
+        }
+    }
+
+    let has_expiry = input.expiry_time.is_some();
+    let has_strike = input.strike.is_some();
+    let has_option_side = input.option_side.is_some();
+    match input.product_type {
+        ProductType::Spot | ProductType::Perpetual
+            if has_expiry || has_strike || has_option_side =>
+        {
+            return Err(DomainError::InvalidInstrument {
+                field: "non-expiring product metadata",
+            });
+        }
+        ProductType::Future if !has_expiry || has_strike || has_option_side => {
+            return Err(DomainError::InvalidInstrument {
+                field: "future metadata",
+            });
+        }
+        ProductType::Option if !has_expiry || !has_strike || !has_option_side => {
+            return Err(DomainError::InvalidInstrument {
+                field: "option metadata",
+            });
+        }
+        _ => {}
+    }
+
+    if input
+        .delisting_time
+        .is_some_and(|delisting| delisting.value() <= input.listing_time.value())
+    {
+        return Err(DomainError::InvalidLifecycle {
+            field: "listing and delisting time",
+        });
+    }
+    if let Some(expiry) = input.expiry_time {
+        if expiry.value() <= input.listing_time.value()
+            || input
+                .delisting_time
+                .is_some_and(|delisting| expiry.value() > delisting.value())
+        {
+            return Err(DomainError::InvalidLifecycle {
+                field: "listing, expiry, and delisting time",
+            });
+        }
+    }
+    Ok(())
+}

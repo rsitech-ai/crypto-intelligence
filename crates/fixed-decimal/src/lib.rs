@@ -112,22 +112,59 @@ impl FixedDecimal {
             .scale
             .checked_add(rhs.scale)
             .ok_or(DecimalError::ArithmeticOverflow)?;
-        let mut left = self.mantissa.unsigned_abs();
-        let mut right = rhs.mantissa.unsigned_abs();
+        let mut factors = [self.mantissa.unsigned_abs(), rhs.mantissa.unsigned_abs()];
         let cancellable_tens = combined_scale
-            .min(factor_count(left, 2) + factor_count(right, 2))
-            .min(factor_count(left, 5) + factor_count(right, 5));
-        cancel_factor(&mut left, &mut right, 2, cancellable_tens);
-        cancel_factor(&mut left, &mut right, 5, cancellable_tens);
+            .min(total_factor_count(&factors, 2))
+            .min(total_factor_count(&factors, 5));
+        cancel_factor(&mut factors, 2, cancellable_tens);
+        cancel_factor(&mut factors, 5, cancellable_tens);
 
         let scale = combined_scale - cancellable_tens;
         if scale > MAX_SCALE {
             return Err(DecimalError::ScaleTooLarge);
         }
-        let magnitude = left
-            .checked_mul(right)
+        let magnitude = factors[0]
+            .checked_mul(factors[1])
             .ok_or(DecimalError::ArithmeticOverflow)?;
         let negative = self.is_negative() ^ rhs.is_negative();
+        Self::new(signed_magnitude(magnitude, negative)?, scale)
+    }
+
+    /// Multiplies three factors after globally cancelling exact decimal scale.
+    ///
+    /// Global cancellation avoids rejecting a representable final value merely
+    /// because one arbitrary pair would overflow as an intermediate product.
+    pub fn checked_product3(self, second: Self, third: Self) -> Result<Self, DecimalError> {
+        if self.is_zero() || second.is_zero() || third.is_zero() {
+            return Self::new(0, 0);
+        }
+
+        let combined_scale = self
+            .scale
+            .checked_add(second.scale)
+            .and_then(|scale| scale.checked_add(third.scale))
+            .ok_or(DecimalError::ArithmeticOverflow)?;
+        let mut factors = [
+            self.mantissa.unsigned_abs(),
+            second.mantissa.unsigned_abs(),
+            third.mantissa.unsigned_abs(),
+        ];
+        let cancellable_tens = combined_scale
+            .min(total_factor_count(&factors, 2))
+            .min(total_factor_count(&factors, 5));
+        cancel_factor(&mut factors, 2, cancellable_tens);
+        cancel_factor(&mut factors, 5, cancellable_tens);
+
+        let scale = combined_scale - cancellable_tens;
+        if scale > MAX_SCALE {
+            return Err(DecimalError::ScaleTooLarge);
+        }
+        let magnitude = factors.into_iter().try_fold(1_u128, |product, factor| {
+            product
+                .checked_mul(factor)
+                .ok_or(DecimalError::ArithmeticOverflow)
+        })?;
+        let negative = self.is_negative() ^ second.is_negative() ^ third.is_negative();
         Self::new(signed_magnitude(magnitude, negative)?, scale)
     }
 
@@ -431,15 +468,24 @@ fn factor_count(mut value: u128, factor: u128) -> u32 {
     count
 }
 
-fn cancel_factor(left: &mut u128, right: &mut u128, factor: u128, mut count: u32) {
-    while count > 0 {
-        if (*left).is_multiple_of(factor) {
-            *left /= factor;
-        } else {
-            *right /= factor;
+fn total_factor_count(values: &[u128], factor: u128) -> u32 {
+    values
+        .iter()
+        .map(|value| factor_count(*value, factor))
+        .sum()
+}
+
+fn cancel_factor(values: &mut [u128], factor: u128, mut count: u32) {
+    for value in values {
+        while count > 0 && (*value).is_multiple_of(factor) {
+            *value /= factor;
+            count -= 1;
         }
-        count -= 1;
+        if count == 0 {
+            return;
+        }
     }
+    debug_assert_eq!(count, 0);
 }
 
 fn compare_without_scaling(left: FixedDecimal, right: FixedDecimal) -> Ordering {

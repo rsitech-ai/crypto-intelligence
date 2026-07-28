@@ -176,6 +176,34 @@ fn multiplication_cancels_factors_before_raw_product_overflow() {
     );
 }
 
+#[test]
+fn three_factor_product_cancels_scale_globally_before_multiplication() {
+    let maximum = FixedDecimal::new(i128::MAX, 0).expect("maximum integer");
+    let two = FixedDecimal::new(2, 0).expect("two");
+    let one_half = FixedDecimal::new(5, 1).expect("one half");
+
+    for factors in [
+        [maximum, two, one_half],
+        [maximum, one_half, two],
+        [two, maximum, one_half],
+        [two, one_half, maximum],
+        [one_half, maximum, two],
+        [one_half, two, maximum],
+    ] {
+        assert_eq!(
+            factors[0].checked_product3(factors[1], factors[2]),
+            Ok(maximum),
+            "exact result must not depend on pairwise multiplication order"
+        );
+    }
+
+    let negative_two = FixedDecimal::new(-2, 0).expect("negative two");
+    assert_eq!(
+        maximum.checked_product3(negative_two, one_half),
+        FixedDecimal::new(-i128::MAX, 0)
+    );
+}
+
 proptest! {
     #[test]
     fn display_is_a_canonical_round_trip(mantissa in any::<i128>(), scale in 0_u32..=MAX_SCALE) {
@@ -208,6 +236,32 @@ proptest! {
         prop_assert_eq!(left.checked_add(right), Ok(expected_sum));
         prop_assert_eq!(right.checked_add(left), Ok(expected_sum));
         prop_assert_eq!(left.checked_sub(right), Ok(expected_difference));
+    }
+
+    #[test]
+    fn three_factor_product_matches_bounded_exact_reference(
+        first_mantissa in any::<i32>(),
+        first_scale in 0_u32..=6,
+        second_mantissa in any::<i32>(),
+        second_scale in 0_u32..=6,
+        third_mantissa in any::<i32>(),
+        third_scale in 0_u32..=6,
+    ) {
+        let first = FixedDecimal::new(i128::from(first_mantissa), first_scale)
+            .expect("generated first factor is representable");
+        let second = FixedDecimal::new(i128::from(second_mantissa), second_scale)
+            .expect("generated second factor is representable");
+        let third = FixedDecimal::new(i128::from(third_mantissa), third_scale)
+            .expect("generated third factor is representable");
+        let expected = FixedDecimal::new(
+            i128::from(first_mantissa)
+                * i128::from(second_mantissa)
+                * i128::from(third_mantissa),
+            first_scale + second_scale + third_scale,
+        )
+        .expect("bounded exact reference product is representable");
+
+        prop_assert_eq!(first.checked_product3(second, third), Ok(expected));
     }
 
     #[test]
