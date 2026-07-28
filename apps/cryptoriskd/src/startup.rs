@@ -10,6 +10,7 @@ use local_api::{
     auth::{AuthError, SessionSecret},
     session::{SessionDescriptor, SessionError},
 };
+use observability::{LocalJsonLog, LogRotationPolicy, ObservabilityError};
 use rand::{RngCore, rngs::OsRng};
 use rustix::{
     fs::{FileType, FlockOperation, Mode, OFlags, fcntl_getfl, fcntl_setfl},
@@ -23,6 +24,8 @@ const PROTOCOL_MAJOR: u32 = 1;
 const PROTOCOL_MINOR: u32 = 0;
 const WAL_FILE_NAME: &str = "market.wal";
 const LOG_FILE_NAME: &str = "cmti.jsonl";
+const PREVIOUS_LOG_FILE_NAME: &str = "cmti.jsonl.1";
+const MAXIMUM_LOG_SEGMENT_BYTES: u64 = 8 * 1024 * 1024;
 
 pub(crate) fn parse_session_secret(
     bytes: Zeroizing<Vec<u8>>,
@@ -151,13 +154,23 @@ pub fn open_wal_file(data_root: &ValidatedDirectory) -> Result<File, StartupErro
     Ok(file)
 }
 
-pub fn open_log_file(log_root: &ValidatedDirectory) -> Result<File, StartupError> {
-    open_or_create_state_file(
+pub fn open_rotating_log(log_root: &ValidatedDirectory) -> Result<LocalJsonLog, StartupError> {
+    let current = open_or_create_state_file(
         log_root,
         LOG_FILE_NAME,
-        OFlags::WRONLY | OFlags::APPEND | OFlags::CLOEXEC | OFlags::NOFOLLOW,
+        OFlags::RDWR | OFlags::APPEND | OFlags::CLOEXEC | OFlags::NOFOLLOW,
     )
-    .map_err(StartupError::LogIo)
+    .map_err(StartupError::LogIo)?;
+    let previous = open_or_create_state_file(
+        log_root,
+        PREVIOUS_LOG_FILE_NAME,
+        OFlags::RDWR | OFlags::CLOEXEC | OFlags::NOFOLLOW,
+    )
+    .map_err(StartupError::LogIo)?;
+    let policy = LogRotationPolicy::new(MAXIMUM_LOG_SEGMENT_BYTES, 2)
+        .map_err(StartupError::Observability)?;
+    LocalJsonLog::from_rotating_files(current, previous, policy)
+        .map_err(StartupError::Observability)
 }
 
 fn open_or_create_state_file(
@@ -228,4 +241,6 @@ pub enum StartupError {
     WalIo(#[from] io::Error),
     #[error("local JSON log open failed")]
     LogIo(#[source] io::Error),
+    #[error("local JSON log policy failed")]
+    Observability(#[source] ObservabilityError),
 }

@@ -1,6 +1,7 @@
 use std::{
     fs,
     io::{BufRead, BufReader, Read},
+    os::unix::fs::{MetadataExt, PermissionsExt},
     path::Path,
     process::{Child, Command, ExitStatus, Stdio},
     sync::mpsc::{self, Receiver, TryRecvError},
@@ -73,6 +74,7 @@ async fn real_daemon_authenticates_closes_secret_fd_locks_and_restarts_same_wal(
         "healthy stderr must be empty"
     );
     assert_no_secret_material(&first_output);
+    assert_private_structured_logs(root.path());
     let wal_path = root.path().join("data/market.wal");
     let first_wal_length = fs::metadata(&wal_path).expect("first WAL must exist").len();
 
@@ -298,6 +300,46 @@ fn assert_no_secret_material(output: &CapturedOutput) {
     assert!(!output.stderr.contains(&encoded));
 }
 
+fn assert_private_structured_logs(root: &Path) {
+    let current_path = root.join("logs/cmti.jsonl");
+    let previous_path = root.join("logs/cmti.jsonl.1");
+    for path in [&current_path, &previous_path] {
+        let metadata = fs::metadata(path).expect("both bounded log segments must exist");
+        assert!(metadata.file_type().is_file());
+        assert_eq!(metadata.permissions().mode() & 0o777, 0o600);
+        assert_eq!(metadata.nlink(), 1);
+    }
+    assert_eq!(
+        fs::metadata(&previous_path)
+            .expect("previous log metadata must read")
+            .len(),
+        0,
+        "small healthy run must not rotate"
+    );
+
+    let current = fs::read_to_string(current_path).expect("current log must read");
+    assert!(!current.contains(r#""kind":"snapshot""#));
+    let events = current
+        .lines()
+        .map(|line| {
+            serde_json::from_str::<serde_json::Value>(line)
+                .expect("every daemon log line must be structured JSON")
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(events.len(), 2);
+    assert_eq!(events[0]["event"], "fixture_runtime_ready");
+    assert_eq!(events[1]["event"], "fixture_runtime_stopped");
+    for event in events {
+        assert_eq!(event["level"], "info");
+        assert_eq!(event["component"], "runtime");
+        assert!(
+            event["target"]
+                .as_str()
+                .is_some_and(|target| !target.is_empty())
+        );
+    }
+}
+
 fn wait_until_executable_is_cryptoriskd(daemon: &DaemonProcess) {
     let deadline = Instant::now() + EXIT_TIMEOUT;
     loop {
@@ -344,6 +386,10 @@ fn runtime_root() -> tempfile::TempDir {
     let root = tempfile::tempdir().expect("temporary process root must exist");
     fs::create_dir(root.path().join("data")).expect("data root must exist");
     fs::create_dir(root.path().join("logs")).expect("log root must exist");
+    fs::set_permissions(root.path().join("data"), fs::Permissions::from_mode(0o700))
+        .expect("data root must be private");
+    fs::set_permissions(root.path().join("logs"), fs::Permissions::from_mode(0o700))
+        .expect("log root must be private");
     fs::create_dir_all(root.path().join("models/public-test-artifacts"))
         .expect("model registry must exist");
     fs::write(root.path().join("fixture.jsonl"), FIXTURE).expect("fixture must write");
