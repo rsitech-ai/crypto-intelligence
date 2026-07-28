@@ -752,6 +752,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "instrument-registry"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "domain",
+ "fixed-decimal",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "is_terminal_polyfill"
 version = "1.70.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"

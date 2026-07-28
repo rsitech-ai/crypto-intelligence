@@ -74,6 +74,7 @@ fn active_workspace_contains_only_implemented_packages() {
             "domain",
             "event-envelope",
             "fixed-decimal",
+            "instrument-registry",
             "local-api",
             "observability",
             "orderbook",

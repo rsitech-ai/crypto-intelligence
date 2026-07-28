@@ -10,6 +10,7 @@ members = [
   "crates/domain",
   "crates/event-envelope",
   "crates/fixed-decimal",
+  "crates/instrument-registry",
   "crates/local-api",
   "crates/observability",
   "crates/orderbook",
