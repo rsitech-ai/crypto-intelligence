@@ -1,6 +1,7 @@
 use std::{
     fs::{self, OpenOptions},
     io::{Read, Seek, SeekFrom, Write},
+    path::Path,
 };
 
 use raw_wal::{
@@ -9,6 +10,7 @@ use raw_wal::{
         CHECKSUM_LENGTH, HEADER_LENGTH, LEGACY_SCHEMA_VERSION, MAGIC, RecordMetadata,
         SCHEMA_VERSION, encode,
     },
+    prologue::{SegmentMetadata, StreamDescriptor},
     recovery::{MAX_COLLECTED_RECORDS, MAX_RECOVERABLE_SEGMENT_LENGTH},
     segment::{Segment, SegmentError},
 };
@@ -22,6 +24,25 @@ fn metadata(sequence: u64) -> RecordMetadata {
         receive_wall_time_ns: 1_721_234_567_000_000_000 + sequence as i64,
         receive_monotonic_time_ns: 9_000_000 + sequence,
     }
+}
+
+fn segment_metadata() -> SegmentMetadata {
+    SegmentMetadata::new(
+        [1_u8; 16],
+        1_721_234_567_000_000_000,
+        "market-schema-v2",
+        "installation-test",
+        "build-test",
+        vec![
+            StreamDescriptor::new(7, "binance", "spot-btcusdt")
+                .expect("stream descriptor must be valid"),
+        ],
+    )
+    .expect("segment metadata must be valid")
+}
+
+fn create_v2(path: &Path) -> Segment {
+    Segment::create_v2(path, segment_metadata()).expect("v2 segment must create")
 }
 
 fn legacy_frame(payload: &[u8]) -> Vec<u8> {
@@ -87,7 +108,7 @@ fn legacy_v1_remains_readable_and_refuses_a_mixed_v2_append() {
     let mut segment = Segment::open(&path).expect("segment must open");
     assert!(matches!(
         segment.append_record_synced(metadata(1), b"current"),
-        Err(SegmentError::FormatMismatch)
+        Err(SegmentError::PrologueRequired)
     ));
     let report = segment.recover().expect("legacy segment must recover");
 
@@ -106,10 +127,11 @@ fn v2_segment_refuses_legacy_append_and_recovery_rejects_mixed_bytes() {
     let path = directory.path().join("market.wal");
     let v2_length;
     {
-        let mut segment = Segment::open(&path).expect("segment must open");
+        let mut segment = create_v2(&path);
         v2_length = segment
             .append_record_synced(metadata(1), b"current")
-            .expect("v2 frame must append");
+            .expect("v2 frame must append")
+            .next_offset();
         assert!(matches!(
             segment.append_synced(b"legacy"),
             Err(SegmentError::FormatMismatch)
@@ -138,17 +160,19 @@ fn truncated_v2_payload_tail_recovers_only_complete_frames_and_is_idempotent() {
     let directory = tempfile::tempdir().expect("temporary directory must exist");
     let path = directory.path().join("market.wal");
     let first_length;
-    let second_length;
+    let second_offset;
     {
-        let mut segment = Segment::open(&path).expect("segment must open");
+        let mut segment = create_v2(&path);
         first_length = segment
             .append_record_synced(metadata(1), b"one")
-            .expect("first frame must append");
-        second_length = segment
+            .expect("first frame must append")
+            .next_offset();
+        second_offset = segment
             .append_record_synced(metadata(2), b"two")
             .expect("second frame must append");
     }
-    let original_length = first_length + second_length;
+    let original_length = second_offset.next_offset();
+    let second_length = second_offset.next_offset() - second_offset.frame_offset();
     OpenOptions::new()
         .write(true)
         .open(&path)
@@ -156,7 +180,7 @@ fn truncated_v2_payload_tail_recovers_only_complete_frames_and_is_idempotent() {
         .set_len(original_length - 3)
         .expect("test tail must truncate");
 
-    let mut segment = Segment::open(&path).expect("segment must reopen");
+    let mut segment = Segment::open_v2(&path).expect("segment must reopen");
     let first_recovery = segment
         .recover()
         .expect("incomplete final v2 frame must repair");
@@ -169,7 +193,7 @@ fn truncated_v2_payload_tail_recovers_only_complete_frames_and_is_idempotent() {
     );
 
     drop(segment);
-    let mut segment = Segment::open(&path).expect("repaired segment must reopen");
+    let mut segment = Segment::open_v2(&path).expect("repaired segment must reopen");
     let second_recovery = segment.recover().expect("second recovery must be clean");
     assert_eq!(second_recovery.records(), first_recovery.records());
     assert_eq!(second_recovery.truncated_bytes(), 0);
@@ -207,10 +231,11 @@ fn checksum_corruption_in_the_final_v2_frame_preserves_all_bytes() {
     let path = directory.path().join("market.wal");
     let first_length;
     {
-        let mut segment = Segment::open(&path).expect("segment must open");
+        let mut segment = create_v2(&path);
         first_length = segment
             .append_record_synced(metadata(1), b"one")
-            .expect("first frame must append");
+            .expect("first frame must append")
+            .next_offset();
         segment
             .append_record_synced(metadata(2), b"two")
             .expect("second frame must append");
@@ -234,7 +259,7 @@ fn checksum_corruption_in_the_final_v2_frame_preserves_all_bytes() {
     drop(file);
     let original = fs::read(&path).expect("corrupt bytes must read");
 
-    let mut segment = Segment::open(&path).expect("segment must reopen");
+    let mut segment = Segment::open_v2(&path).expect("segment must reopen");
     assert!(matches!(
         segment.recover(),
         Err(RecoveryError::Corruption { offset, .. }) if offset == first_length
@@ -269,23 +294,24 @@ fn authenticated_inflated_length_before_a_later_frame_fails_without_truncation()
 fn invalid_header_checksum_at_eof_is_corruption_not_a_tail_repair() {
     let directory = tempfile::tempdir().expect("temporary directory must exist");
     let path = directory.path().join("market.wal");
-    {
-        let mut segment = Segment::open(&path).expect("segment must open");
+    let frame_offset = {
+        let mut segment = create_v2(&path);
         segment
             .append_record_synced(metadata(1), b"one")
-            .expect("frame must append");
-    }
+            .expect("frame must append")
+            .frame_offset()
+    };
     let mut file = OpenOptions::new()
         .read(true)
         .write(true)
         .open(&path)
         .expect("segment must reopen");
-    file.seek(SeekFrom::Start(56))
+    file.seek(SeekFrom::Start(frame_offset + 56))
         .expect("header checksum byte must be addressable");
     let mut original_byte = [0_u8; 1];
     file.read_exact(&mut original_byte)
         .expect("header checksum byte must read");
-    file.seek(SeekFrom::Start(56))
+    file.seek(SeekFrom::Start(frame_offset + 56))
         .expect("header checksum byte must be addressable");
     file.write_all(&[original_byte[0] ^ 0xFF])
         .expect("header checksum must mutate");
@@ -293,10 +319,10 @@ fn invalid_header_checksum_at_eof_is_corruption_not_a_tail_repair() {
     drop(file);
     let original = fs::read(&path).expect("corrupt bytes must read");
 
-    let mut segment = Segment::open(&path).expect("segment must reopen");
+    let mut segment = Segment::open_v2(&path).expect("segment must reopen");
     assert!(matches!(
         segment.recover(),
-        Err(RecoveryError::Corruption { offset: 0, .. })
+        Err(RecoveryError::Corruption { offset, .. }) if offset == frame_offset
     ));
     assert_eq!(fs::read(&path).expect("segment must read"), original);
 }
@@ -305,13 +331,13 @@ fn invalid_header_checksum_at_eof_is_corruption_not_a_tail_repair() {
 fn metadata_corruption_before_a_later_valid_frame_fails_without_truncation() {
     let directory = tempfile::tempdir().expect("temporary directory must exist");
     let path = directory.path().join("market.wal");
-    let first_length;
+    let second_offset;
     {
-        let mut segment = Segment::open(&path).expect("segment must open");
-        first_length = segment
+        let mut segment = create_v2(&path);
+        segment
             .append_record_synced(metadata(1), b"one")
             .expect("first frame must append");
-        segment
+        second_offset = segment
             .append_record_synced(metadata(2), b"two")
             .expect("second frame must append");
         segment
@@ -323,17 +349,17 @@ fn metadata_corruption_before_a_later_valid_frame_fails_without_truncation() {
         .write(true)
         .open(&path)
         .expect("segment must reopen");
-    file.seek(SeekFrom::Start(first_length + 30))
+    file.seek(SeekFrom::Start(second_offset.frame_offset() + 30))
         .expect("record-sequence byte must be addressable");
     file.write_all(&[0xFF]).expect("metadata must mutate");
     file.sync_data().expect("mutation must sync");
     drop(file);
     let original = fs::read(&path).expect("corrupt bytes must read");
 
-    let mut segment = Segment::open(&path).expect("segment must reopen");
+    let mut segment = Segment::open_v2(&path).expect("segment must reopen");
     assert!(matches!(
         segment.recover(),
-        Err(RecoveryError::Corruption { offset, .. }) if offset == first_length
+        Err(RecoveryError::Corruption { offset, .. }) if offset == second_offset.frame_offset()
     ));
     assert_eq!(fs::read(&path).expect("segment must read"), original);
 }
@@ -409,12 +435,13 @@ fn second_segment_open_fails_while_the_first_owner_is_alive() {
 fn sequence_regression_is_rejected_before_the_append_is_acknowledged() {
     let directory = tempfile::tempdir().expect("temporary directory must exist");
     let path = directory.path().join("market.wal");
-    let mut segment = Segment::open(&path).expect("segment must open");
+    let mut segment = create_v2(&path);
     let first_length = segment
         .append_record_synced(metadata(2), b"two")
-        .expect("first frame must append");
+        .expect("first frame must append")
+        .next_offset();
     drop(segment);
-    let mut segment = Segment::open(&path).expect("existing v2 segment must reopen");
+    let mut segment = Segment::open_v2(&path).expect("existing v2 segment must reopen");
 
     assert!(matches!(
         segment.append_record_synced(metadata(1), b"one"),
@@ -489,7 +516,7 @@ fn unsupported_future_version_is_not_misclassified_as_corruption() {
 fn streaming_recovery_visits_records_without_returning_a_payload_collection() {
     let directory = tempfile::tempdir().expect("temporary directory must exist");
     let path = directory.path().join("market.wal");
-    let mut segment = Segment::open(&path).expect("segment must open");
+    let mut segment = create_v2(&path);
     for sequence in 1..=1_024 {
         segment
             .append_record_synced(metadata(sequence), b"x")
