@@ -5,6 +5,7 @@ members = [
   "apps/cryptoriskd",
   "crates/capacity",
   "crates/connector-binance",
+  "crates/connector-core",
   "crates/config",
   "crates/domain",
   "crates/event-envelope",

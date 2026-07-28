@@ -1,3 +1,34 @@
-//! connector-core::parser implementation boundary.
-#[derive(Clone,Debug,Eq,PartialEq)] pub struct ParserContract { pub schema_version:u32, pub identifier:String }
-impl ParserContract { pub fn new(identifier:impl Into<String>)->Result<Self,&'static str>{let identifier=identifier.into();if identifier.is_empty()||identifier.len()>256{return Err("invalid identifier")}Ok(Self{schema_version:1,identifier})} }
+//! Typed parser rejection records linked to durable raw capture.
+
+use crate::DurableRawReference;
+
+/// Bounded parse-failure classification.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ParseRejectionReason {
+    InvalidJson,
+    SchemaMismatch,
+    NumericOutOfRange,
+    CollectionLimitExceeded,
+    UnsupportedMessage,
+}
+
+/// A parse rejection never retains or exposes the provider payload itself.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ParseRejection {
+    raw: DurableRawReference,
+    reason: ParseRejectionReason,
+}
+
+impl ParseRejection {
+    pub const fn new(raw: DurableRawReference, reason: ParseRejectionReason) -> Self {
+        Self { raw, reason }
+    }
+
+    pub const fn raw(&self) -> &DurableRawReference {
+        &self.raw
+    }
+
+    pub const fn reason(&self) -> ParseRejectionReason {
+        self.reason
+    }
+}
