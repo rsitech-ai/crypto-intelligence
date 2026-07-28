@@ -24,14 +24,19 @@ fn fixture() -> (UncheckedEventMetadata, UncheckedEventPayload) {
         venue: Some(venue),
         instrument_id: Some(instrument),
         exchange_timestamp: Some(UnixNanos::new(1_000)),
+        exchange_transaction_timestamp: Some(UnixNanos::new(1_001)),
         receive_wall_timestamp: UnixNanos::new(1_100),
         receive_monotonic_ns: 100,
+        normalization_timestamp: UnixNanos::new(1_101),
         connection_started_at: UnixNanos::new(900),
         sequence_number: Some(100),
+        previous_sequence_number: Some(99),
         connection_epoch: 1,
+        subscription_epoch: 1,
         snapshot_kind: SnapshotKind::Snapshot,
         source_checksum: Some("checksum".to_owned()),
         raw_payload_hash: [7; 32],
+        parser_version: "parser-v1".to_owned(),
         normalizer_version: "normalizer-v1".to_owned(),
         ingestion_instance: "ingestion-1".to_owned(),
         quality_score_ppm: 1_000_000,
@@ -66,7 +71,7 @@ fn event_id_is_stable_and_domain_separated() {
 }
 
 #[test]
-fn every_metadata_field_changes_event_identity() {
+fn source_event_identity_fields_change_event_identity() {
     let (metadata, payload) = fixture();
     let baseline = canonical_event_id_unchecked(&metadata, &payload).expect("baseline identity");
     let mut mutations = Vec::new();
@@ -79,7 +84,6 @@ fn every_metadata_field_changes_event_identity() {
         }};
     }
 
-    mutation!(schema_version, 2);
     mutation!(
         source,
         SourceId::new(SourceKind::Exchange, "binance-fixture", 2).expect("source")
@@ -93,24 +97,54 @@ fn every_metadata_field_changes_event_identity() {
         )
     );
     mutation!(exchange_timestamp, Some(UnixNanos::new(1_001)));
-    mutation!(receive_wall_timestamp, UnixNanos::new(1_101));
-    mutation!(receive_monotonic_ns, 101);
-    mutation!(connection_started_at, UnixNanos::new(899));
+    mutation!(exchange_transaction_timestamp, Some(UnixNanos::new(1_002)));
     mutation!(sequence_number, Some(101));
-    mutation!(connection_epoch, 2);
-    mutation!(snapshot_kind, SnapshotKind::Delta);
-    mutation!(source_checksum, Some("other-checksum".to_owned()));
-    mutation!(raw_payload_hash, [8; 32]);
-    mutation!(normalizer_version, "normalizer-v2".to_owned());
-    mutation!(ingestion_instance, "ingestion-2".to_owned());
-    mutation!(quality_score_ppm, 999_999);
-    mutation!(quality_flags, QualityFlags::STALE);
 
     for (field, changed) in mutations {
         assert_ne!(
             canonical_event_id_unchecked(&changed, &payload).expect("mutated identity"),
             baseline,
             "metadata field {field} was omitted from event identity"
+        );
+    }
+}
+
+#[test]
+fn local_processing_lineage_does_not_change_source_event_identity() {
+    let (metadata, payload) = fixture();
+    let baseline = canonical_event_id_unchecked(&metadata, &payload).expect("baseline identity");
+    let mut mutations = Vec::new();
+
+    macro_rules! mutation {
+        ($field:ident, $value:expr) => {{
+            let mut changed = metadata.clone();
+            changed.$field = $value;
+            mutations.push((stringify!($field), changed));
+        }};
+    }
+
+    mutation!(schema_version, 2);
+    mutation!(receive_wall_timestamp, UnixNanos::new(1_101));
+    mutation!(receive_monotonic_ns, 101);
+    mutation!(normalization_timestamp, UnixNanos::new(1_102));
+    mutation!(connection_started_at, UnixNanos::new(899));
+    mutation!(previous_sequence_number, Some(98));
+    mutation!(connection_epoch, 2);
+    mutation!(subscription_epoch, 2);
+    mutation!(snapshot_kind, SnapshotKind::Delta);
+    mutation!(source_checksum, Some("other-checksum".to_owned()));
+    mutation!(raw_payload_hash, [8; 32]);
+    mutation!(parser_version, "parser-v2".to_owned());
+    mutation!(normalizer_version, "normalizer-v2".to_owned());
+    mutation!(ingestion_instance, "ingestion-2".to_owned());
+    mutation!(quality_score_ppm, 999_999);
+    mutation!(quality_flags, QualityFlags::STALE);
+
+    for (field, changed) in mutations {
+        assert_eq!(
+            canonical_event_id_unchecked(&changed, &payload).expect("mutated identity"),
+            baseline,
+            "lineage-only metadata field {field} must not fragment source-event identity"
         );
     }
 }
@@ -258,15 +292,6 @@ fn every_book_delta_payload_field_changes_event_identity() {
 fn option_vector_and_variant_framing_are_identity_significant() {
     let (metadata, payload) = fixture();
 
-    let mut no_checksum = metadata.clone();
-    no_checksum.source_checksum = None;
-    let mut empty_checksum = metadata.clone();
-    empty_checksum.source_checksum = Some(String::new());
-    assert_ne!(
-        canonical_event_id_unchecked(&no_checksum, &payload).expect("none checksum"),
-        canonical_event_id_unchecked(&empty_checksum, &payload).expect("empty checksum")
-    );
-
     let level = BookLevel {
         price: price("60000.1"),
         quantity: quantity("2"),
@@ -328,8 +353,25 @@ fn deserialization_revalidates_components_and_identity() {
         serde_json::from_value(encoded.clone()).expect("valid wire envelope");
     assert_eq!(decoded, envelope);
 
+    let mut tampered_type = encoded.clone();
+    tampered_type["event_type"] = serde_json::json!("trade");
+    assert!(
+        serde_json::from_value::<EventEnvelope>(tampered_type)
+            .expect_err("tampered event type must fail")
+            .to_string()
+            .contains("event type")
+    );
+
     let mut tampered_id = encoded.clone();
-    tampered_id["id"][0] = serde_json::json!(255);
+    let original_id = tampered_id["event_id"]
+        .as_str()
+        .expect("event id must be hex");
+    let replacement = if original_id.starts_with('0') {
+        "1"
+    } else {
+        "0"
+    };
+    tampered_id["event_id"] = serde_json::json!(format!("{replacement}{}", &original_id[1..]));
     assert!(
         serde_json::from_value::<EventEnvelope>(tampered_id)
             .expect_err("tampered identity must fail")
@@ -338,7 +380,7 @@ fn deserialization_revalidates_components_and_identity() {
     );
 
     let mut invalid_metadata = encoded;
-    invalid_metadata["metadata"]["connection_epoch"] = serde_json::json!(0);
+    invalid_metadata["connection_epoch"] = serde_json::json!(0);
     assert!(
         serde_json::from_value::<EventEnvelope>(invalid_metadata)
             .expect_err("invalid metadata must fail")
@@ -356,7 +398,7 @@ fn independent_known_vector_freezes_the_canonical_contract() {
 
     assert_eq!(
         hex::encode(independent),
-        "03ee8d375476c366d19c5282f802bc3f11ffca0d3ae814f1fe04380afa796c51"
+        "4d37e6c1c70bcb78f1208ff6aa90d08de4968d7b23acae15ad887234e6e9a3b9"
     );
     assert_eq!(production.as_bytes(), &independent);
 }
@@ -397,7 +439,6 @@ fn independent_fixture_identity(
     }
 
     let mut bytes = Vec::new();
-    u32_field(&mut bytes, metadata.schema_version);
     bytes.push(metadata.source.kind() as u8);
     string(&mut bytes, metadata.source.name());
     u32_field(&mut bytes, metadata.source.generation());
@@ -419,38 +460,24 @@ fn independent_fixture_identity(
             .expect("fixture exchange timestamp")
             .value(),
     );
-    i64_field(&mut bytes, metadata.receive_wall_timestamp.value());
-    u64_field(&mut bytes, metadata.receive_monotonic_ns);
-    i64_field(&mut bytes, metadata.connection_started_at.value());
+    bytes.push(1);
+    i64_field(
+        &mut bytes,
+        metadata
+            .exchange_transaction_timestamp
+            .expect("fixture exchange transaction timestamp")
+            .value(),
+    );
     bytes.push(1);
     u64_field(
         &mut bytes,
         metadata.sequence_number.expect("fixture sequence"),
     );
-    u64_field(&mut bytes, metadata.connection_epoch);
-    bytes.push(metadata.snapshot_kind as u8);
-    bytes.push(1);
-    string(
-        &mut bytes,
-        metadata
-            .source_checksum
-            .as_deref()
-            .expect("fixture checksum"),
-    );
-    u32_field(
-        &mut bytes,
-        u32::try_from(metadata.raw_payload_hash.len()).expect("hash length"),
-    );
-    bytes.extend_from_slice(&metadata.raw_payload_hash);
-    string(&mut bytes, &metadata.normalizer_version);
-    string(&mut bytes, &metadata.ingestion_instance);
-    u32_field(&mut bytes, metadata.quality_score_ppm);
-    u64_field(&mut bytes, metadata.quality_flags.bits());
 
     let UncheckedEventPayload::BookSnapshot(snapshot) = payload else {
         panic!("known vector uses snapshot");
     };
-    bytes.push(1);
+    bytes.push(2);
     u32_field(
         &mut bytes,
         u32::try_from(snapshot.bids.len()).expect("bid count"),

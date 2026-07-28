@@ -12,6 +12,7 @@ pub const EXPECTED_SYMBOL: &str = "BTCUSDT";
 pub const EXPECTED_GENERATION: u32 = 1;
 
 const VENUE: &str = "binance";
+const PARSER_VERSION: &str = "binance-fixture-parser-v1";
 const NORMALIZER_VERSION: &str = "binance-fixture-v1";
 const INGESTION_INSTANCE: &str = "offline-fixture";
 
@@ -166,20 +167,29 @@ fn build_envelope(
     let instrument = InstrumentId::new(venue.clone(), EXPECTED_SYMBOL, EXPECTED_GENERATION)
         .map_err(|_| ParseError::Identity)?;
     let timestamp = UnixNanos::new(event_unix_nanos);
+    let previous_sequence_number = match &payload {
+        UncheckedEventPayload::BookDelta(delta) => delta.first_sequence.checked_sub(1),
+        _ => None,
+    };
     let metadata = UncheckedEventMetadata {
         schema_version: 1,
         source,
         venue: Some(venue),
         instrument_id: Some(instrument),
         exchange_timestamp: Some(timestamp),
+        exchange_transaction_timestamp: None,
         receive_wall_timestamp: timestamp,
         receive_monotonic_ns: sequence,
+        normalization_timestamp: timestamp,
         connection_started_at: timestamp,
         sequence_number: Some(sequence),
+        previous_sequence_number,
         connection_epoch: 1,
+        subscription_epoch: 1,
         snapshot_kind,
         source_checksum: None,
         raw_payload_hash: *blake3::hash(raw).as_bytes(),
+        parser_version: PARSER_VERSION.to_owned(),
         normalizer_version: NORMALIZER_VERSION.to_owned(),
         ingestion_instance: INGESTION_INSTANCE.to_owned(),
         quality_score_ppm: 1_000_000,

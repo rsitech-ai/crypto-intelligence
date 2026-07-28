@@ -94,7 +94,7 @@ fn apply_fixture(book: &mut OrderBook) {
             UncheckedEventPayload::BookDelta(delta) => book
                 .apply_delta(delta, index as u64 + 1)
                 .expect("fixture delta must apply"),
-            UncheckedEventPayload::Trade(_) => panic!("fixture contains no trades"),
+            _ => panic!("fixture contains only order-book payloads"),
         }
     }
 }
