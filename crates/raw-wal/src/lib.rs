@@ -4,5 +4,8 @@ pub mod frame;
 pub mod recovery;
 pub mod segment;
 
-pub use recovery::{RecoveryError, RecoveryReport};
+pub use recovery::{
+    CorruptionKind, RecoveredRecord, RecoveredRecordOwned, RecoveryError, RecoveryReport,
+    RecoverySummary,
+};
 pub use segment::{Segment, SegmentError};

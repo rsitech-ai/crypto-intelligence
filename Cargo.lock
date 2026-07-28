@@ -1164,6 +1164,7 @@ name = "raw-wal"
 version = "0.1.0"
 dependencies = [
  "crc32c",
+ "rustix",
  "tempfile",
  "thiserror",
 ]
