@@ -5,7 +5,7 @@ use std::{
     sync::Arc,
 };
 
-use domain::{AssetId, InstrumentDefinition, InstrumentId, UnixNanos, VenueId};
+use domain::{AssetId, InstrumentDefinition, InstrumentId, ProductType, UnixNanos, VenueId};
 use serde::Serialize;
 
 use crate::{
@@ -49,7 +49,7 @@ pub struct CatalogSnapshot {
     catalog_digest: [u8; 32],
     history_digest: [u8; 32],
     #[serde(skip)]
-    by_symbol: BTreeMap<(VenueId, String), Vec<usize>>,
+    by_symbol: BTreeMap<(VenueId, String, ProductType), Vec<usize>>,
     #[serde(skip)]
     by_id: HashMap<InstrumentId, usize>,
     #[serde(skip)]
@@ -110,7 +110,49 @@ impl CatalogSnapshot {
         }
         let normalized =
             InstrumentId::new(venue.clone(), symbol, 1).map_err(ResolveError::InvalidIdentity)?;
-        let key = (venue.clone(), normalized.venue_symbol().to_owned());
+        let symbol = normalized.venue_symbol();
+        let mut symbol_exists = false;
+        let mut matches = ProductType::ALL
+            .iter()
+            .filter_map(|product_type| {
+                let indices =
+                    self.by_symbol
+                        .get(&(venue.clone(), symbol.to_owned(), *product_type));
+                symbol_exists |= indices.is_some();
+                indices
+            })
+            .flat_map(|indices| indices.iter().copied())
+            .filter(|index| listed_at(self.entries[*index].definition(), event_time));
+        let Some(index) = matches.next() else {
+            return if symbol_exists {
+                Err(ResolveError::NotListedAtTime)
+            } else {
+                Err(ResolveError::UnknownSymbol)
+            };
+        };
+        if matches.next().is_some() {
+            return Err(ResolveError::AmbiguousProductType);
+        }
+        Ok(self.resolved(index))
+    }
+
+    pub fn resolve_for_product(
+        &self,
+        venue: &VenueId,
+        symbol: &str,
+        product_type: ProductType,
+        event_time: UnixNanos,
+    ) -> Result<ResolvedInstrument<'_>, ResolveError> {
+        if !self.venues.contains(venue) {
+            return Err(ResolveError::UnknownVenue);
+        }
+        let normalized = InstrumentId::new_for_product(venue.clone(), symbol, product_type, 1)
+            .map_err(ResolveError::InvalidIdentity)?;
+        let key = (
+            venue.clone(),
+            normalized.venue_symbol().to_owned(),
+            product_type,
+        );
         let indices = self
             .by_symbol
             .get(&key)
@@ -221,14 +263,18 @@ pub(crate) fn build_snapshot(
     let mut entries = effective.into_values().collect::<Vec<_>>();
     entries.sort_by(|left, right| definition_order(left.definition(), right.definition()));
 
-    let mut by_symbol = BTreeMap::<(VenueId, String), Vec<usize>>::new();
+    let mut by_symbol = BTreeMap::<(VenueId, String, ProductType), Vec<usize>>::new();
     let mut by_id = HashMap::with_capacity(entries.len());
     let mut venues = BTreeSet::new();
     for (index, entry) in entries.iter().enumerate() {
         let id = entry.definition().id();
         venues.insert(id.venue().clone());
         by_symbol
-            .entry((id.venue().clone(), id.venue_symbol().to_owned()))
+            .entry((
+                id.venue().clone(),
+                id.venue_symbol().to_owned(),
+                id.product_type(),
+            ))
             .or_default()
             .push(index);
         by_id.insert(id.clone(), index);
@@ -271,7 +317,7 @@ struct SelfContainedSnapshot {
     entries: Vec<CatalogSnapshotEntry>,
     catalog_digest: [u8; 32],
     history_digest: [u8; 32],
-    by_symbol: BTreeMap<(VenueId, String), Vec<usize>>,
+    by_symbol: BTreeMap<(VenueId, String, ProductType), Vec<usize>>,
     by_id: HashMap<InstrumentId, usize>,
     venues: BTreeSet<VenueId>,
 }
@@ -344,6 +390,7 @@ pub(crate) fn definition_order(
         .venue()
         .cmp(right.id().venue())
         .then_with(|| left.id().venue_symbol().cmp(right.id().venue_symbol()))
+        .then_with(|| left.id().product_type().cmp(&right.id().product_type()))
         .then_with(|| left.listing_time().cmp(&right.listing_time()))
         .then_with(|| left.id().generation().cmp(&right.id().generation()))
 }

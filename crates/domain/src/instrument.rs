@@ -1,21 +1,50 @@
 use crate::{AssetId, DomainError, UnixNanos, VenueId, ensure_generation, id::normalize_upper};
 use fixed_decimal::{FixedDecimal, Notional, Price, Quantity};
-use serde::{Deserialize, Deserializer, Serialize, de::Error as _};
+use serde::{Deserialize, Deserializer, Serialize, de::Error as _, ser::SerializeStruct as _};
 use std::fmt;
 
 const MAX_SYMBOL_LENGTH: usize = 96;
 
-#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct InstrumentId {
     venue: VenueId,
     venue_symbol: String,
+    product_type: ProductType,
     generation: u32,
 }
 
+impl Serialize for InstrumentId {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let includes_product = self.product_type != ProductType::Spot;
+        let mut state =
+            serializer.serialize_struct("InstrumentId", if includes_product { 4 } else { 3 })?;
+        state.serialize_field("venue", &self.venue)?;
+        state.serialize_field("venue_symbol", &self.venue_symbol)?;
+        if includes_product {
+            state.serialize_field("product_type", &self.product_type)?;
+        }
+        state.serialize_field("generation", &self.generation)?;
+        state.end()
+    }
+}
+
 impl InstrumentId {
+    /// Constructs the backward-compatible Spot identity form.
     pub fn new(
         venue: VenueId,
         venue_symbol: impl AsRef<str>,
+        generation: u32,
+    ) -> Result<Self, DomainError> {
+        Self::new_for_product(venue, venue_symbol, ProductType::Spot, generation)
+    }
+
+    pub fn new_for_product(
+        venue: VenueId,
+        venue_symbol: impl AsRef<str>,
+        product_type: ProductType,
         generation: u32,
     ) -> Result<Self, DomainError> {
         ensure_generation(generation)?;
@@ -26,6 +55,7 @@ impl InstrumentId {
                 "venue symbol",
                 MAX_SYMBOL_LENGTH,
             )?,
+            product_type,
             generation,
         })
     }
@@ -38,6 +68,10 @@ impl InstrumentId {
         &self.venue_symbol
     }
 
+    pub const fn product_type(&self) -> ProductType {
+        self.product_type
+    }
+
     pub const fn generation(&self) -> u32 {
         self.generation
     }
@@ -48,6 +82,8 @@ impl InstrumentId {
 struct InstrumentIdWire {
     venue: VenueId,
     venue_symbol: String,
+    #[serde(default)]
+    product_type: Option<ProductType>,
     generation: u32,
 }
 
@@ -57,21 +93,38 @@ impl<'de> Deserialize<'de> for InstrumentId {
         D: Deserializer<'de>,
     {
         let wire = InstrumentIdWire::deserialize(deserializer)?;
-        Self::new(wire.venue, wire.venue_symbol, wire.generation).map_err(D::Error::custom)
+        Self::new_for_product(
+            wire.venue,
+            wire.venue_symbol,
+            wire.product_type.unwrap_or(ProductType::Spot),
+            wire.generation,
+        )
+        .map_err(D::Error::custom)
     }
 }
 
 impl fmt::Display for InstrumentId {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            formatter,
-            "{}:{}:{}",
-            self.venue, self.venue_symbol, self.generation
-        )
+        if self.product_type == ProductType::Spot {
+            write!(
+                formatter,
+                "{}:{}:{}",
+                self.venue, self.venue_symbol, self.generation
+            )
+        } else {
+            write!(
+                formatter,
+                "{}:{}:{}:{}",
+                self.venue,
+                self.product_type.as_str(),
+                self.venue_symbol,
+                self.generation
+            )
+        }
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 #[repr(u8)]
 pub enum ProductType {
@@ -79,6 +132,19 @@ pub enum ProductType {
     Perpetual = 1,
     Future = 2,
     Option = 3,
+}
+
+impl ProductType {
+    pub const ALL: [Self; 4] = [Self::Spot, Self::Perpetual, Self::Future, Self::Option];
+
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Spot => "spot",
+            Self::Perpetual => "perpetual",
+            Self::Future => "future",
+            Self::Option => "option",
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
@@ -106,7 +172,7 @@ pub enum OptionSide {
     Put = 1,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct InstrumentDefinitionInput {
     pub id: InstrumentId,
@@ -124,6 +190,59 @@ pub struct InstrumentDefinitionInput {
     pub quantity_step: Quantity,
     pub listing_time: UnixNanos,
     pub delisting_time: Option<UnixNanos>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct InstrumentDefinitionInputWire {
+    id: InstrumentIdWire,
+    product_type: ProductType,
+    base_asset: AssetId,
+    quote_asset: AssetId,
+    settlement_asset: AssetId,
+    contract_multiplier: FixedDecimal,
+    contract_value_unit: ContractValueUnit,
+    contract_kind: ContractKind,
+    expiry_time: Option<UnixNanos>,
+    strike: Option<Price>,
+    option_side: Option<OptionSide>,
+    price_tick: Price,
+    quantity_step: Quantity,
+    listing_time: UnixNanos,
+    delisting_time: Option<UnixNanos>,
+}
+
+impl<'de> Deserialize<'de> for InstrumentDefinitionInput {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let wire = InstrumentDefinitionInputWire::deserialize(deserializer)?;
+        let id = InstrumentId::new_for_product(
+            wire.id.venue,
+            wire.id.venue_symbol,
+            wire.id.product_type.unwrap_or(wire.product_type),
+            wire.id.generation,
+        )
+        .map_err(D::Error::custom)?;
+        Ok(Self {
+            id,
+            product_type: wire.product_type,
+            base_asset: wire.base_asset,
+            quote_asset: wire.quote_asset,
+            settlement_asset: wire.settlement_asset,
+            contract_multiplier: wire.contract_multiplier,
+            contract_value_unit: wire.contract_value_unit,
+            contract_kind: wire.contract_kind,
+            expiry_time: wire.expiry_time,
+            strike: wire.strike,
+            option_side: wire.option_side,
+            price_tick: wire.price_tick,
+            quantity_step: wire.quantity_step,
+            listing_time: wire.listing_time,
+            delisting_time: wire.delisting_time,
+        })
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -264,6 +383,11 @@ impl<'de> Deserialize<'de> for InstrumentDefinition {
 }
 
 fn validate_instrument(input: &InstrumentDefinitionInput) -> Result<(), DomainError> {
+    if input.id.product_type() != input.product_type {
+        return Err(DomainError::InvalidInstrument {
+            field: "instrument identity product type",
+        });
+    }
     if input.base_asset == input.quote_asset {
         return Err(DomainError::InvalidInstrument {
             field: "base and quote assets",

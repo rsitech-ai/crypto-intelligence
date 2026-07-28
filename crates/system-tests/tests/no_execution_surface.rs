@@ -17,12 +17,14 @@ const APPROVED_FOUNDATION_DEPENDENCIES: &[&str] = &[
     "clap",
     "config",
     "connector-binance",
+    "connector-core",
     "crc32c",
     "domain",
     "event-envelope",
     "fixed-decimal",
     "hex",
     "hmac",
+    "instrument-registry",
     "libc",
     "local-api",
     "observability",
@@ -52,6 +54,7 @@ const APPROVED_FOUNDATION_DEPENDENCIES: &[&str] = &[
 // and the one-way binding policy independently constrain every included file.
 const APPROVED_FOUNDATION_NETWORK_CAPABILITIES: &[&str] = &[
     "configs/default.toml bind_address=\"127.0.0.1:0\"",
+    "crates/connector-binance/src/capabilities.rs raw endpoint https://www.binance.com/en/terms",
     "crates/local-api/src/generated.rs production source indirection",
     "crates/local-api/src/server.rs TcpListener::bind(crate::server::LOOPBACK_BIND)",
 ];
@@ -871,10 +874,9 @@ fn network_capability_declarations(
         if identifiers.contains("Command") {
             capabilities.insert(format!("{location} process command ownership"));
         }
-        if identifiers
-            .iter()
-            .any(|identifier| identifier.ends_with("Client") || identifier.ends_with("_client"))
-        {
+        if identifiers.iter().any(|identifier| {
+            identifier.ends_with("ServiceClient") || identifier.ends_with("_client")
+        }) {
             capabilities.insert(format!("{location} generated client ownership"));
         }
         if identifiers.contains("Endpoint")
@@ -915,8 +917,8 @@ fn network_capability_declarations(
             capabilities.insert(format!("{location} network command"));
         }
         for endpoint in endpoint_literals(literal_line) {
-            if endpoint != "http://{local_addr}" {
-                capabilities.insert(format!("{location} raw endpoint {endpoint}"));
+            if endpoint != "http://{local_addr}" && !is_scheme_prefix(&endpoint) {
+                capabilities.insert(format!("{relative} raw endpoint {endpoint}"));
             }
         }
     }
@@ -947,6 +949,10 @@ fn endpoint_literals(line: &str) -> Vec<String> {
     })
     .map(str::to_owned)
     .collect()
+}
+
+fn is_scheme_prefix(value: &str) -> bool {
+    matches!(value, "http://" | "https://" | "ws://" | "wss://")
 }
 
 fn execution_declarations_in_source(
@@ -1516,6 +1522,39 @@ fn nested_configuration_and_constructed_network_capabilities_are_detected() {
     assert_eq!(
         network_capability_declarations(directory.path(), &source, &production),
         BTreeSet::from(["network.rs:4 network client".to_owned()])
+    );
+}
+
+#[test]
+fn observation_clients_and_scheme_validation_are_not_network_ownership() {
+    let directory = tempfile::tempdir().expect("observation fixture root must exist");
+    let source = directory.path().join("observation.rs");
+    let text = concat!(
+        "pub struct DurableRawCaptureClient;\n",
+        "pub fn validate(value: &str) -> bool {\n",
+        "    value.strip_prefix(\"https://\").is_some()\n",
+        "}\n",
+    );
+    fs::write(&source, text).expect("observation fixture must write");
+    let production = production_rust_source(text);
+
+    assert!(
+        network_capability_declarations(directory.path(), &source, &production).is_empty(),
+        "transport-neutral observation types or scheme validation were treated as network owners"
+    );
+}
+
+#[test]
+fn raw_endpoint_capabilities_are_stable_and_source_scoped() {
+    let directory = tempfile::tempdir().expect("endpoint fixture root must exist");
+    let source = directory.path().join("metadata.rs");
+    let text = "pub const TERMS: &str = \"https://exchange.invalid/terms\";\n";
+    fs::write(&source, text).expect("endpoint fixture must write");
+    let production = production_rust_source(text);
+
+    assert_eq!(
+        network_capability_declarations(directory.path(), &source, &production),
+        BTreeSet::from(["metadata.rs raw endpoint https://exchange.invalid/terms".to_owned()])
     );
 }
 

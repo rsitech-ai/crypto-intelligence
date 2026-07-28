@@ -12,6 +12,14 @@ enum SnapshotHealth {
   SNAPSHOT_HEALTH_UNAVAILABLE = 4;
 }
 
+enum ProductType {
+  PRODUCT_TYPE_UNSPECIFIED = 0;
+  PRODUCT_TYPE_SPOT = 1;
+  PRODUCT_TYPE_PERPETUAL = 2;
+  PRODUCT_TYPE_FUTURE = 3;
+  PRODUCT_TYPE_OPTION = 4;
+}
+
 message ListAssetsRequest {}
 
 message ListAssetsResponse {
@@ -27,6 +35,7 @@ message ListVenuesResponse {
 message GetInstrumentRequest {
   string instrument_id = 1;
   uint32 generation = 2;
+  ProductType product_type = 3;
 }
 
 message GetInstrumentResponse {
@@ -35,6 +44,7 @@ message GetInstrumentResponse {
   cmti.common.v1.AssetId base_asset = 3;
   cmti.common.v1.AssetId quote_asset = 4;
   string venue_id = 5;
+  ProductType product_type = 6;
 }
 
 message SubscribeAssetStateRequest {
@@ -74,6 +84,7 @@ message GetOrderBookSnapshotResponse {
   sint64 event_unix_nanos = 8;
   sint64 receive_unix_nanos = 9;
   uint64 freshness_millis = 10;
+  ProductType product_type = 11;
 }
 
 service CatalogService {

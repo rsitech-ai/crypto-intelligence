@@ -1,0 +1,54 @@
+schema_version = 1
+venue = "binance"
+reviewed_on = "2026-07-28"
+evidence_kind = "maintainer-authored-factual-review"
+copyright_policy = "No provider documentation text is copied. This file retains only reviewed protocol facts and source URLs."
+retrieval_note = "The Binance documentation CDN challenged non-browser retrieval, so immutable repository documentation is preferred where available and the reviewed facts are retained locally."
+
+[[source]]
+id = "spot_websocket_streams"
+url = "https://github.com/binance/binance-spot-api-docs/blob/master/web-socket-streams.md"
+facts = [
+  "Spot diff-depth messages carry inclusive U and u sequence bounds.",
+  "The local-book procedure buffers deltas before applying a REST depth snapshot.",
+  "A stream connection is renewed before its documented 24-hour lifetime.",
+]
+
+[[source]]
+id = "usd_m_market_streams"
+url = "https://developers.binance.com/en/docs/catalog/core-trading-derivatives-trading-usd-s-m-futures/api/ws-streams/market"
+facts = [
+  "USD-M market streams include aggregate trade, mark/index/funding, and liquidation snapshots.",
+  "The all-market liquidation stream reports only the latest liquidation per symbol within a 1000-millisecond window.",
+]
+
+[[source]]
+id = "usd_m_public_streams"
+url = "https://developers.binance.com/en/docs/catalog/core-trading-derivatives-trading-usd-s-m-futures/api/ws-streams/public"
+facts = [
+  "USD-M diff-depth messages carry U, u, and pu.",
+  "After initial snapshot alignment, pu must equal the previous message final update ID.",
+]
+
+[[source]]
+id = "usd_m_rest_market_data"
+url = "https://developers.binance.com/en/docs/catalog/core-trading-derivatives-trading-usd-s-m-futures/api/rest-api/market-data"
+facts = [
+  "USD-M market-data REST exposes exchange information, depth snapshots, and open interest.",
+  "Tick size and quantity step come from explicit exchange-info filters rather than display precision fields.",
+]
+
+[[source]]
+id = "spot_rest_api"
+url = "https://github.com/binance/binance-spot-api-docs/blob/master/rest-api.md"
+facts = [
+  "Spot REST exposes exchange information and weighted depth snapshots.",
+  "Exchange information may be requested for a bounded symbol set.",
+]
+
+[[source]]
+id = "wallet_system_status"
+url = "https://developers.binance.com/en/docs/catalog/core-trading-wallet/api/rest-api/others#system-status"
+facts = [
+  "System status 0 means normal and status 1 means maintenance.",
+]

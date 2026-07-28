@@ -14,6 +14,7 @@ use thiserror::Error;
 
 const EVENT_DOMAIN_V1: &[u8] = b"cmti:event:v1\0";
 const EVENT_DOMAIN_V2: &[u8] = b"cmti:event:v2\0";
+const EVENT_DOMAIN_V3: &[u8] = b"cmti:event:v3\0";
 const MAX_BOOK_LEVELS: usize = 100_000;
 const MAX_METADATA_TEXT: usize = 4_096;
 /// Maximum serialized event size accepted before any untrusted serde allocation.
@@ -86,8 +87,18 @@ pub struct UncheckedEventMetadata {
 
 impl UncheckedEventMetadata {
     fn validate(&self) -> Result<(), EventError> {
-        if !matches!(self.schema_version, 1 | 2) {
+        if !matches!(self.schema_version, 1..=3) {
             return Err(EventError::InvalidMetadata("schema_version"));
+        }
+        if self.schema_version < 3
+            && self
+                .instrument_id
+                .as_ref()
+                .is_some_and(|instrument| instrument.product_type() != domain::ProductType::Spot)
+        {
+            return Err(EventError::InvalidMetadata(
+                "instrument product identity schema",
+            ));
         }
         if self.connection_epoch == 0 {
             return Err(EventError::InvalidMetadata("connection_epoch"));
@@ -340,7 +351,7 @@ impl UncheckedEventPayload {
                 validate_book(&delta.bids, &delta.asks, true, false)?;
                 let valid_predecessor = match metadata.schema_version {
                     1 => metadata.previous_sequence_number == delta.first_sequence.checked_sub(1),
-                    2 => metadata
+                    2 | 3 => metadata
                         .previous_sequence_number
                         .map_or(delta.first_sequence == 0, |previous| {
                             previous < delta.first_sequence
@@ -753,6 +764,7 @@ pub fn canonical_event_id_unchecked(
     let domain = match metadata.schema_version {
         1 => EVENT_DOMAIN_V1,
         2 => EVENT_DOMAIN_V2,
+        3 => EVENT_DOMAIN_V3,
         _ => return Err(EventError::InvalidMetadata("schema_version")),
     };
     let mut writer = CanonicalWriter::new();
@@ -811,6 +823,9 @@ fn encode_identity_metadata(
     writer.optional(metadata.instrument_id.as_ref(), |writer, instrument| {
         writer.string(instrument.venue().as_str())?;
         writer.string(instrument.venue_symbol())?;
+        if metadata.schema_version >= 3 {
+            writer.u8(instrument.product_type() as u8);
+        }
         writer.u32(instrument.generation());
         Ok(())
     })?;

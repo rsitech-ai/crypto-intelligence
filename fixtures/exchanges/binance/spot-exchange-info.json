@@ -1,0 +1,51 @@
+{
+  "timezone": "UTC",
+  "serverTime": 1672515782136,
+  "rateLimits": [],
+  "exchangeFilters": [],
+  "symbols": [
+    {
+      "symbol": "BTCUSDT",
+      "status": "TRADING",
+      "baseAsset": "BTC",
+      "baseAssetPrecision": 8,
+      "quoteAsset": "USDT",
+      "quotePrecision": 8,
+      "quoteAssetPrecision": 8,
+      "baseCommissionPrecision": 8,
+      "quoteCommissionPrecision": 8,
+      "orderTypes": ["LIMIT", "MARKET"],
+      "icebergAllowed": true,
+      "ocoAllowed": true,
+      "otoAllowed": true,
+      "quoteOrderQtyMarketAllowed": true,
+      "allowTrailingStop": true,
+      "cancelReplaceAllowed": true,
+      "amendAllowed": true,
+      "isSpotTradingAllowed": true,
+      "isMarginTradingAllowed": false,
+      "filters": [
+        {
+          "filterType": "PRICE_FILTER",
+          "minPrice": "0.01000000",
+          "maxPrice": "1000000.00000000",
+          "tickSize": "0.01000000"
+        },
+        {
+          "filterType": "LOT_SIZE",
+          "minQty": "0.00001000",
+          "maxQty": "9000.00000000",
+          "stepSize": "0.00001000"
+        }
+      ],
+      "permissions": [],
+      "permissionSets": [["SPOT"]],
+      "defaultSelfTradePreventionMode": "EXPIRE_MAKER",
+      "allowedSelfTradePreventionModes": [
+        "EXPIRE_TAKER",
+        "EXPIRE_MAKER",
+        "EXPIRE_BOTH"
+      ]
+    }
+  ]
+}

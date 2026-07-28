@@ -1,4 +1,143 @@
 schema_version = 1
 artifact_id = "fixtures/exchanges/binance/manifest.toml"
-status = "implemented"
+status = "tracked"
+certification_status = "fixture_parser_pass"
 local_only = true
+fixture_origin = "repository-owned synthetic values shaped by reviewed public schemas"
+captured_exchange_traffic = false
+contains_credentials = false
+redistribution = "MIT OR Apache-2.0"
+reviewed_on = "2026-07-28"
+
+[[source]]
+id = "spot_websocket_streams"
+url = "https://github.com/binance/binance-spot-api-docs/blob/master/web-socket-streams.md"
+scope = "spot aggregate trade, book ticker, and diff depth fields"
+snapshot = "fixtures/exchanges/binance/documentation-review.toml"
+snapshot_sha256 = "ecabb894b03e26ce890b1b10984b081f1f9e0e3ee56450cc9db3717e86bc863b"
+
+[[source]]
+id = "usd_m_market_streams"
+url = "https://developers.binance.com/en/docs/catalog/core-trading-derivatives-trading-usd-s-m-futures/api/ws-streams/market"
+scope = "USD-M aggregate trade, mark price, and sampled liquidation fields"
+snapshot = "fixtures/exchanges/binance/documentation-review.toml"
+snapshot_sha256 = "ecabb894b03e26ce890b1b10984b081f1f9e0e3ee56450cc9db3717e86bc863b"
+
+[[source]]
+id = "usd_m_public_streams"
+url = "https://developers.binance.com/en/docs/catalog/core-trading-derivatives-trading-usd-s-m-futures/api/ws-streams/public"
+scope = "USD-M diff depth fields and previous-final sequence semantics"
+snapshot = "fixtures/exchanges/binance/documentation-review.toml"
+snapshot_sha256 = "ecabb894b03e26ce890b1b10984b081f1f9e0e3ee56450cc9db3717e86bc863b"
+
+[[source]]
+id = "usd_m_rest_market_data"
+url = "https://developers.binance.com/en/docs/catalog/core-trading-derivatives-trading-usd-s-m-futures/api/rest-api/market-data"
+scope = "USD-M open-interest and exchange-information response fields"
+snapshot = "fixtures/exchanges/binance/documentation-review.toml"
+snapshot_sha256 = "ecabb894b03e26ce890b1b10984b081f1f9e0e3ee56450cc9db3717e86bc863b"
+
+[[source]]
+id = "spot_rest_api"
+url = "https://github.com/binance/binance-spot-api-docs/blob/master/rest-api.md"
+scope = "spot exchange-information response fields"
+snapshot = "fixtures/exchanges/binance/documentation-review.toml"
+snapshot_sha256 = "ecabb894b03e26ce890b1b10984b081f1f9e0e3ee56450cc9db3717e86bc863b"
+
+[[source]]
+id = "wallet_system_status"
+url = "https://developers.binance.com/en/docs/catalog/core-trading-wallet/api/rest-api/others#system-status"
+scope = "venue system-status response fields and status-code meanings"
+snapshot = "fixtures/exchanges/binance/documentation-review.toml"
+snapshot_sha256 = "ecabb894b03e26ce890b1b10984b081f1f9e0e3ee56450cc9db3717e86bc863b"
+
+[[fixture]]
+path = "fixtures/exchanges/binance/spot-aggregate-trade.json"
+sha256 = "61fae1213183e6afd376d19bc53e1bfc0c70948b4422f61679681e6c5badf8a3"
+market = "spot"
+route = "websocket"
+record_type = "aggregate_trade"
+
+[[fixture]]
+path = "fixtures/exchanges/binance/spot-book-ticker.json"
+sha256 = "ff933af6c9974e7f9cd216fcccc71748d0703f81611b34e3d17e21445d41d172"
+market = "spot"
+route = "websocket"
+record_type = "book_ticker"
+
+[[fixture]]
+path = "fixtures/exchanges/binance/spot-depth-update.json"
+sha256 = "0cf55a8e418b5886fd25d6aeefe56e0effb0f076d73745fcf43c74138adc1e27"
+market = "spot"
+route = "websocket"
+record_type = "depth_update"
+
+[[fixture]]
+path = "fixtures/exchanges/binance/spot-depth-snapshot.json"
+sha256 = "dd7a81159bb4171a2e2c3de4957a9f9d71c80f282f15cd6d8d3ef566a315ba5c"
+market = "spot"
+route = "rest"
+record_type = "depth_snapshot"
+
+[[fixture]]
+path = "fixtures/exchanges/binance/usdm-aggregate-trade.json"
+sha256 = "4675ec6ba5dd1650aaff654f96e06f8175bb563e305638d6818af960d4206610"
+market = "usd_m"
+route = "market_websocket"
+record_type = "aggregate_trade"
+
+[[fixture]]
+path = "fixtures/exchanges/binance/usdm-depth-update.json"
+sha256 = "95a69ac4296bb873e46c73c24e34cc89c5099f8d3aa39b1e125c598b97c0ac52"
+market = "usd_m"
+route = "public_websocket"
+record_type = "depth_update"
+
+[[fixture]]
+path = "fixtures/exchanges/binance/usdm-depth-snapshot.json"
+sha256 = "ffe08fbe424a0e39f3e63546f1395ab99c996ef5898e1f93727ec67e4d7cddf2"
+market = "usd_m"
+route = "rest"
+record_type = "depth_snapshot"
+
+[[fixture]]
+path = "fixtures/exchanges/binance/usdm-mark-price.json"
+sha256 = "a653fc193f2bc3c44489262d2076c048f3427578ed7ac85607a2f1874c005bd0"
+market = "usd_m"
+route = "market_websocket"
+record_type = "mark_index_funding"
+
+[[fixture]]
+path = "fixtures/exchanges/binance/usdm-open-interest.json"
+sha256 = "946ed4f3eccdec4231b50b14cb365b98b5f19b7142b435d1f479da0703ed6a46"
+market = "usd_m"
+route = "rest"
+record_type = "open_interest"
+
+[[fixture]]
+path = "fixtures/exchanges/binance/usdm-liquidation.json"
+sha256 = "c7f4c29aa6c9813b8fb87b8e5f7a674e2824b233605598fb16d3e6209b65bca2"
+market = "usd_m"
+route = "market_websocket"
+record_type = "sampled_liquidation"
+
+[[fixture]]
+path = "fixtures/exchanges/binance/spot-exchange-info.json"
+sha256 = "f57d8bae266581cadec1bdc4052732662574a9c4a4f2a7d6ce6699191a67a736"
+market = "spot"
+route = "rest"
+record_type = "exchange_info"
+
+[[fixture]]
+path = "fixtures/exchanges/binance/usdm-exchange-info.json"
+sha256 = "b92da0e747c559f92acdc6f147227dc9ef72d18cb07259f115f1e77bd57ac168"
+market = "usd_m"
+route = "rest"
+record_type = "exchange_info"
+
+[[fixture]]
+path = "fixtures/exchanges/binance/system-status.json"
+sha256 = "8c75e46c3003005d68fc1b8b2f6ebc705998a38f93e3247393d2c784c57aa68a"
+market = "all"
+route = "rest"
+record_type = "venue_status"

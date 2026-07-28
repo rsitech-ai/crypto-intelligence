@@ -156,6 +156,21 @@ async fn catalog_commit_is_exactly_once_and_rehydrates_after_restart() {
     reopened.shutdown().await.expect("clean shutdown");
 
     let connection = Connection::open(&path).expect("inspect committed database");
+    let request_payload = connection
+        .query_row(
+            "SELECT request_payload FROM catalog_requests WHERE request_id = ?1",
+            ["catalog-request-1"],
+            |row| row.get::<_, Vec<u8>>(0),
+        )
+        .expect("stored request payload");
+    let request_wire: serde_json::Value =
+        serde_json::from_slice(&request_payload).expect("stored request JSON");
+    assert!(
+        request_wire["mutations"][0]["definition"]["id"]
+            .get("product_type")
+            .is_none(),
+        "legacy Spot request bytes must remain free of a nested product_type"
+    );
     assert_eq!(
         connection
             .query_row("SELECT COUNT(*) FROM catalog_requests", [], |row| row

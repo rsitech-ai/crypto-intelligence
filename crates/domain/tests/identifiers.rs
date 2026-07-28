@@ -44,9 +44,10 @@ fn instrument_input(
         ContractKind::None | ContractKind::Linear => quote_asset.clone(),
     };
     InstrumentDefinitionInput {
-        id: InstrumentId::new(
+        id: InstrumentId::new_for_product(
             VenueId::new("deribit").expect("venue fixture must be valid"),
             symbol,
+            product_type,
             generation,
         )
         .expect("instrument fixture must be valid"),
@@ -322,4 +323,47 @@ fn instrument_deserialization_revalidates_private_domain_state() {
     let invalid = encoded.replace("\"quantity_step\":\"1\"", "\"quantity_step\":\"0\"");
     assert_ne!(invalid, encoded, "fixture mutation must be effective");
     assert!(serde_json::from_str::<InstrumentDefinition>(&invalid).is_err());
+}
+
+#[test]
+fn legacy_derivative_definition_without_nested_product_type_migrates_explicitly() {
+    let definition = InstrumentDefinition::new(InstrumentDefinitionInput {
+        id: InstrumentId::new_for_product(
+            VenueId::new("binance").expect("venue"),
+            "BTCUSDT",
+            ProductType::Perpetual,
+            3,
+        )
+        .expect("instrument"),
+        product_type: ProductType::Perpetual,
+        base_asset: native_asset("bitcoin", "BTC", 1),
+        quote_asset: fiat_asset("USD", 1),
+        settlement_asset: fiat_asset("USD", 1),
+        contract_multiplier: decimal("1"),
+        contract_value_unit: ContractValueUnit::Base,
+        contract_kind: ContractKind::Linear,
+        expiry_time: None,
+        strike: None,
+        option_side: None,
+        price_tick: price("0.1"),
+        quantity_step: quantity("0.001"),
+        listing_time: UnixNanos::new(100),
+        delisting_time: None,
+    })
+    .expect("perpetual");
+    let mut legacy = serde_json::to_value(&definition).expect("serialize");
+    legacy["id"]
+        .as_object_mut()
+        .expect("instrument id")
+        .remove("product_type");
+
+    let migrated: InstrumentDefinition =
+        serde_json::from_value(legacy.clone()).expect("legacy derivative migration");
+    assert_eq!(migrated.id().product_type(), ProductType::Perpetual);
+
+    legacy["id"]["product_type"] = serde_json::json!("spot");
+    assert!(
+        serde_json::from_value::<InstrumentDefinition>(legacy).is_err(),
+        "an explicit product mismatch must never be treated as legacy data"
+    );
 }

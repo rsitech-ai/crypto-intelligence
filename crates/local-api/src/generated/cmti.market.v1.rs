@@ -19,6 +19,8 @@ pub struct GetInstrumentRequest {
     pub instrument_id: ::prost::alloc::string::String,
     #[prost(uint32, tag = "2")]
     pub generation: u32,
+    #[prost(enumeration = "ProductType", tag = "3")]
+    pub product_type: i32,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct GetInstrumentResponse {
@@ -32,6 +34,8 @@ pub struct GetInstrumentResponse {
     pub quote_asset: ::core::option::Option<super::super::common::v1::AssetId>,
     #[prost(string, tag = "5")]
     pub venue_id: ::prost::alloc::string::String,
+    #[prost(enumeration = "ProductType", tag = "6")]
+    pub product_type: i32,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SubscribeAssetStateRequest {
@@ -93,6 +97,8 @@ pub struct GetOrderBookSnapshotResponse {
     pub receive_unix_nanos: i64,
     #[prost(uint64, tag = "10")]
     pub freshness_millis: u64,
+    #[prost(enumeration = "ProductType", tag = "11")]
+    pub product_type: i32,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
@@ -125,6 +131,41 @@ impl SnapshotHealth {
             "SNAPSHOT_HEALTH_DEGRADED" => Some(Self::Degraded),
             "SNAPSHOT_HEALTH_STALE" => Some(Self::Stale),
             "SNAPSHOT_HEALTH_UNAVAILABLE" => Some(Self::Unavailable),
+            _ => None,
+        }
+    }
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum ProductType {
+    Unspecified = 0,
+    Spot = 1,
+    Perpetual = 2,
+    Future = 3,
+    Option = 4,
+}
+impl ProductType {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "PRODUCT_TYPE_UNSPECIFIED",
+            Self::Spot => "PRODUCT_TYPE_SPOT",
+            Self::Perpetual => "PRODUCT_TYPE_PERPETUAL",
+            Self::Future => "PRODUCT_TYPE_FUTURE",
+            Self::Option => "PRODUCT_TYPE_OPTION",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "PRODUCT_TYPE_UNSPECIFIED" => Some(Self::Unspecified),
+            "PRODUCT_TYPE_SPOT" => Some(Self::Spot),
+            "PRODUCT_TYPE_PERPETUAL" => Some(Self::Perpetual),
+            "PRODUCT_TYPE_FUTURE" => Some(Self::Future),
+            "PRODUCT_TYPE_OPTION" => Some(Self::Option),
             _ => None,
         }
     }

@@ -82,6 +82,51 @@ pub struct WalPosition {
     next_offset: u64,
 }
 
+/// One record revalidated from a successfully recovered managed WAL chain.
+///
+/// Values observed by a visitor are staging data until
+/// [`SegmentedWalWriter::visit_verified_records`] returns `Ok`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct VerifiedRecoveredRecord<'a> {
+    wal_identity: WalIdentity,
+    position: WalPosition,
+    metadata: RecordMetadata,
+    payload: &'a [u8],
+    payload_hash: [u8; 32],
+    stream_source_name: &'a str,
+    stream_name: &'a str,
+}
+
+impl<'a> VerifiedRecoveredRecord<'a> {
+    pub const fn wal_identity(&self) -> WalIdentity {
+        self.wal_identity
+    }
+
+    pub const fn position(&self) -> WalPosition {
+        self.position
+    }
+
+    pub const fn metadata(&self) -> RecordMetadata {
+        self.metadata
+    }
+
+    pub const fn payload(&self) -> &'a [u8] {
+        self.payload
+    }
+
+    pub const fn payload_hash(&self) -> &[u8; 32] {
+        &self.payload_hash
+    }
+
+    pub const fn stream_source_name(&self) -> &'a str {
+        self.stream_source_name
+    }
+
+    pub const fn stream_name(&self) -> &'a str {
+        self.stream_name
+    }
+}
+
 /// Stable identity of one managed WAL chain.
 ///
 /// The identity is the root segment identifier and remains unchanged as the
@@ -297,6 +342,8 @@ pub enum InventoryError {
     ManifestWithoutSegment,
     #[error("managed WAL sequence regressed across segments")]
     CrossSegmentSequenceRegression,
+    #[error("verified WAL record does not match its segment stream metadata")]
+    RecoveredRecordIdentityMismatch,
 }
 
 #[derive(Debug, Error)]
@@ -877,6 +924,58 @@ impl SegmentedWalWriter {
     /// Returns the stable identity of this managed WAL chain.
     pub const fn wal_identity(&self) -> WalIdentity {
         self.wal_identity
+    }
+
+    /// Revalidates and streams all durable records in canonical chain order.
+    ///
+    /// Recovery rotates a non-empty active segment before returning, so every
+    /// record present at recovery time is represented by a sealed manifest and
+    /// can be bound to an exact WAL identity, segment position, and declared
+    /// stream identity here. Callers must discard staged output if this method
+    /// returns an error.
+    pub fn visit_verified_records(
+        &self,
+        mut visitor: impl FnMut(VerifiedRecoveredRecord<'_>),
+    ) -> Result<(), ManagerError> {
+        self.ensure_directory_identity()?;
+        for sealed_name in &self.sealed_names {
+            let manifest = verify_sealed_v2_segment_at(&self.directory_lock, sealed_name)?;
+            let segment_ordinal = manifest.segment_ordinal();
+            let segment_id = *manifest.segment_id();
+            let streams = manifest.streams();
+            let mut identity_mismatch = false;
+            visit_verified_sealed_v2_segment_at(&self.directory_lock, sealed_name, |record| {
+                let Some(metadata) = record.metadata() else {
+                    identity_mismatch = true;
+                    return;
+                };
+                let Some(stream) = streams
+                    .iter()
+                    .find(|stream| stream.stream_id() == metadata.stream_id)
+                else {
+                    identity_mismatch = true;
+                    return;
+                };
+                visitor(VerifiedRecoveredRecord {
+                    wal_identity: self.wal_identity,
+                    position: WalPosition {
+                        segment_ordinal,
+                        segment_id,
+                        frame_offset: record.offset(),
+                        next_offset: record.next_offset(),
+                    },
+                    metadata,
+                    payload: record.payload(),
+                    payload_hash: *blake3::hash(record.payload()).as_bytes(),
+                    stream_source_name: stream.source_name(),
+                    stream_name: stream.stream_name(),
+                });
+            })?;
+            if identity_mismatch {
+                return Err(InventoryError::RecoveredRecordIdentityMismatch.into());
+            }
+        }
+        self.ensure_directory_identity()
     }
 
     /// Returns the process-local authority required to accept this writer's proofs.

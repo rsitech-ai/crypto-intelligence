@@ -385,6 +385,12 @@ impl NormalizedOutput {
         if &metadata.raw_payload_hash != raw.payload_hash() {
             return Err(ChannelError::RawPayloadHashMismatch);
         }
+        if metadata.receive_wall_timestamp != raw.receive_wall_time() {
+            return Err(ChannelError::RawReceiveWallTimeMismatch);
+        }
+        if metadata.receive_monotonic_ns != raw.receive_monotonic_ns() {
+            return Err(ChannelError::RawReceiveMonotonicTimeMismatch);
+        }
         Ok(Self { raw, event })
     }
 
@@ -1293,6 +1299,10 @@ pub enum ChannelError {
     RawConnectionEpochMismatch,
     #[error("normalized event raw hash does not match its durable receipt")]
     RawPayloadHashMismatch,
+    #[error("normalized event receive wall time does not match its durable receipt")]
+    RawReceiveWallTimeMismatch,
+    #[error("normalized event receive monotonic time does not match its durable receipt")]
+    RawReceiveMonotonicTimeMismatch,
     #[error("normalized event could not be encoded for byte accounting")]
     EventEncodingFailed,
     #[error("normalized channel invalidation state is poisoned")]

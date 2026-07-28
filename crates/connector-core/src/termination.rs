@@ -55,6 +55,7 @@ pub enum CapacityRejection {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum QuarantineReason {
+    SchemaViolation,
     RepeatedSchemaViolation,
     RepeatedSequenceViolation,
     IntegrityViolation,

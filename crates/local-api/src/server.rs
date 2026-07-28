@@ -3,8 +3,8 @@
 use std::{io, net::SocketAddr, sync::Arc, time::Duration};
 
 use domain::{
-    AssetId as DomainAssetId, AssetNamespace as DomainAssetNamespace, InstrumentId, SourceId,
-    UnixNanos,
+    AssetId as DomainAssetId, AssetNamespace as DomainAssetNamespace, InstrumentId,
+    ProductType as DomainProductType, SourceId, UnixNanos,
 };
 use fixed_decimal::{FixedDecimal, Price};
 use thiserror::Error;
@@ -33,9 +33,9 @@ use crate::{
             health_service_server::{HealthService as HealthServiceRpc, HealthServiceServer},
         },
         market_v1::{
-            GetOrderBookSnapshotRequest, GetOrderBookSnapshotResponse, SnapshotHealth,
-            SubscribeAssetStateRequest, SubscribeAssetStateResponse, SubscribeVenueStateRequest,
-            SubscribeVenueStateResponse,
+            GetOrderBookSnapshotRequest, GetOrderBookSnapshotResponse,
+            ProductType as ProtoProductType, SnapshotHealth, SubscribeAssetStateRequest,
+            SubscribeAssetStateResponse, SubscribeVenueStateRequest, SubscribeVenueStateResponse,
             market_state_service_server::{
                 MarketStateService as MarketStateServiceRpc, MarketStateServiceServer,
             },
@@ -206,6 +206,12 @@ impl MarketSnapshot {
             event_unix_nanos: self.event_timestamp.value(),
             receive_unix_nanos: self.receive_timestamp.value(),
             freshness_millis: self.freshness_millis,
+            product_type: match self.instrument.product_type() {
+                DomainProductType::Spot => ProtoProductType::Spot,
+                DomainProductType::Perpetual => ProtoProductType::Perpetual,
+                DomainProductType::Future => ProtoProductType::Future,
+                DomainProductType::Option => ProtoProductType::Option,
+            } as i32,
         }
     }
 

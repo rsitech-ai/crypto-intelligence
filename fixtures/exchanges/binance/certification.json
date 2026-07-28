@@ -1,0 +1,160 @@
+{
+  "schema_version": 1,
+  "venue": "binance",
+  "fixture_status": "pass",
+  "production_certification_status": "blocked",
+  "evidence_scope": "retained-fixture",
+  "live_exchange_acceptance": false,
+  "manifest_sha256": "e2ed77e71c06b415f0f047b68a1024372b7aadaa0fe5b45bf74b866232561940",
+  "connector_version": "1.0.0",
+  "trade_semantics": "aggregate",
+  "liquidation_completeness": "sampled_latest_per_symbol_window_1000ms",
+  "fixture_count": 13,
+  "fixtures": {
+    "fixtures/exchanges/binance/spot-aggregate-trade.json": "61fae1213183e6afd376d19bc53e1bfc0c70948b4422f61679681e6c5badf8a3",
+    "fixtures/exchanges/binance/spot-book-ticker.json": "ff933af6c9974e7f9cd216fcccc71748d0703f81611b34e3d17e21445d41d172",
+    "fixtures/exchanges/binance/spot-depth-snapshot.json": "dd7a81159bb4171a2e2c3de4957a9f9d71c80f282f15cd6d8d3ef566a315ba5c",
+    "fixtures/exchanges/binance/spot-depth-update.json": "0cf55a8e418b5886fd25d6aeefe56e0effb0f076d73745fcf43c74138adc1e27",
+    "fixtures/exchanges/binance/spot-exchange-info.json": "f57d8bae266581cadec1bdc4052732662574a9c4a4f2a7d6ce6699191a67a736",
+    "fixtures/exchanges/binance/system-status.json": "8c75e46c3003005d68fc1b8b2f6ebc705998a38f93e3247393d2c784c57aa68a",
+    "fixtures/exchanges/binance/usdm-aggregate-trade.json": "4675ec6ba5dd1650aaff654f96e06f8175bb563e305638d6818af960d4206610",
+    "fixtures/exchanges/binance/usdm-depth-snapshot.json": "ffe08fbe424a0e39f3e63546f1395ab99c996ef5898e1f93727ec67e4d7cddf2",
+    "fixtures/exchanges/binance/usdm-depth-update.json": "95a69ac4296bb873e46c73c24e34cc89c5099f8d3aa39b1e125c598b97c0ac52",
+    "fixtures/exchanges/binance/usdm-exchange-info.json": "b92da0e747c559f92acdc6f147227dc9ef72d18cb07259f115f1e77bd57ac168",
+    "fixtures/exchanges/binance/usdm-liquidation.json": "c7f4c29aa6c9813b8fb87b8e5f7a674e2824b233605598fb16d3e6209b65bca2",
+    "fixtures/exchanges/binance/usdm-mark-price.json": "a653fc193f2bc3c44489262d2076c048f3427578ed7ac85607a2f1874c005bd0",
+    "fixtures/exchanges/binance/usdm-open-interest.json": "946ed4f3eccdec4231b50b14cb365b98b5f19b7142b435d1f479da0703ed6a46"
+  },
+  "checks": [
+    {
+      "name": "fixture_hashes",
+      "status": "pass"
+    },
+    {
+      "name": "all_supported_record_types",
+      "status": "pass"
+    },
+    {
+      "name": "spot_and_usdm_depth_snapshots",
+      "status": "pass"
+    },
+    {
+      "name": "active_exchange_info_filters",
+      "status": "pass"
+    },
+    {
+      "name": "field_reordering",
+      "status": "pass"
+    },
+    {
+      "name": "schema_drift_rejection",
+      "status": "pass"
+    },
+    {
+      "name": "payload_size_rejection",
+      "status": "pass"
+    },
+    {
+      "name": "truthful_capabilities",
+      "status": "pass"
+    }
+  ],
+  "production_gates": [
+    {
+      "number": 1,
+      "name": "golden parser fixtures for every subscribed message type",
+      "status": "pass",
+      "evidence": "13 provenance-bound retained fixtures"
+    },
+    {
+      "number": 2,
+      "name": "unknown-field and field-reordering tests",
+      "status": "pass",
+      "evidence": "runner reorders every fixture and injects an undocumented field"
+    },
+    {
+      "number": 3,
+      "name": "numeric boundary tests and fixed-point round trips",
+      "status": "not_run",
+      "evidence": "focused crate tests are not executed by this runner"
+    },
+    {
+      "number": 4,
+      "name": "snapshot/delta reconstruction",
+      "status": "not_run",
+      "evidence": "book synchronization tests are not executed by this runner"
+    },
+    {
+      "number": 5,
+      "name": "missing duplicated and reordered sequences",
+      "status": "not_run",
+      "evidence": "sequence fault tests are not executed by this runner"
+    },
+    {
+      "number": 6,
+      "name": "checksum mismatch and forced resnapshot where supported",
+      "status": "not_applicable",
+      "evidence": "Binance capability declares source checksums unsupported"
+    },
+    {
+      "number": 7,
+      "name": "connection expiry and clean renewal",
+      "status": "not_run",
+      "evidence": "session renewal test is not executed by this runner"
+    },
+    {
+      "number": 8,
+      "name": "rate-limit and backoff",
+      "status": "blocked",
+      "evidence": "production transport and operational limiter are not implemented"
+    },
+    {
+      "number": 9,
+      "name": "schema-drift fail-safe",
+      "status": "pass",
+      "evidence": "runner injects and rejects an undocumented field"
+    },
+    {
+      "number": 10,
+      "name": "clock-skew and timestamp-unit",
+      "status": "not_run",
+      "evidence": "timestamp boundary tests are not executed by this runner"
+    },
+    {
+      "number": 11,
+      "name": "burst-load and bounded queue",
+      "status": "not_run",
+      "evidence": "session capacity tests are not executed by this runner"
+    },
+    {
+      "number": 12,
+      "name": "raw-WAL replay equivalence",
+      "status": "not_run",
+      "evidence": "focused same-WAL test exists but is not executed or bound by this runner"
+    },
+    {
+      "number": 13,
+      "name": "kill-and-restart recovery",
+      "status": "blocked",
+      "evidence": "no supervised production transport restart path exists"
+    },
+    {
+      "number": 14,
+      "name": "data-completeness metadata",
+      "status": "pass",
+      "evidence": "capability is sampled-latest-per-symbol-window at 1000 ms"
+    },
+    {
+      "number": 15,
+      "name": "terms and redistribution review",
+      "status": "pass",
+      "evidence": "manifest records reviewed-restricted terms and local synthetic fixture provenance"
+    }
+  ],
+  "limitations": [
+    "No authenticated endpoints, account data, order placement, or trading",
+    "This artifact validates retained parser fixtures, not the full specification-level connector certification matrix",
+    "Production transport, rate limiting, heartbeat supervision, kill/restart recovery, and operational canary remain blocked or unrun",
+    "Raw-WAL replay equivalence has focused test evidence but is not executed or commit-bound by this report runner"
+  ]
+}

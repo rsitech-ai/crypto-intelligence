@@ -70,6 +70,10 @@ impl ConnectorContext {
         self.connection_epoch
     }
 
+    pub const fn raw_capture_stream_id(&self) -> std::num::NonZeroU32 {
+        self.raw_capture.stream_id()
+    }
+
     pub async fn next_command(&mut self) -> Result<ConnectorCommand, ConnectorTermination> {
         match self.commands.recv().await {
             Ok(Some(ConnectorCommand::Shutdown { id })) => {
@@ -274,6 +278,8 @@ fn map_normalized_error(error: ChannelError) -> ConnectorTermination {
         | ChannelError::RawSourceMismatch
         | ChannelError::RawConnectionEpochMismatch
         | ChannelError::RawPayloadHashMismatch
+        | ChannelError::RawReceiveWallTimeMismatch
+        | ChannelError::RawReceiveMonotonicTimeMismatch
         | ChannelError::EventEncodingFailed
         | ChannelError::StatePoisoned
         | ChannelError::InvalidationCapacityExceeded

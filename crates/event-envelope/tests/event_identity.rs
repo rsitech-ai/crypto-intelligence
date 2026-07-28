@@ -1,4 +1,4 @@
-use domain::{InstrumentId, SourceId, SourceKind, UnixNanos, VenueId};
+use domain::{InstrumentId, ProductType, SourceId, SourceKind, UnixNanos, VenueId};
 use event_envelope::{
     BookDelta, BookLevel, BookSnapshot, EventEnvelope, QualityFlags, Side, SnapshotKind, Trade,
     UncheckedEventMetadata, UncheckedEventPayload, canonical_event_id_unchecked,
@@ -109,6 +109,27 @@ fn source_event_identity_fields_change_event_identity() {
             "metadata field {field} was omitted from event identity"
         );
     }
+}
+
+#[test]
+fn schema_three_identity_distinguishes_spot_and_perpetual_with_the_same_symbol() {
+    let (mut spot_metadata, payload) = fixture();
+    spot_metadata.schema_version = 3;
+    let mut perpetual_metadata = spot_metadata.clone();
+    perpetual_metadata.instrument_id = Some(
+        InstrumentId::new_for_product(
+            VenueId::new("binance").expect("venue"),
+            "BTCUSDT",
+            ProductType::Perpetual,
+            1,
+        )
+        .expect("perpetual instrument"),
+    );
+
+    assert_ne!(
+        canonical_event_id_unchecked(&spot_metadata, &payload).expect("spot identity"),
+        canonical_event_id_unchecked(&perpetual_metadata, &payload).expect("perpetual identity")
+    );
 }
 
 #[test]
@@ -402,6 +423,31 @@ fn independent_known_vector_freezes_the_canonical_contract() {
     );
     assert_eq!(production.as_bytes(), &independent);
 
+    let mut product_aware_metadata = metadata.clone();
+    product_aware_metadata.schema_version = 3;
+    let product_aware_production = canonical_event_id_unchecked(&product_aware_metadata, &payload)
+        .expect("product-aware identity");
+    let product_aware_independent = independent_fixture_identity(&product_aware_metadata, &payload);
+    assert_eq!(
+        hex::encode(product_aware_independent),
+        "2fbc4ab900c204f32c8ed326ed2c78ddf3db84dfe7ff4d98310344645efd19db"
+    );
+    assert_eq!(
+        product_aware_production.as_bytes(),
+        &product_aware_independent
+    );
+
+    let v2_envelope = EventEnvelope::new(metadata.clone(), payload.clone())
+        .expect("schema 2 envelope remains supported");
+    let v2_wire = serde_json::to_value(&v2_envelope).expect("serialize schema 2 envelope");
+    assert!(
+        v2_wire["instrument_id"].get("product_type").is_none(),
+        "legacy Spot wire identity must not gain a product_type field"
+    );
+    let decoded_v2: EventEnvelope =
+        serde_json::from_value(v2_wire).expect("deserialize legacy v2 Spot envelope");
+    assert_eq!(decoded_v2.id(), v2_envelope.id());
+
     let mut legacy_metadata = metadata;
     legacy_metadata.schema_version = 1;
     let legacy_production =
@@ -415,9 +461,13 @@ fn independent_known_vector_freezes_the_canonical_contract() {
 
     let legacy_envelope =
         EventEnvelope::new(legacy_metadata, payload).expect("legacy envelope remains supported");
-    let wire = serde_json::to_vec(&legacy_envelope).expect("serialize legacy envelope");
+    let wire = serde_json::to_value(&legacy_envelope).expect("serialize legacy envelope");
+    assert!(
+        wire["instrument_id"].get("product_type").is_none(),
+        "legacy Spot wire identity must not gain a product_type field"
+    );
     let decoded: EventEnvelope =
-        serde_json::from_slice(&wire).expect("deserialize legacy v1 envelope");
+        serde_json::from_value(wire).expect("deserialize legacy v1 envelope");
     assert_eq!(decoded.id(), legacy_envelope.id());
 }
 
@@ -469,6 +519,9 @@ fn independent_fixture_identity(
     let instrument = metadata.instrument_id.as_ref().expect("fixture instrument");
     string(&mut bytes, instrument.venue().as_str());
     string(&mut bytes, instrument.venue_symbol());
+    if metadata.schema_version >= 3 {
+        bytes.push(instrument.product_type() as u8);
+    }
     u32_field(&mut bytes, instrument.generation());
     bytes.push(1);
     i64_field(
@@ -525,6 +578,7 @@ fn independent_fixture_identity(
     hasher.update(match metadata.schema_version {
         1 => b"cmti:event:v1\0",
         2 => b"cmti:event:v2\0",
+        3 => b"cmti:event:v3\0",
         _ => panic!("known vector schema is supported"),
     });
     hasher.update(&bytes);

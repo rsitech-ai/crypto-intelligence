@@ -93,6 +93,7 @@ pub enum LifecycleError {
 pub enum LifecycleCause {
     Startup,
     SubscriptionAccepted,
+    SynchronizationNotRequired,
     ResynchronizationStarted,
     SnapshotApplied,
     SourceRecovered,
@@ -107,9 +108,10 @@ pub enum LifecycleCause {
 }
 
 impl LifecycleCause {
-    pub const ALL: [Self; 13] = [
+    pub const ALL: [Self; 14] = [
         Self::Startup,
         Self::SubscriptionAccepted,
+        Self::SynchronizationNotRequired,
         Self::ResynchronizationStarted,
         Self::SnapshotApplied,
         Self::SourceRecovered,
@@ -259,6 +261,7 @@ fn valid_cause(from: ConnectorState, to: ConnectorState, cause: LifecycleCause) 
         LifecycleCause::SubscriptionAccepted => {
             matches!((from, to), (Connecting, Auth) | (Auth, Synchronizing))
         }
+        LifecycleCause::SynchronizationNotRequired => from == Synchronizing && to == Healthy,
         LifecycleCause::ResynchronizationStarted => from == Recovering && to == Synchronizing,
         LifecycleCause::SnapshotApplied => from == Synchronizing && to == Healthy,
         LifecycleCause::SourceRecovered => from == Degraded && to == Healthy,

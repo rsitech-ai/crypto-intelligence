@@ -11,7 +11,7 @@ use std::{
 
 use local_api::{
     auth::{SessionAuthenticator, SessionSecret, insert_authentication_metadata},
-    proto::market_v1::{GetOrderBookSnapshotRequest, SnapshotHealth},
+    proto::market_v1::{GetOrderBookSnapshotRequest, ProductType, SnapshotHealth},
     session::SessionDescriptor,
 };
 use serde::Deserialize;
@@ -270,6 +270,7 @@ async fn assert_authenticated_snapshot(readiness: &Readiness) {
     assert_eq!(snapshot.best_bid, "60000.1");
     assert_eq!(snapshot.best_ask, "60000.2");
     assert_eq!(snapshot.health, SnapshotHealth::Healthy as i32);
+    assert_eq!(snapshot.product_type, ProductType::Spot as i32);
 }
 
 fn assert_fd_table_has_no_secret(daemon: &DaemonProcess, secret_path: &Path) {
