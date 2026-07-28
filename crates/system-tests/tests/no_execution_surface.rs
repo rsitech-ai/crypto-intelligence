@@ -41,6 +41,7 @@ const APPROVED_FOUNDATION_DEPENDENCIES: &[&str] = &[
     "tonic",
     "tonic-prost",
     "tonic-prost-build",
+    "tower",
     "zeroize",
 ];
 // The generated wrapper is an exact local include surface. Proto reproducibility
@@ -789,17 +790,19 @@ fn network_capability_declarations(
         .iter()
         .filter(|identifier| **identifier == "LOOPBACK_BIND")
         .count();
+    let aliases_tcp_listener = file_identifiers
+        .windows(2)
+        .any(|tokens| tokens == ["TcpListener", "as"]);
     let owns_approved_tcp_listener = relative == "crates/local-api/src/server.rs"
-        && tcp_listener_identifier_count == 2
+        && tcp_listener_identifier_count == 4
         && loopback_bind_identifier_count == 3
         && file_code.matches("TcpListener::bind(").count() == 1
+        && !aliases_tcp_listener
         && file_code.contains(
             "constLOOPBACK_BIND:SocketAddr=SocketAddr::new(std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST),0);",
         )
         && file_code.contains("ifbind!=crate::server::LOOPBACK_BIND{")
-        && file_code.contains(
-            "letlistener=TcpListener::bind(crate::server::LOOPBACK_BIND)",
-        );
+        && file_code.contains("TcpListener::bind(crate::server::LOOPBACK_BIND)");
     let aliases_rustix_crate = file_identifiers
         .windows(3)
         .any(|tokens| tokens == ["use", "rustix", "as"])
@@ -2289,7 +2292,16 @@ fn active_runtime_exposes_market_observation_but_no_execution_authority() {
     );
     assert_eq!(
         inventory.cli_options,
-        ["--approved-root", "--config", "--help"]
+        [
+            "--approved-root",
+            "--config",
+            "--help",
+            "--ingestion-queue-capacity",
+            "--log-level",
+            "--maximum-concurrent-requests",
+            "--request-timeout-seconds",
+            "--system-policy",
+        ]
     );
     assert_eq!(
         inventory.dependency_capabilities,

@@ -15,6 +15,7 @@ use tokio::{
 };
 use tokio_stream::wrappers::TcpListenerStream;
 use tonic::{Request, Response, Status, transport::Server};
+use tower::limit::GlobalConcurrencyLimitLayer;
 
 use crate::{
     auth::{
@@ -46,17 +47,64 @@ use crate::{
 const LOOPBACK_BIND: SocketAddr =
     SocketAddr::new(std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST), 0);
 const AUTHENTICATION_FAILED: &str = "authentication failed";
-const MAX_REQUEST_MESSAGE_BYTES: usize = 256;
+const DEFAULT_MAX_REQUEST_MESSAGE_BYTES: usize = 256;
 const MAX_RESPONSE_MESSAGE_BYTES: usize = 1_024;
 const MAX_HEADER_LIST_BYTES: u32 = 2_048;
 const STREAM_WINDOW_BYTES: u32 = 16 * 1_024;
 const CONNECTION_WINDOW_BYTES: u32 = 32 * 1_024;
-const MAX_CONCURRENT_STREAMS: u32 = 2;
-const CONCURRENCY_LIMIT_PER_CONNECTION: usize = 1;
-const REQUEST_TIMEOUT: Duration = Duration::from_secs(2);
+const DEFAULT_CONCURRENCY_LIMIT_PER_CONNECTION: usize = 1;
+const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(2);
 const MAX_CONNECTION_AGE: Duration = Duration::from_secs(60);
 const MAX_CONNECTION_AGE_GRACE: Duration = Duration::from_secs(1);
-const GRACEFUL_SHUTDOWN_TIMEOUT: Duration = Duration::from_millis(250);
+const DEFAULT_GRACEFUL_SHUTDOWN_TIMEOUT: Duration = Duration::from_millis(250);
+
+/// Validated resource limits applied by the local transport.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ServerLimits {
+    maximum_request_bytes: usize,
+    maximum_concurrent_requests: usize,
+    request_timeout: Duration,
+    shutdown_grace: Duration,
+}
+
+impl ServerLimits {
+    pub fn new(
+        maximum_request_bytes: usize,
+        maximum_concurrent_requests: usize,
+        request_timeout: Duration,
+        shutdown_grace: Duration,
+    ) -> Result<Self, ServerError> {
+        if maximum_request_bytes == 0
+            || maximum_concurrent_requests == 0
+            || u32::try_from(maximum_concurrent_requests).is_err()
+            || request_timeout.is_zero()
+            || shutdown_grace.is_zero()
+        {
+            return Err(ServerError::InvalidLimits);
+        }
+        Ok(Self {
+            maximum_request_bytes,
+            maximum_concurrent_requests,
+            request_timeout,
+            shutdown_grace,
+        })
+    }
+
+    fn foundation_defaults() -> Self {
+        Self {
+            maximum_request_bytes: DEFAULT_MAX_REQUEST_MESSAGE_BYTES,
+            maximum_concurrent_requests: DEFAULT_CONCURRENCY_LIMIT_PER_CONNECTION,
+            request_timeout: DEFAULT_REQUEST_TIMEOUT,
+            shutdown_grace: DEFAULT_GRACEFUL_SHUTDOWN_TIMEOUT,
+        }
+    }
+}
+
+impl Default for ServerLimits {
+    fn default() -> Self {
+        Self::foundation_defaults()
+    }
+}
 
 /// Invalid authoritative market snapshot state.
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
@@ -220,6 +268,8 @@ struct MarketStateService {
     authenticator: Arc<SessionAuthenticator>,
     clock: Arc<dyn Clock>,
     snapshot: MarketSnapshot,
+    #[cfg(test)]
+    response_delay: Duration,
 }
 
 impl MarketStateService {
@@ -234,7 +284,15 @@ impl MarketStateService {
             authenticator,
             clock,
             snapshot,
+            #[cfg(test)]
+            response_delay: Duration::ZERO,
         }
+    }
+
+    #[cfg(test)]
+    fn with_response_delay(mut self, response_delay: Duration) -> Self {
+        self.response_delay = response_delay;
+        self
     }
 
     fn authenticate<T>(&self, request: &Request<T>) -> Result<(), Status> {
@@ -387,6 +445,10 @@ impl MarketStateServiceRpc for MarketStateService {
         request: Request<GetOrderBookSnapshotRequest>,
     ) -> Result<Response<GetOrderBookSnapshotResponse>, Status> {
         self.authenticate(&request)?;
+        #[cfg(test)]
+        if !self.response_delay.is_zero() {
+            tokio::time::sleep(self.response_delay).await;
+        }
         Ok(Response::new(self.snapshot.response()))
     }
 }
@@ -400,6 +462,8 @@ fn authentication_failed() -> Status {
 pub enum ServerError {
     #[error("server bind must be exactly 127.0.0.1:0")]
     NonLoopbackBind,
+    #[error("local RPC resource limits must be nonzero and transport-representable")]
+    InvalidLimits,
     #[error("could not bind the local RPC listener: {source}")]
     Bind {
         #[source]
@@ -422,8 +486,18 @@ pub enum ServerError {
 /// Running loopback server with explicit graceful shutdown ownership.
 pub struct LoopbackServer {
     local_addr: SocketAddr,
+    limits: ServerLimits,
     shutdown: Option<oneshot::Sender<()>>,
     task: JoinHandle<Result<(), tonic::transport::Error>>,
+}
+
+impl Drop for LoopbackServer {
+    fn drop(&mut self) {
+        if let Some(shutdown) = self.shutdown.take() {
+            let _ = shutdown.send(());
+        }
+        self.task.abort();
+    }
 }
 
 impl LoopbackServer {
@@ -435,7 +509,33 @@ impl LoopbackServer {
         descriptor: SessionDescriptor,
         snapshot: MarketSnapshot,
     ) -> Result<Self, ServerError> {
-        Self::spawn_with_clock(bind, secret, descriptor, snapshot, Arc::new(SystemClock)).await
+        Self::spawn_with_limits(
+            bind,
+            secret,
+            descriptor,
+            snapshot,
+            ServerLimits::foundation_defaults(),
+        )
+        .await
+    }
+
+    /// Starts the server with already validated application resource limits.
+    pub async fn spawn_with_limits(
+        bind: SocketAddr,
+        secret: SessionSecret,
+        descriptor: SessionDescriptor,
+        snapshot: MarketSnapshot,
+        limits: ServerLimits,
+    ) -> Result<Self, ServerError> {
+        Self::spawn_with_clock(
+            bind,
+            secret,
+            descriptor,
+            snapshot,
+            Arc::new(SystemClock),
+            limits,
+        )
+        .await
     }
 
     async fn spawn_with_clock(
@@ -444,41 +544,76 @@ impl LoopbackServer {
         descriptor: SessionDescriptor,
         snapshot: MarketSnapshot,
         clock: Arc<dyn Clock>,
+        limits: ServerLimits,
     ) -> Result<Self, ServerError> {
-        if bind != crate::server::LOOPBACK_BIND {
-            return Err(ServerError::NonLoopbackBind);
-        }
-
-        let listener = TcpListener::bind(crate::server::LOOPBACK_BIND)
-            .await
-            .map_err(|source| ServerError::Bind { source })?;
-        let local_addr = listener
-            .local_addr()
-            .map_err(|source| ServerError::Bind { source })?;
+        let listener = Self::bind_loopback(bind).await?;
         let authenticator = Arc::new(SessionAuthenticator::new(secret));
         let health = HealthService::new(descriptor.protocol_major(), descriptor.protocol_minor());
         let market = MarketStateService::new(descriptor, authenticator, clock, snapshot);
+        Self::spawn_services(listener, health, market, limits).await
+    }
+
+    #[cfg(test)]
+    async fn spawn_with_clock_and_delay(
+        bind: SocketAddr,
+        secret: SessionSecret,
+        descriptor: SessionDescriptor,
+        snapshot: MarketSnapshot,
+        clock: Arc<dyn Clock>,
+        limits: ServerLimits,
+        response_delay: Duration,
+    ) -> Result<Self, ServerError> {
+        let listener = Self::bind_loopback(bind).await?;
+        let authenticator = Arc::new(SessionAuthenticator::new(secret));
+        let health = HealthService::new(descriptor.protocol_major(), descriptor.protocol_minor());
+        let market = MarketStateService::new(descriptor, authenticator, clock, snapshot)
+            .with_response_delay(response_delay);
+        Self::spawn_services(listener, health, market, limits).await
+    }
+
+    async fn bind_loopback(bind: SocketAddr) -> Result<TcpListener, ServerError> {
+        if bind != crate::server::LOOPBACK_BIND {
+            return Err(ServerError::NonLoopbackBind);
+        }
+        TcpListener::bind(crate::server::LOOPBACK_BIND)
+            .await
+            .map_err(|source| ServerError::Bind { source })
+    }
+
+    async fn spawn_services(
+        listener: TcpListener,
+        health: HealthService,
+        market: MarketStateService,
+        limits: ServerLimits,
+    ) -> Result<Self, ServerError> {
+        let local_addr = listener
+            .local_addr()
+            .map_err(|source| ServerError::Bind { source })?;
         let incoming = TcpListenerStream::new(listener);
         let (shutdown, shutdown_signal) = oneshot::channel();
         let health = HealthServiceServer::new(health)
-            .max_decoding_message_size(MAX_REQUEST_MESSAGE_BYTES)
+            .max_decoding_message_size(limits.maximum_request_bytes)
             .max_encoding_message_size(MAX_RESPONSE_MESSAGE_BYTES);
         let market = MarketStateServiceServer::new(market)
-            .max_decoding_message_size(MAX_REQUEST_MESSAGE_BYTES)
+            .max_decoding_message_size(limits.maximum_request_bytes)
             .max_encoding_message_size(MAX_RESPONSE_MESSAGE_BYTES);
+        let maximum_concurrent_streams = u32::try_from(limits.maximum_concurrent_requests)
+            .map_err(|_| ServerError::InvalidLimits)?;
 
         let task = tokio::spawn(async move {
             Server::builder()
-                .concurrency_limit_per_connection(CONCURRENCY_LIMIT_PER_CONNECTION)
                 .load_shed(true)
-                .timeout(REQUEST_TIMEOUT)
+                .timeout(limits.request_timeout)
                 .initial_stream_window_size(STREAM_WINDOW_BYTES)
                 .initial_connection_window_size(CONNECTION_WINDOW_BYTES)
-                .max_concurrent_streams(MAX_CONCURRENT_STREAMS)
+                .max_concurrent_streams(maximum_concurrent_streams)
                 .http2_max_header_list_size(MAX_HEADER_LIST_BYTES)
                 .max_frame_size(STREAM_WINDOW_BYTES)
                 .max_connection_age(MAX_CONNECTION_AGE)
                 .max_connection_age_grace(MAX_CONNECTION_AGE_GRACE)
+                .layer(GlobalConcurrencyLimitLayer::new(
+                    limits.maximum_concurrent_requests,
+                ))
                 .add_service(health)
                 .add_service(market)
                 .serve_with_incoming_shutdown(incoming, async {
@@ -489,6 +624,7 @@ impl LoopbackServer {
 
         Ok(Self {
             local_addr,
+            limits,
             shutdown: Some(shutdown),
             task,
         })
@@ -504,11 +640,11 @@ impl LoopbackServer {
             .ok_or(ServerError::ShutdownUnavailable)?
             .send(())
             .map_err(|_| ServerError::ShutdownUnavailable)?;
-        match tokio::time::timeout(GRACEFUL_SHUTDOWN_TIMEOUT, &mut self.task).await {
+        match tokio::time::timeout(self.limits.shutdown_grace, &mut self.task).await {
             Ok(result) => server_task_result(result),
             Err(_) => {
                 self.task.abort();
-                match self.task.await {
+                match (&mut self.task).await {
                     Err(source) if source.is_cancelled() => Ok(()),
                     result => server_task_result(result),
                 }
@@ -558,6 +694,14 @@ mod tests {
         first_call: AtomicBool,
         entered: Mutex<Option<mpsc::Sender<()>>>,
         release: Mutex<mpsc::Receiver<()>>,
+    }
+
+    struct FixedClock;
+
+    impl Clock for FixedClock {
+        fn unix_seconds(&self) -> i64 {
+            ISSUED_AT
+        }
     }
 
     impl Clock for BlockingFirstClock {
@@ -640,8 +784,49 @@ mod tests {
             .await
     }
 
+    #[tokio::test]
+    async fn configured_request_timeout_cancels_a_pending_handler() {
+        let descriptor = test_descriptor();
+        let token = SessionAuthenticator::new(test_secret()).token(&descriptor);
+        let server = LoopbackServer::spawn_with_clock_and_delay(
+            LOOPBACK_BIND,
+            test_secret(),
+            descriptor.clone(),
+            test_snapshot(),
+            Arc::new(FixedClock),
+            ServerLimits::new(
+                256,
+                1,
+                Duration::from_millis(20),
+                Duration::from_millis(250),
+            )
+            .expect("timeout test limits must validate"),
+            Duration::from_millis(200),
+        )
+        .await
+        .expect("timeout test server must start");
+        let channel = Endpoint::from_shared(format!("http://{}", server.local_addr()))
+            .expect("test endpoint must be valid")
+            .connect()
+            .await
+            .expect("test connection must open");
+        let status = get_order_book_snapshot(
+            &mut Grpc::new(channel),
+            insert_authentication_metadata(
+                Request::new(GetOrderBookSnapshotRequest {}),
+                &descriptor,
+                &token,
+            ),
+        )
+        .await
+        .expect_err("pending handler must exceed the configured request timeout");
+        assert_eq!(status.code(), Code::Cancelled);
+        assert_eq!(status.message(), "Timeout expired");
+        server.shutdown().await.expect("test server must stop");
+    }
+
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-    async fn per_connection_concurrency_is_bounded_before_authentication() {
+    async fn global_concurrency_is_bounded_across_independent_connections() {
         let (entered_sender, entered_receiver) = mpsc::channel();
         let (release_sender, release_receiver) = mpsc::channel();
         let clock = Arc::new(BlockingFirstClock {
@@ -658,16 +843,24 @@ mod tests {
             descriptor.clone(),
             test_snapshot(),
             clock,
+            ServerLimits::new(256, 1, Duration::from_secs(2), Duration::from_millis(250))
+                .expect("test limits must validate"),
         )
         .await
         .expect("test server must start");
-        let channel = Endpoint::from_shared(format!("http://{}", server.local_addr()))
+        let endpoint = format!("http://{}", server.local_addr());
+        let first_channel = Endpoint::from_shared(endpoint.clone())
             .expect("test endpoint must be valid")
             .connect()
             .await
             .expect("test connection must open");
-        let mut first_client = Grpc::new(channel.clone());
-        let mut second_client = Grpc::new(channel);
+        let second_channel = Endpoint::from_shared(endpoint)
+            .expect("test endpoint must be valid")
+            .connect()
+            .await
+            .expect("second test connection must open");
+        let mut first_client = Grpc::new(first_channel);
+        let mut second_client = Grpc::new(second_channel);
         let first_descriptor = descriptor.clone();
         let first_token = token.clone();
         let first_request = tokio::spawn(async move {

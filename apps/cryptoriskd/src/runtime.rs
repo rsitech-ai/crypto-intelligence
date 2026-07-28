@@ -11,7 +11,7 @@ use fixed_decimal::Price;
 use local_api::{
     auth::SessionSecret,
     proto::market_v1::SnapshotHealth,
-    server::{LoopbackServer, MarketSnapshot, ServerError, SnapshotError},
+    server::{LoopbackServer, MarketSnapshot, ServerError, ServerLimits, SnapshotError},
     session::SessionDescriptor,
 };
 use observability::{
@@ -30,7 +30,6 @@ use tokio::{
     task::{JoinError, JoinHandle},
 };
 
-pub const INGESTION_QUEUE_CAPACITY: usize = 1_024;
 const MAX_FIXTURE_BYTES: usize = 1024 * 1024;
 const EXPECTED_FINAL_SEQUENCE: u64 = 102;
 const EXPECTED_BEST_BID: &str = "60000.1";
@@ -43,6 +42,38 @@ pub struct RuntimeOptions {
     pub secret: SessionSecret,
     pub descriptor: SessionDescriptor,
     pub cancellation: watch::Receiver<bool>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RuntimeLimits {
+    ingestion_queue_capacity: usize,
+    server: ServerLimits,
+    emit_info_logs: bool,
+}
+
+impl RuntimeLimits {
+    pub fn new(
+        ingestion_queue_capacity: usize,
+        maximum_request_bytes: usize,
+        maximum_concurrent_requests: usize,
+        request_timeout: std::time::Duration,
+        shutdown_grace: std::time::Duration,
+        emit_info_logs: bool,
+    ) -> Result<Self, RuntimeError> {
+        if ingestion_queue_capacity == 0 {
+            return Err(RuntimeError::InvalidQueueCapacity);
+        }
+        Ok(Self {
+            ingestion_queue_capacity,
+            server: ServerLimits::new(
+                maximum_request_bytes,
+                maximum_concurrent_requests,
+                request_timeout,
+                shutdown_grace,
+            )?,
+            emit_info_logs,
+        })
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -201,6 +232,7 @@ pub struct RunningDaemon {
     wal: SegmentSink,
     log: LocalJsonLog,
     readiness: Readiness,
+    emit_info_logs: bool,
 }
 
 impl RunningDaemon {
@@ -211,11 +243,15 @@ impl RunningDaemon {
     pub async fn shutdown(mut self) -> Result<(), RuntimeError> {
         let server_result = self.server.shutdown().await;
         let wal_result = self.wal.sync();
-        let log_result = self.log.write_event(&json!({
-            "level": "info",
-            "event": "fixture_runtime_stopped",
-            "sequence": EXPECTED_FINAL_SEQUENCE
-        }));
+        let log_result = if self.emit_info_logs {
+            self.log.write_event(&json!({
+                "level": "info",
+                "event": "fixture_runtime_stopped",
+                "sequence": EXPECTED_FINAL_SEQUENCE
+            }))
+        } else {
+            Ok(())
+        };
         let log_shutdown_result = self.log.shutdown();
 
         server_result?;
@@ -253,7 +289,10 @@ impl Readiness {
     }
 }
 
-pub async fn start_fixture_runtime(options: RuntimeOptions) -> Result<RunningDaemon, RuntimeError> {
+pub async fn start_fixture_runtime_with_limits(
+    options: RuntimeOptions,
+    limits: RuntimeLimits,
+) -> Result<RunningDaemon, RuntimeError> {
     let RuntimeOptions {
         fixture,
         wal,
@@ -262,16 +301,17 @@ pub async fn start_fixture_runtime(options: RuntimeOptions) -> Result<RunningDae
         descriptor,
         mut cancellation,
     } = options;
+    let emit_info_logs = limits.emit_info_logs;
     let log = LocalJsonLog::from_file(log);
     let fixture_records = read_fixture_records(fixture)?;
     let mut segment = Segment::from_file(wal);
     if is_cancelled(&cancellation) {
-        cancel_startup(SegmentSink { segment }, log)?;
+        cancel_startup(SegmentSink { segment }, log, emit_info_logs)?;
         return Err(RuntimeError::Cancelled);
     }
     let recovery = segment.recover()?;
     if is_cancelled(&cancellation) {
-        cancel_startup(SegmentSink { segment }, log)?;
+        cancel_startup(SegmentSink { segment }, log, emit_info_logs)?;
         return Err(RuntimeError::Cancelled);
     }
     if recovery.records().len() > fixture_records.len()
@@ -290,7 +330,7 @@ pub async fn start_fixture_runtime(options: RuntimeOptions) -> Result<RunningDae
         engine.process_persisted(record)?;
     }
     if is_cancelled(&cancellation) {
-        cancel_startup(engine.into_wal(), log)?;
+        cancel_startup(engine.into_wal(), log, emit_info_logs)?;
         return Err(RuntimeError::Cancelled);
     }
 
@@ -298,7 +338,7 @@ pub async fn start_fixture_runtime(options: RuntimeOptions) -> Result<RunningDae
         .into_iter()
         .skip(recovery.records().len())
         .collect::<Vec<_>>();
-    let (sender, mut receiver) = ingestion_channel();
+    let (sender, mut receiver) = ingestion_channel_with_capacity(limits.ingestion_queue_capacity);
     let producer = spawn_fixture_producer(sender, remaining, cancellation.clone());
     let mut cancelled = false;
     loop {
@@ -317,7 +357,7 @@ pub async fn start_fixture_runtime(options: RuntimeOptions) -> Result<RunningDae
     }
     producer.await??;
     if cancelled || is_cancelled(&cancellation) {
-        cancel_startup(engine.into_wal(), log)?;
+        cancel_startup(engine.into_wal(), log, emit_info_logs)?;
         return Err(RuntimeError::Cancelled);
     }
 
@@ -340,25 +380,28 @@ pub async fn start_fixture_runtime(options: RuntimeOptions) -> Result<RunningDae
         published.freshness_millis,
     )?;
     let wal = engine.into_wal();
-    let server = LoopbackServer::spawn(
+    let server = LoopbackServer::spawn_with_limits(
         "127.0.0.1:0"
             .parse()
             .expect("constant loopback bind must parse"),
         secret,
         descriptor.clone(),
         market_snapshot,
+        limits.server,
     )
     .await?;
     let readiness = Readiness::new(server.local_addr(), &descriptor);
-    log.write_event(&json!({
-        "level": "info",
-        "event": "fixture_runtime_ready",
-        "source": "binance-fixture",
-        "symbol": "BTCUSDT",
-        "generation": 1,
-        "sequence": EXPECTED_FINAL_SEQUENCE,
-        "endpoint": &readiness.endpoint
-    }))?;
+    if emit_info_logs {
+        log.write_event(&json!({
+            "level": "info",
+            "event": "fixture_runtime_ready",
+            "source": "binance-fixture",
+            "symbol": "BTCUSDT",
+            "generation": 1,
+            "sequence": EXPECTED_FINAL_SEQUENCE,
+            "endpoint": &readiness.endpoint
+        }))?;
+    }
     log.sync()?;
 
     Ok(RunningDaemon {
@@ -366,11 +409,14 @@ pub async fn start_fixture_runtime(options: RuntimeOptions) -> Result<RunningDae
         wal,
         log,
         readiness,
+        emit_info_logs,
     })
 }
 
-pub fn ingestion_channel() -> (mpsc::Sender<Vec<u8>>, mpsc::Receiver<Vec<u8>>) {
-    mpsc::channel(INGESTION_QUEUE_CAPACITY)
+pub fn ingestion_channel_with_capacity(
+    capacity: usize,
+) -> (mpsc::Sender<Vec<u8>>, mpsc::Receiver<Vec<u8>>) {
+    mpsc::channel(capacity)
 }
 
 fn spawn_fixture_producer(
@@ -401,12 +447,18 @@ fn is_cancelled(cancellation: &watch::Receiver<bool>) -> bool {
     *cancellation.borrow()
 }
 
-fn cancel_startup(mut wal: SegmentSink, log: LocalJsonLog) -> Result<(), RuntimeError> {
+fn cancel_startup(
+    mut wal: SegmentSink,
+    log: LocalJsonLog,
+    emit_info_logs: bool,
+) -> Result<(), RuntimeError> {
     wal.sync().map_err(RuntimeError::Persistence)?;
-    log.write_event(&json!({
-        "level": "info",
-        "event": "fixture_runtime_cancelled"
-    }))?;
+    if emit_info_logs {
+        log.write_event(&json!({
+            "level": "info",
+            "event": "fixture_runtime_cancelled"
+        }))?;
+    }
     log.shutdown()?;
     Ok(())
 }
@@ -473,6 +525,8 @@ fn segment_io_error(error: SegmentError) -> io::Error {
 
 #[derive(Debug, Error)]
 pub enum RuntimeError {
+    #[error("fixture ingestion queue capacity must be nonzero")]
+    InvalidQueueCapacity,
     #[error("market WAL persistence failed")]
     Persistence(#[source] io::Error),
     #[error("market fixture parsing failed")]

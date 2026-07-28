@@ -1,13 +1,54 @@
 schema_version = 1
-data_root = "./data"
-log_root = "./logs"
-fixture_input = "./fixtures/exchanges/binance/manifest.toml"
+profile = "production-local"
+timezone = "UTC"
+
+[daemon]
+data_dir = "data"
+log_dir = "logs"
+fixture_input = "fixtures/binance/btcusdt-book-v1.jsonl"
 bind_address = "127.0.0.1:0"
 session_secret_fd = 3
 ingestion_queue_capacity = 1024
-maximum_request_bytes = 8388608
-maximum_concurrent_requests = 128
-request_timeout_seconds = 30
+maximum_request_bytes = 256
+maximum_concurrent_requests = 1
+request_timeout_seconds = 2
 shutdown_grace_seconds = 5
+wal_flush_interval_ms = 250
+max_memory_gib = 40
+log_level = "info"
+wal_format = "v1"
+schema_compatibility = "strict"
+database_engine = "sqlite"
+runtime_threads = 4
+
+[coverage]
+max_tier_a_instruments = 1
+max_tier_b_instruments = 1
+reject_over_capacity = true
+watchlist = ["BTC"]
+
+[[venues]]
+id = "binance"
+enabled = true
+coverage_tier = "a"
+products = ["spot"]
+instrument_budget = 1
+raw_retention_days = 14
+
+[models]
+production_registry = "models/public-test-artifacts"
+allow_experimental_views = false
+allow_core_ai = false
+allow_foundation_models = false
+abstain_on_incompatible_model = true
+selected_view = "disabled"
+
+[alerts]
+local_notifications = false
+outbound_webhooks = false
+minimum_quality_ppm = 900000
+
+[privacy]
 remote_export = false
 remote_telemetry = false
+automatic_crash_upload = false

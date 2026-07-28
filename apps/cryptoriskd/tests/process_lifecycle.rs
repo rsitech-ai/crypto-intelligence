@@ -344,26 +344,26 @@ fn runtime_root() -> tempfile::TempDir {
     let root = tempfile::tempdir().expect("temporary process root must exist");
     fs::create_dir(root.path().join("data")).expect("data root must exist");
     fs::create_dir(root.path().join("logs")).expect("log root must exist");
+    fs::create_dir_all(root.path().join("models/public-test-artifacts"))
+        .expect("model registry must exist");
     fs::write(root.path().join("fixture.jsonl"), FIXTURE).expect("fixture must write");
-    fs::write(
-        root.path().join("config.toml"),
-        r#"
-schema_version = 1
-data_root = "data"
-log_root = "logs"
-fixture_input = "fixture.jsonl"
-bind_address = "127.0.0.1:0"
-session_secret_fd = 3
-ingestion_queue_capacity = 1024
-maximum_request_bytes = 8388608
-maximum_concurrent_requests = 128
-request_timeout_seconds = 30
-shutdown_grace_seconds = 5
-remote_export = false
-remote_telemetry = false
-"#,
-    )
-    .expect("process config must write");
+    let config = include_str!("../../../configs/default.toml")
+        .replace(
+            "fixture_input = \"fixtures/binance/btcusdt-book-v1.jsonl\"",
+            "fixture_input = \"fixture.jsonl\"",
+        )
+        .replace(
+            "ingestion_queue_capacity = 1024",
+            "ingestion_queue_capacity = 2",
+        )
+        .replace("maximum_request_bytes = 256", "maximum_request_bytes = 512")
+        .replace(
+            "maximum_concurrent_requests = 1",
+            "maximum_concurrent_requests = 2",
+        )
+        .replace("request_timeout_seconds = 2", "request_timeout_seconds = 3")
+        .replace("shutdown_grace_seconds = 5", "shutdown_grace_seconds = 2");
+    fs::write(root.path().join("config.toml"), config).expect("process config must write");
     root
 }
 
@@ -388,7 +388,9 @@ impl DaemonProcess {
             root,
             secret_path,
             None,
-            &format!("{redirect}; exec \"$2\" --approved-root \"$3\" --config \"$4\""),
+            &format!(
+                "{redirect}; exec \"$2\" --approved-root \"$3\" --config \"$4\" --ingestion-queue-capacity 3 --maximum-concurrent-requests 3 --request-timeout-seconds 4 --log-level debug"
+            ),
         )
     }
 
