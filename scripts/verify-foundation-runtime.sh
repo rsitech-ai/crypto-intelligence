@@ -96,7 +96,7 @@ stop_owned_descendant() {
 
 cleanup_generated_app_roots() {
   local generated_root
-  for generated_root in "${app_runtime_roots[@]}"; do
+  for generated_root in "${app_runtime_roots[@]-}"; do
     if [[ "${generated_root}" == */CuspObservatoryTests/Task6* ]]; then
       rm -rf -- "${generated_root}"
     fi
@@ -908,7 +908,7 @@ then
     -type f -size +0c > "${temporary_root}/app-standard-stream-findings.txt"
   record_blocker "native-app-runtime:standard-stream-output"
 fi
-for generated_root in "${app_runtime_roots[@]}"; do
+for generated_root in "${app_runtime_roots[@]-}"; do
   if [[ -f "${generated_root}/logs/cmti.jsonl" ]] \
     && rg -n '"level":"(error|warn)"|panic|crash|hang|secret|token' \
       "${generated_root}/logs/cmti.jsonl" >/dev/null 2>&1
