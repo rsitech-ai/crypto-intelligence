@@ -882,9 +882,20 @@ fn recovery_resumes_pending_seals_before_and_after_the_active_rename() {
             fs::rename(&active, &sealed).expect("fixture must simulate active rename");
         }
 
-        let mut recovered =
-            SegmentedWalWriter::recover(directory.path(), policy, 20, CREATED_WALL_NS + 100)
-                .expect("pending transition must recover");
+        let mut replayed = Vec::new();
+        let mut recovered = SegmentedWalWriter::recover_with_replay(
+            directory.path(),
+            policy,
+            20,
+            CREATED_WALL_NS + 100,
+            |record| replayed.push(record.payload().to_vec()),
+        )
+        .expect("pending transition must recover");
+        assert_eq!(
+            replayed,
+            vec![b"one".to_vec()],
+            "pending seal recovery must replay the finalized segment exactly once"
+        );
         assert_eq!(recovered.active_ordinal(), 2);
         assert!(!active.exists());
         assert!(!pending.exists());
