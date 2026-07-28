@@ -10,14 +10,14 @@ use std::{
 
 use local_api::{
     auth::{SessionAuthenticator, SessionSecret, insert_authentication_metadata},
-    proto::market_v1::{
-        GetSnapshotRequest, SnapshotHealth, market_service_client::MarketServiceClient,
-    },
+    proto::market_v1::{GetSnapshotRequest, SnapshotHealth},
     session::SessionDescriptor,
 };
 use serde::Deserialize;
-use tonic::{Request, transport::Endpoint};
+use tonic::Request;
 use zeroize::Zeroizing;
+
+mod support;
 
 const FIXTURE: &str = include_str!("../../../fixtures/binance/btcusdt-book-v1.jsonl");
 const SECRET_BYTES: [u8; 32] = [0x6b; 32];
@@ -255,12 +255,7 @@ async fn assert_authenticated_snapshot(readiness: &Readiness) {
     let secret = SessionSecret::try_from(Zeroizing::new(SECRET_BYTES.to_vec()))
         .expect("test secret must be exact");
     let token = SessionAuthenticator::new(secret).token(&descriptor);
-    let channel = Endpoint::from_shared(readiness.endpoint.clone())
-        .expect("readiness endpoint must parse")
-        .connect()
-        .await
-        .expect("real daemon RPC must connect");
-    let mut market = MarketServiceClient::new(channel);
+    let mut market = support::MarketTestClient::connect(readiness.endpoint.clone()).await;
     let snapshot = market
         .get_snapshot(insert_authentication_metadata(
             Request::new(GetSnapshotRequest {}),
