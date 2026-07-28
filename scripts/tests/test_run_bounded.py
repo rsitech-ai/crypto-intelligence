@@ -72,6 +72,23 @@ class RunBoundedTests(unittest.TestCase):
             f"unbounded wait follows SIGKILL near lines {violations}",
         )
 
+    def test_verifier_empty_app_root_cleanup_is_safe_under_bash_nounset(self) -> None:
+        verifier = (ROOT / "scripts" / "verify-foundation-runtime.sh").read_text()
+        self.assertNotIn('"${app_runtime_roots[@]}"', verifier)
+        self.assertEqual(verifier.count('"${app_runtime_roots[@]-}"'), 2)
+        completed = subprocess.run(
+            [
+                "/bin/bash",
+                "-u",
+                "-c",
+                'app_runtime_roots=(); for root in "${app_runtime_roots[@]-}"; do :; done',
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+
     def test_cleanup_failure_overrides_a_nominal_command_success(self) -> None:
         helper_module = load_helper_module()
         process = mock.Mock(pid=4242)
