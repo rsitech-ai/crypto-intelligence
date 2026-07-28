@@ -5,13 +5,15 @@ Every top-level section of the approved specification is assigned to one or more
 ## Current executable coverage status
 
 Plan assignment is not implementation proof. At clean commit
-`488adc502bbf3f3ae8caf5cafbf278f92e32bdb0`, Task 6 proves only the bounded
+`739ee52462caa80f53c74735742e3392e0347e34`, Task 6 proves only the bounded
 foundation vertical slice:
 
 - an explicit no-execution boundary across production dependencies, Cargo
-  features, active RPCs, CLI/configuration, positively owned network
-  capabilities, and Rust identifiers; the only approved production network
-  owner is the exact guarded loopback listener in `crates/local-api`;
+  features, the locked all-features resolved dependency graph, active RPCs,
+  CLI/configuration, positively owned network capabilities, and Rust
+  identifiers; the only approved production network owner is the exact guarded
+  loopback listener in `crates/local-api`, and Rustix is pinned to its exact
+  non-network resolved feature set;
 - canonical fixed-point BTCUSDT fixture ingestion, order-book state, WAL,
   authenticated loopback RPC, and deterministic recovery;
 - native app supervision with controlled quit, forced parent loss, exact
