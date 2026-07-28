@@ -42,6 +42,8 @@ const APPROVED_FOUNDATION_DEPENDENCIES: &[&str] = &[
     "tonic-prost",
     "tonic-prost-build",
     "tower",
+    "tracing",
+    "tracing-subscriber",
     "zeroize",
 ];
 // The generated wrapper is an exact local include surface. Proto reproducibility

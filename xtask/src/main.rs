@@ -76,6 +76,14 @@ enum XtaskError {
     },
     #[error("checked-in configuration schema is out of date")]
     SchemaOutOfDate,
+    #[error("could not read observability contract {path}: {source}")]
+    ObservabilityDocumentRead {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
+    #[error("checked-in observability metric and field catalog is out of date")]
+    ObservabilitySchemaOutOfDate,
     #[error("could not start required protobuf tool {tool}: {source}")]
     ProtoToolSpawn {
         tool: &'static str,
@@ -236,11 +244,15 @@ fn run() -> Result<(), XtaskError> {
         "generate-config-schema" => generate_config_schema(options),
         "generate-field-registry" => generate_field_registry(options),
         "generate-proto" => generate_proto_command(options),
+        "observability-schema-check" if options.is_empty() => observability_schema_check(),
         "proto-check" if options.is_empty() => proto_check(),
         "protoc-gen-local-api" if options.is_empty() => protoc_gen_local_api(),
-        "help" | "license-check" | "proto-check" | "protoc-gen-local-api" | "workspace-check" => {
-            Err(XtaskError::InvalidInvocation)
-        }
+        "help"
+        | "license-check"
+        | "observability-schema-check"
+        | "proto-check"
+        | "protoc-gen-local-api"
+        | "workspace-check" => Err(XtaskError::InvalidInvocation),
         command => Err(XtaskError::UnknownCommand {
             command: command.to_owned(),
         }),
@@ -249,8 +261,89 @@ fn run() -> Result<(), XtaskError> {
 
 fn print_help() {
     println!(
-        "xtask commands:\n  help\n  workspace-check\n  license-check\n  generate-config-schema [--check]\n  generate-field-registry [--check]\n  generate-proto [--check]\n  proto-check"
+        "xtask commands:\n  help\n  workspace-check\n  license-check\n  generate-config-schema [--check]\n  generate-field-registry [--check]\n  generate-proto [--check]\n  observability-schema-check\n  proto-check"
     );
+}
+
+const OBSERVABILITY_CATALOG_START: &str = "<!-- BEGIN GENERATED OBSERVABILITY CATALOG -->";
+const OBSERVABILITY_CATALOG_END: &str = "<!-- END GENERATED OBSERVABILITY CATALOG -->";
+
+fn observability_schema_check() -> Result<(), XtaskError> {
+    let path = workspace_root().join("docs/operations/observability.md");
+    let checked_in =
+        fs::read_to_string(&path).map_err(|source| XtaskError::ObservabilityDocumentRead {
+            path: path.clone(),
+            source,
+        })?;
+    let expected = render_observability_catalog();
+    let Some((_, suffix)) = checked_in.split_once(OBSERVABILITY_CATALOG_START) else {
+        return Err(XtaskError::ObservabilitySchemaOutOfDate);
+    };
+    let Some((actual, _)) = suffix.split_once(OBSERVABILITY_CATALOG_END) else {
+        return Err(XtaskError::ObservabilitySchemaOutOfDate);
+    };
+    if actual != expected {
+        return Err(XtaskError::ObservabilitySchemaOutOfDate);
+    }
+    println!("observability-schema-check: ok");
+    Ok(())
+}
+
+fn render_observability_catalog() -> String {
+    use observability::{Component, FieldName, MetricName, Outcome, Venue};
+
+    let mut output = String::from(
+        "\n\n## Generated contract catalog\n\n\
+This block is checked against the Rust enums by `cargo run -p xtask -- \
+observability-schema-check`.\n\n\
+### Metrics\n\n\
+| Name | Kind | Unit |\n\
+|---|---|---|\n",
+    );
+    for metric in MetricName::ALL {
+        output.push_str(&format!(
+            "| `{}` | `{:?}` | `{:?}` |\n",
+            metric.as_str(),
+            metric.kind(),
+            metric.unit()
+        ));
+    }
+    output.push_str(
+        "\n### Structured log fields\n\n\
+| Field |\n\
+|---|\n",
+    );
+    for field in FieldName::ALL {
+        output.push_str(&format!("| `{}` |\n", field.as_str()));
+    }
+    output.push_str("\n### Bounded metric label values\n\n");
+    for (label, values) in [
+        (
+            "component",
+            Component::ALL
+                .iter()
+                .map(|value| value.as_str())
+                .collect::<Vec<_>>(),
+        ),
+        (
+            "venue",
+            Venue::ALL
+                .iter()
+                .map(|value| value.as_str())
+                .collect::<Vec<_>>(),
+        ),
+        (
+            "outcome",
+            Outcome::ALL
+                .iter()
+                .map(|value| value.as_str())
+                .collect::<Vec<_>>(),
+        ),
+    ] {
+        output.push_str(&format!("- `{label}`: `{}`\n", values.join("`, `")));
+    }
+    output.push('\n');
+    output
 }
 
 fn generate_config_schema(options: &[OsString]) -> Result<(), XtaskError> {

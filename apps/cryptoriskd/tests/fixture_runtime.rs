@@ -11,7 +11,10 @@ use local_api::{
     proto::market_v1::{GetOrderBookSnapshotRequest, SnapshotHealth},
     session::SessionDescriptor,
 };
-use observability::{Component, MetricKey, MetricName, Metrics, Outcome, Venue};
+use observability::{
+    Component, LocalJsonLog, LocalLogLevel, MetricKey, MetricName, MetricSnapshotValue, Metrics,
+    Outcome, Venue,
+};
 use tokio::sync::mpsc::error::TrySendError;
 use tonic::{Code, Request};
 use zeroize::Zeroizing;
@@ -28,7 +31,7 @@ use runtime::{
     ingestion_channel_with_capacity, start_fixture_runtime_with_limits,
 };
 use startup::{
-    StartupError, issue_session_descriptor, open_log_file, open_wal_file, parse_session_secret,
+    StartupError, issue_session_descriptor, open_rotating_log, open_wal_file, parse_session_secret,
 };
 
 const FIXTURE: &str = include_str!("../../../fixtures/binance/btcusdt-book-v1.jsonl");
@@ -242,7 +245,7 @@ async fn cancellation_is_observed_before_wal_recovery_and_syncs_partial_state() 
         RuntimeOptions {
             fixture: File::open(fixture_path).expect("fixture must open"),
             wal,
-            log,
+            log: LocalJsonLog::from_file(log),
             secret: secret(),
             descriptor: descriptor(),
             cancellation,
@@ -291,7 +294,7 @@ fn existing_wal_and_log_reject_hardlinks_and_special_files() {
     fs::hard_link(&log_path, hardlink_root.path().join("log-alias"))
         .expect("log hardlink must create");
     assert!(
-        open_log_file(&effective.paths.log_root).is_err(),
+        open_rotating_log(&effective.paths.log_root).is_err(),
         "hardlinked log must fail closed"
     );
 
@@ -325,7 +328,7 @@ fn state_files_reject_unsafe_modes_and_created_wal_retains_its_exact_inode() {
     fs::set_permissions(&log_path, fs::Permissions::from_mode(0o640))
         .expect("unsafe log permissions must set");
     assert!(
-        open_log_file(&effective.paths.log_root).is_err(),
+        open_rotating_log(&effective.paths.log_root).is_err(),
         "group-readable log must fail closed"
     );
 
@@ -389,6 +392,12 @@ fn malformed_json_and_sequence_gap_preserve_last_healthy_snapshot() {
             .expect("rejection counter must read"),
         1
     );
+    assert_eq!(
+        metrics
+            .counter(parser_failures_key())
+            .expect("parser failure counter must read"),
+        1
+    );
 
     let gap = br#"{"kind":"delta","source":"binance-fixture","symbol":"BTCUSDT","generation":1,"event_unix_nanos":1700000000300000000,"first_sequence":104,"last_sequence":104,"bids":[["60000.1","9"]],"asks":[]}"#;
     assert!(matches!(
@@ -402,6 +411,12 @@ fn malformed_json_and_sequence_gap_preserve_last_healthy_snapshot() {
             .counter(rejected_key())
             .expect("rejection counter must read"),
         2
+    );
+    assert_eq!(
+        metrics
+            .counter(sequence_gaps_key())
+            .expect("sequence gap counter must read"),
+        1
     );
 }
 
@@ -442,6 +457,38 @@ async fn healthy_shutdown_completes_within_five_seconds_and_syncs_logs() {
 }
 
 #[tokio::test]
+async fn running_daemon_retains_exact_bounded_diagnostics() {
+    let directory = tempfile::tempdir().expect("temporary runtime root must exist");
+    let running = start(directory.path(), descriptor())
+        .await
+        .expect("fixture runtime must start");
+    let snapshot = running
+        .diagnostics_snapshot(1_000_000)
+        .expect("running diagnostics must snapshot");
+
+    assert_eq!(
+        snapshot_value(&snapshot, received_key()),
+        &MetricSnapshotValue::Counter { value: 3 }
+    );
+    assert_eq!(
+        snapshot_value(&snapshot, ingestion_bytes_key()),
+        &MetricSnapshotValue::Counter {
+            value: FIXTURE.lines().map(str::len).sum::<usize>() as u64
+        }
+    );
+    assert_eq!(
+        snapshot_value(&snapshot, queue_depth_key()),
+        &MetricSnapshotValue::Gauge { value: 0 }
+    );
+    assert_eq!(
+        snapshot_value(&snapshot, rejected_key()),
+        &MetricSnapshotValue::Counter { value: 0 }
+    );
+
+    running.shutdown().await.expect("daemon must stop cleanly");
+}
+
+#[tokio::test]
 async fn error_log_level_suppresses_info_lifecycle_events() {
     let directory = tempfile::tempdir().expect("temporary runtime root must exist");
     let limits = RuntimeLimits::new(
@@ -450,7 +497,7 @@ async fn error_log_level_suppresses_info_lifecycle_events() {
         1,
         Duration::from_secs(2),
         Duration::from_secs(5),
-        false,
+        LocalLogLevel::Error,
     )
     .expect("error-level runtime limits must validate");
     let running = start_with_fixture_and_limits(directory.path(), descriptor(), FIXTURE, limits)
@@ -540,7 +587,7 @@ async fn start_with_fixture_and_limits(
         RuntimeOptions {
             fixture,
             wal,
-            log,
+            log: LocalJsonLog::from_file(log),
             secret: secret(),
             descriptor,
             cancellation: tokio::sync::watch::channel(false).1,
@@ -557,7 +604,7 @@ fn runtime_limits() -> RuntimeLimits {
         1,
         Duration::from_secs(2),
         Duration::from_secs(5),
-        true,
+        LocalLogLevel::Info,
     )
     .expect("test runtime limits must validate")
 }
@@ -566,6 +613,10 @@ fn runtime_root() -> tempfile::TempDir {
     let root = tempfile::tempdir().expect("temporary runtime root must exist");
     fs::create_dir(root.path().join("data")).expect("data root must exist");
     fs::create_dir(root.path().join("logs")).expect("log root must exist");
+    fs::set_permissions(root.path().join("data"), fs::Permissions::from_mode(0o700))
+        .expect("data root must be private");
+    fs::set_permissions(root.path().join("logs"), fs::Permissions::from_mode(0o700))
+        .expect("log root must be private");
     fs::create_dir_all(root.path().join("models/public-test-artifacts"))
         .expect("model registry must exist");
     fs::write(root.path().join("fixture.jsonl"), FIXTURE).expect("fixture must exist");
@@ -620,6 +671,63 @@ fn rejected_key() -> MetricKey {
         venue: Venue::Binance,
         outcome: Outcome::Degraded,
     }
+}
+
+fn received_key() -> MetricKey {
+    MetricKey {
+        name: MetricName::EventsReceived,
+        component: Component::Ingestion,
+        venue: Venue::Binance,
+        outcome: Outcome::Success,
+    }
+}
+
+fn ingestion_bytes_key() -> MetricKey {
+    MetricKey {
+        name: MetricName::IngestionBytes,
+        component: Component::Ingestion,
+        venue: Venue::Binance,
+        outcome: Outcome::Success,
+    }
+}
+
+fn queue_depth_key() -> MetricKey {
+    MetricKey {
+        name: MetricName::QueueDepth,
+        component: Component::Ingestion,
+        venue: Venue::Binance,
+        outcome: Outcome::NotApplicable,
+    }
+}
+
+fn parser_failures_key() -> MetricKey {
+    MetricKey {
+        name: MetricName::ParserFailures,
+        component: Component::Ingestion,
+        venue: Venue::Binance,
+        outcome: Outcome::Rejected,
+    }
+}
+
+fn sequence_gaps_key() -> MetricKey {
+    MetricKey {
+        name: MetricName::SequenceGaps,
+        component: Component::OrderBook,
+        venue: Venue::Binance,
+        outcome: Outcome::Degraded,
+    }
+}
+
+fn snapshot_value(
+    snapshot: &observability::DiagnosticsSnapshot,
+    key: MetricKey,
+) -> &MetricSnapshotValue {
+    &snapshot
+        .series()
+        .iter()
+        .find(|series| series.key == key)
+        .unwrap_or_else(|| panic!("missing metric {}", key.name.as_str()))
+        .value
 }
 
 struct FailingWal;

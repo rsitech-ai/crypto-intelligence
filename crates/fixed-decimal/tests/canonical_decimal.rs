@@ -1,5 +1,6 @@
 use fixed_decimal::{DecimalError, FixedDecimal, MAX_SCALE};
 use proptest::prelude::*;
+use proptest::test_runner::{Config as ProptestConfig, FileFailurePersistence};
 
 #[test]
 fn canonical_parser_accepts_only_unique_text_representations() {
@@ -205,6 +206,13 @@ fn three_factor_product_cancels_scale_globally_before_multiplication() {
 }
 
 proptest! {
+    #![proptest_config(ProptestConfig::with_failure_persistence(
+        FileFailurePersistence::Direct(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/proptest-regressions/canonical_decimal.txt"
+        ))
+    ))]
+
     #[test]
     fn display_is_a_canonical_round_trip(mantissa in any::<i128>(), scale in 0_u32..=MAX_SCALE) {
         let value = FixedDecimal::new(mantissa, scale).expect("generated scale is supported");

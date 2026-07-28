@@ -653,6 +653,8 @@ pub enum ConfigError {
     NoConfigurationChange,
     #[error("{field} escapes the approved local root")]
     PathEscape { field: &'static str },
+    #[error("{field} must be an owner-only directory owned by the current user")]
+    UnsafePrivateDirectory { field: &'static str },
     #[error("{field} is not a readable regular file: {path}")]
     FixtureUnreadable { field: &'static str, path: PathBuf },
     #[error("filesystem validation failed for {field} at {path}: {source}")]
@@ -1633,8 +1635,25 @@ fn open_writable_root(
 ) -> Result<ValidatedDirectory, ConfigError> {
     let components = relative_components(configured, field)?;
     let directory = open_directory_chain(approved_root, &components, configured, field)?;
+    validate_private_directory(&directory, field)?;
     prove_writable(&directory, field)?;
     Ok(directory)
+}
+
+fn validate_private_directory(
+    directory: &ValidatedDirectory,
+    field: &'static str,
+) -> Result<(), ConfigError> {
+    let stat = rustix_fs::fstat(directory.handle.as_fd())
+        .map_err(|_| ConfigError::UnsafePrivateDirectory { field })?;
+    let safe = FileType::from_raw_mode(stat.st_mode).is_dir()
+        && stat.st_uid == rustix::process::geteuid().as_raw()
+        && stat.st_mode & 0o077 == 0;
+    if safe {
+        Ok(())
+    } else {
+        Err(ConfigError::UnsafePrivateDirectory { field })
+    }
 }
 
 fn open_readable_root(

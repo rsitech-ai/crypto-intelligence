@@ -2,6 +2,7 @@ use std::{
     fs::File,
     io::{self, Read},
     net::SocketAddr,
+    time::Instant,
 };
 
 use connector_binance::{ParseError, parse_fixture_line};
@@ -15,7 +16,9 @@ use local_api::{
     session::SessionDescriptor,
 };
 use observability::{
-    Component, LocalJsonLog, MetricKey, MetricName, Metrics, ObservabilityError, Outcome, Venue,
+    Component, DiagnosticsSnapshot, LocalJsonLog, LocalLogLevel, LocalTracing, MetricKey,
+    MetricName, Metrics, ObservabilityError, ObservabilityHandle, Outcome, Venue,
+    init_local_tracing,
 };
 use orderbook::{BookError, OrderBook};
 use raw_wal::{
@@ -23,7 +26,6 @@ use raw_wal::{
     segment::{Segment, SegmentError},
 };
 use serde::Serialize;
-use serde_json::json;
 use thiserror::Error;
 use tokio::{
     sync::{mpsc, watch},
@@ -38,7 +40,7 @@ const EXPECTED_BEST_ASK: &str = "60000.2";
 pub struct RuntimeOptions {
     pub fixture: File,
     pub wal: File,
-    pub log: File,
+    pub log: LocalJsonLog,
     pub secret: SessionSecret,
     pub descriptor: SessionDescriptor,
     pub cancellation: watch::Receiver<bool>,
@@ -48,7 +50,7 @@ pub struct RuntimeOptions {
 pub struct RuntimeLimits {
     ingestion_queue_capacity: usize,
     server: ServerLimits,
-    emit_info_logs: bool,
+    log_level: LocalLogLevel,
 }
 
 impl RuntimeLimits {
@@ -58,7 +60,7 @@ impl RuntimeLimits {
         maximum_concurrent_requests: usize,
         request_timeout: std::time::Duration,
         shutdown_grace: std::time::Duration,
-        emit_info_logs: bool,
+        log_level: LocalLogLevel,
     ) -> Result<Self, RuntimeError> {
         if ingestion_queue_capacity == 0 {
             return Err(RuntimeError::InvalidQueueCapacity);
@@ -71,7 +73,7 @@ impl RuntimeLimits {
                 request_timeout,
                 shutdown_grace,
             )?,
-            emit_info_logs,
+            log_level,
         })
     }
 }
@@ -120,17 +122,26 @@ impl<W: WalSink> IngestionEngine<W> {
     }
 
     pub fn process_new(&mut self, raw: &[u8]) -> Result<(), RuntimeError> {
+        let wal_started = Instant::now();
         if let Err(source) = self.wal.append_and_sync(raw) {
             self.reject()?;
             return Err(RuntimeError::Persistence(source));
         }
+        self.metrics
+            .observe_seconds(wal_fsync_key(), wal_started.elapsed().as_secs_f64())?;
+        self.metrics.increment(
+            ingestion_bytes_key(),
+            u64::try_from(raw.len()).map_err(|_| RuntimeError::MetricValueOverflow)?,
+        )?;
         self.process_persisted(raw)
     }
 
     pub fn process_persisted(&mut self, raw: &[u8]) -> Result<(), RuntimeError> {
+        let normalization_started = Instant::now();
         let event = match parse_fixture_line(raw) {
             Ok(event) => event,
             Err(source) => {
+                self.metrics.increment(parser_failures_key(), 1)?;
                 self.reject()?;
                 return Err(RuntimeError::Parse(source));
             }
@@ -157,6 +168,11 @@ impl<W: WalSink> IngestionEngine<W> {
             _ => Err(BookError::Invalid),
         };
         if let Err(source) = apply_result {
+            match source {
+                BookError::Gap => self.metrics.increment(sequence_gaps_key(), 1)?,
+                BookError::Checksum => self.metrics.increment(checksum_failures_key(), 1)?,
+                _ => {}
+            }
             self.reject()?;
             return Err(RuntimeError::Book(source));
         }
@@ -188,6 +204,10 @@ impl<W: WalSink> IngestionEngine<W> {
             self.source_health = RuntimeHealth::Healthy;
         }
         self.metrics.increment(received_key(), 1)?;
+        self.metrics.observe_seconds(
+            event_to_normalized_key(),
+            normalization_started.elapsed().as_secs_f64(),
+        )?;
         Ok(())
     }
 
@@ -230,9 +250,9 @@ impl WalSink for SegmentSink {
 pub struct RunningDaemon {
     server: LoopbackServer,
     wal: SegmentSink,
-    log: LocalJsonLog,
+    tracing: LocalTracing,
     readiness: Readiness,
-    emit_info_logs: bool,
+    observability: ObservabilityHandle,
 }
 
 impl RunningDaemon {
@@ -240,23 +260,27 @@ impl RunningDaemon {
         &self.readiness
     }
 
+    pub fn diagnostics_snapshot(
+        &self,
+        captured_at_unix_nanos: i64,
+    ) -> Result<DiagnosticsSnapshot, ObservabilityError> {
+        self.observability.snapshot(captured_at_unix_nanos)
+    }
+
     pub async fn shutdown(mut self) -> Result<(), RuntimeError> {
         let server_result = self.server.shutdown().await;
         let wal_result = self.wal.sync();
-        let log_result = if self.emit_info_logs {
-            self.log.write_event(&json!({
-                "level": "info",
-                "event": "fixture_runtime_stopped",
-                "sequence": EXPECTED_FINAL_SEQUENCE
-            }))
-        } else {
-            Ok(())
-        };
-        let log_shutdown_result = self.log.shutdown();
+        self.tracing.with_default(|| {
+            tracing::info!(
+                event = "fixture_runtime_stopped",
+                component = "runtime",
+                sequence = EXPECTED_FINAL_SEQUENCE
+            );
+        });
+        let log_shutdown_result = self.tracing.shutdown();
 
         server_result?;
         wal_result.map_err(RuntimeError::Persistence)?;
-        log_result?;
         log_shutdown_result?;
         Ok(())
     }
@@ -301,17 +325,16 @@ pub async fn start_fixture_runtime_with_limits(
         descriptor,
         mut cancellation,
     } = options;
-    let emit_info_logs = limits.emit_info_logs;
-    let log = LocalJsonLog::from_file(log);
+    let tracing = init_local_tracing(log, limits.log_level);
     let fixture_records = read_fixture_records(fixture)?;
     let mut segment = Segment::from_file(wal);
     if is_cancelled(&cancellation) {
-        cancel_startup(SegmentSink { segment }, log, emit_info_logs)?;
+        cancel_startup(SegmentSink { segment }, tracing)?;
         return Err(RuntimeError::Cancelled);
     }
     let recovery = segment.recover()?;
     if is_cancelled(&cancellation) {
-        cancel_startup(SegmentSink { segment }, log, emit_info_logs)?;
+        cancel_startup(SegmentSink { segment }, tracing)?;
         return Err(RuntimeError::Cancelled);
     }
     if recovery.records().len() > fixture_records.len()
@@ -324,13 +347,15 @@ pub async fn start_fixture_runtime_with_limits(
         return Err(RuntimeError::RecoveryMismatch);
     }
 
-    let metrics = Metrics::default();
+    let observability = ObservabilityHandle::default();
+    let metrics = observability.metrics().clone();
+    initialize_runtime_metrics(&metrics)?;
     let mut engine = IngestionEngine::new(SegmentSink { segment }, metrics.clone());
     for record in recovery.records() {
         engine.process_persisted(record)?;
     }
     if is_cancelled(&cancellation) {
-        cancel_startup(engine.into_wal(), log, emit_info_logs)?;
+        cancel_startup(engine.into_wal(), tracing)?;
         return Err(RuntimeError::Cancelled);
     }
 
@@ -339,7 +364,7 @@ pub async fn start_fixture_runtime_with_limits(
         .skip(recovery.records().len())
         .collect::<Vec<_>>();
     let (sender, mut receiver) = ingestion_channel_with_capacity(limits.ingestion_queue_capacity);
-    let producer = spawn_fixture_producer(sender, remaining, cancellation.clone());
+    let producer = spawn_fixture_producer(sender, remaining, cancellation.clone(), metrics.clone());
     let mut cancelled = false;
     loop {
         tokio::select! {
@@ -350,14 +375,22 @@ pub async fn start_fixture_runtime_with_limits(
                 receiver.close();
             }
             record = receiver.recv() => match record {
-                Some(record) => engine.process_new(&record)?,
+                Some(record) => {
+                    metrics.gauge(
+                        queue_depth_key(),
+                        i64::try_from(receiver.len())
+                            .map_err(|_| RuntimeError::MetricValueOverflow)?,
+                    )?;
+                    engine.process_new(&record)?;
+                }
                 None => break,
             }
         }
     }
     producer.await??;
+    metrics.gauge(queue_depth_key(), 0)?;
     if cancelled || is_cancelled(&cancellation) {
-        cancel_startup(engine.into_wal(), log, emit_info_logs)?;
+        cancel_startup(engine.into_wal(), tracing)?;
         return Err(RuntimeError::Cancelled);
     }
 
@@ -391,26 +424,30 @@ pub async fn start_fixture_runtime_with_limits(
     )
     .await?;
     let readiness = Readiness::new(server.local_addr(), &descriptor);
-    if emit_info_logs {
-        log.write_event(&json!({
-            "level": "info",
-            "event": "fixture_runtime_ready",
-            "source": "binance-fixture",
-            "symbol": "BTCUSDT",
-            "generation": 1,
-            "sequence": EXPECTED_FINAL_SEQUENCE,
-            "endpoint": &readiness.endpoint
-        }))?;
-    }
-    log.sync()?;
+    tracing.with_default(|| {
+        tracing::info!(
+            event = "fixture_runtime_ready",
+            component = "runtime",
+            source_id = "binance-fixture",
+            instrument_id = "BTCUSDT",
+            sequence = EXPECTED_FINAL_SEQUENCE
+        );
+    });
+    tracing.sync()?;
 
-    Ok(RunningDaemon {
+    let diagnostics_timestamp = descriptor
+        .issued_unix_seconds()
+        .checked_mul(1_000_000_000)
+        .ok_or(RuntimeError::MetricValueOverflow)?;
+    let running = RunningDaemon {
         server,
         wal,
-        log,
+        tracing,
         readiness,
-        emit_info_logs,
-    })
+        observability,
+    };
+    running.diagnostics_snapshot(diagnostics_timestamp)?;
+    Ok(running)
 }
 
 pub fn ingestion_channel_with_capacity(
@@ -423,6 +460,7 @@ fn spawn_fixture_producer(
     sender: mpsc::Sender<Vec<u8>>,
     records: Vec<Vec<u8>>,
     mut cancellation: watch::Receiver<bool>,
+    metrics: Metrics,
 ) -> JoinHandle<Result<(), RuntimeError>> {
     tokio::spawn(async move {
         for record in records {
@@ -436,6 +474,11 @@ fn spawn_fixture_producer(
                     if result.is_err() && !is_cancelled(&cancellation) {
                         return Err(RuntimeError::QueueClosed);
                     }
+                    metrics.gauge(
+                        queue_depth_key(),
+                        i64::try_from(sender.max_capacity().saturating_sub(sender.capacity()))
+                            .map_err(|_| RuntimeError::MetricValueOverflow)?,
+                    )?;
                 }
             }
         }
@@ -447,19 +490,12 @@ fn is_cancelled(cancellation: &watch::Receiver<bool>) -> bool {
     *cancellation.borrow()
 }
 
-fn cancel_startup(
-    mut wal: SegmentSink,
-    log: LocalJsonLog,
-    emit_info_logs: bool,
-) -> Result<(), RuntimeError> {
+fn cancel_startup(mut wal: SegmentSink, tracing: LocalTracing) -> Result<(), RuntimeError> {
     wal.sync().map_err(RuntimeError::Persistence)?;
-    if emit_info_logs {
-        log.write_event(&json!({
-            "level": "info",
-            "event": "fixture_runtime_cancelled"
-        }))?;
-    }
-    log.shutdown()?;
+    tracing.with_default(|| {
+        tracing::info!(event = "fixture_runtime_cancelled", component = "runtime");
+    });
+    tracing.shutdown()?;
     Ok(())
 }
 
@@ -510,6 +546,15 @@ fn received_key() -> MetricKey {
     }
 }
 
+fn ingestion_bytes_key() -> MetricKey {
+    MetricKey {
+        name: MetricName::IngestionBytes,
+        component: Component::Ingestion,
+        venue: Venue::Binance,
+        outcome: Outcome::Success,
+    }
+}
+
 fn rejected_key() -> MetricKey {
     MetricKey {
         name: MetricName::EventsRejected,
@@ -517,6 +562,74 @@ fn rejected_key() -> MetricKey {
         venue: Venue::Binance,
         outcome: Outcome::Degraded,
     }
+}
+
+fn parser_failures_key() -> MetricKey {
+    MetricKey {
+        name: MetricName::ParserFailures,
+        component: Component::Ingestion,
+        venue: Venue::Binance,
+        outcome: Outcome::Rejected,
+    }
+}
+
+fn sequence_gaps_key() -> MetricKey {
+    MetricKey {
+        name: MetricName::SequenceGaps,
+        component: Component::OrderBook,
+        venue: Venue::Binance,
+        outcome: Outcome::Degraded,
+    }
+}
+
+fn checksum_failures_key() -> MetricKey {
+    MetricKey {
+        name: MetricName::ChecksumFailures,
+        component: Component::OrderBook,
+        venue: Venue::Binance,
+        outcome: Outcome::Degraded,
+    }
+}
+
+fn queue_depth_key() -> MetricKey {
+    MetricKey {
+        name: MetricName::QueueDepth,
+        component: Component::Ingestion,
+        venue: Venue::Binance,
+        outcome: Outcome::NotApplicable,
+    }
+}
+
+fn wal_fsync_key() -> MetricKey {
+    MetricKey {
+        name: MetricName::WalFsyncLatency,
+        component: Component::Storage,
+        venue: Venue::Binance,
+        outcome: Outcome::Success,
+    }
+}
+
+fn event_to_normalized_key() -> MetricKey {
+    MetricKey {
+        name: MetricName::EventToNormalizedLatency,
+        component: Component::Ingestion,
+        venue: Venue::Binance,
+        outcome: Outcome::Success,
+    }
+}
+
+fn initialize_runtime_metrics(metrics: &Metrics) -> Result<(), ObservabilityError> {
+    for key in [
+        received_key(),
+        ingestion_bytes_key(),
+        rejected_key(),
+        parser_failures_key(),
+        sequence_gaps_key(),
+        checksum_failures_key(),
+    ] {
+        metrics.increment(key, 0)?;
+    }
+    metrics.gauge(queue_depth_key(), 0)
 }
 
 fn segment_io_error(error: SegmentError) -> io::Error {
@@ -527,6 +640,8 @@ fn segment_io_error(error: SegmentError) -> io::Error {
 pub enum RuntimeError {
     #[error("fixture ingestion queue capacity must be nonzero")]
     InvalidQueueCapacity,
+    #[error("runtime metric value cannot be represented safely")]
+    MetricValueOverflow,
     #[error("market WAL persistence failed")]
     Persistence(#[source] io::Error),
     #[error("market fixture parsing failed")]

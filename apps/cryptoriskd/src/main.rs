@@ -12,6 +12,7 @@ use config::{
     ConfigError, ConfigLayers, EffectiveConfig, EnvironmentOverrides, LogLevel, Overrides,
     RuntimeOverrides, TextLayer,
 };
+use observability::LocalLogLevel;
 use runtime::{RuntimeError, RuntimeLimits, RuntimeOptions, start_fixture_runtime_with_limits};
 use serde_json::json;
 #[cfg(debug_assertions)]
@@ -128,10 +129,7 @@ fn prepare(arguments: Arguments) -> Result<PreparedStartup, AppError> {
         effective.config.maximum_concurrent_requests(),
         Duration::from_secs(effective.config.request_timeout_seconds()),
         shutdown_grace,
-        matches!(
-            effective.config.log_level(),
-            LogLevel::Info | LogLevel::Debug | LogLevel::Trace
-        ),
+        local_log_level(effective.config.log_level()),
     )?;
 
     Ok(PreparedStartup {
@@ -139,6 +137,16 @@ fn prepare(arguments: Arguments) -> Result<PreparedStartup, AppError> {
         effective,
         runtime_limits,
     })
+}
+
+const fn local_log_level(level: LogLevel) -> LocalLogLevel {
+    match level {
+        LogLevel::Error => LocalLogLevel::Error,
+        LogLevel::Warn => LocalLogLevel::Warn,
+        LogLevel::Info => LocalLogLevel::Info,
+        LogLevel::Debug => LocalLogLevel::Debug,
+        LogLevel::Trace => LocalLogLevel::Trace,
+    }
 }
 
 fn build_async_runtime(worker_threads: usize) -> io::Result<Runtime> {
@@ -165,7 +173,7 @@ async fn run(prepared: PreparedStartup) -> Result<(), AppError> {
     let descriptor = issue_session_descriptor()?;
     let fixture = effective.paths.fixture_input.try_clone()?;
     let wal = open_wal_file(&effective.paths.data_root)?;
-    let log = startup::open_log_file(&effective.paths.log_root)?;
+    let log = startup::open_rotating_log(&effective.paths.log_root)?;
     let running = match start_fixture_runtime_with_limits(
         RuntimeOptions {
             fixture,
@@ -301,12 +309,23 @@ enum AppError {
 
 #[cfg(test)]
 mod tests {
-    use super::build_async_runtime;
+    use super::{build_async_runtime, local_log_level};
+    use config::LogLevel;
+    use observability::LocalLogLevel;
 
     #[test]
     fn configured_worker_thread_count_is_applied_to_the_async_runtime() {
         let runtime = build_async_runtime(4).expect("configured Tokio runtime must build");
 
         assert_eq!(runtime.metrics().num_workers(), 4);
+    }
+
+    #[test]
+    fn every_configured_log_level_preserves_its_exact_severity() {
+        assert_eq!(local_log_level(LogLevel::Error), LocalLogLevel::Error);
+        assert_eq!(local_log_level(LogLevel::Warn), LocalLogLevel::Warn);
+        assert_eq!(local_log_level(LogLevel::Info), LocalLogLevel::Info);
+        assert_eq!(local_log_level(LogLevel::Debug), LocalLogLevel::Debug);
+        assert_eq!(local_log_level(LogLevel::Trace), LocalLogLevel::Trace);
     }
 }

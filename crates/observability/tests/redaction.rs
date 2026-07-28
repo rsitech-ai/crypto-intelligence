@@ -13,7 +13,8 @@ fn nested_sensitive_keys_and_secret_shaped_values_are_redacted() {
         "token": "not-for-output",
         "nested": {
             "authorization": "Bearer abc",
-            "message": "Bearer still-sensitive"
+            "message": "Bearer still-sensitive",
+            "payload": {"kind": "snapshot", "raw": "exchange-body"}
         },
         "items": [
             {"api_key": "also-secret"},
@@ -25,10 +26,16 @@ fn nested_sensitive_keys_and_secret_shaped_values_are_redacted() {
     assert_eq!(sanitized["token"], REDACTED);
     assert_eq!(sanitized["nested"]["authorization"], REDACTED);
     assert_eq!(sanitized["nested"]["message"], REDACTED);
+    assert_eq!(sanitized["nested"]["payload"], REDACTED);
     assert_eq!(sanitized["items"][0]["api_key"], REDACTED);
     assert_eq!(sanitized["items"][1], "safe");
     let encoded = serde_json::to_string(&sanitized).expect("sanitized JSON must serialize");
-    for forbidden in ["not-for-output", "Bearer abc", "also-secret"] {
+    for forbidden in [
+        "not-for-output",
+        "Bearer abc",
+        "also-secret",
+        "exchange-body",
+    ] {
         assert!(!encoded.contains(forbidden));
     }
 }
@@ -83,7 +90,7 @@ fn local_json_log_flushes_without_drops_or_sensitive_values() {
     assert_eq!(entries.len(), 1);
     let contents = fs::read_to_string(&entries[0]).expect("JSON log must read");
     assert!(contents.contains("fixture_runtime_ready"));
-    assert!(contents.contains(REDACTED));
+    assert!(!contents.contains(r#""token""#));
     assert!(!contents.contains("fixture-token-must-not-leak"));
     for line in contents.lines() {
         serde_json::from_str::<serde_json::Value>(line).expect("every log line must be JSON");

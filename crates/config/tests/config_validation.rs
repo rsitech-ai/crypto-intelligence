@@ -4,13 +4,17 @@ use config::{
     MAX_REQUEST_TIMEOUT_SECONDS, MAX_SHUTDOWN_GRACE_SECONDS, Overrides, RuntimeOverrides,
     TextLayer, audit_change, load, load_layers, read_bounded_file, schema,
 };
-use std::{fs, io::Write as _, path::Path};
+use std::{fs, io::Write as _, os::unix::fs::PermissionsExt, path::Path};
 use tempfile::TempDir;
 
 fn fixture_root() -> TempDir {
     let root = tempfile::tempdir().expect("temporary root");
     fs::create_dir(root.path().join("data")).expect("data root is writable");
     fs::create_dir(root.path().join("logs")).expect("log root is writable");
+    fs::set_permissions(root.path().join("data"), fs::Permissions::from_mode(0o700))
+        .expect("data root must be private");
+    fs::set_permissions(root.path().join("logs"), fs::Permissions::from_mode(0o700))
+        .expect("log root must be private");
     fs::create_dir_all(root.path().join("models/production")).expect("model registry is readable");
     fs::write(root.path().join("fixture.jsonl"), "{}\n").expect("fixture is writable");
     root
@@ -333,6 +337,25 @@ fn writable_roots_must_already_exist() {
 }
 
 #[test]
+fn writable_roots_require_private_owner_only_modes() {
+    for (directory, field) in [("data", "data_dir"), ("logs", "log_dir")] {
+        let root = fixture_root();
+        fs::set_permissions(
+            root.path().join(directory),
+            fs::Permissions::from_mode(0o750),
+        )
+        .expect("unsafe writable-root mode must set");
+
+        assert!(matches!(
+            load_valid(&valid_config(), root.path()),
+            Err(ConfigError::UnsafePrivateDirectory {
+                field: actual
+            }) if actual == field
+        ));
+    }
+}
+
+#[test]
 fn production_model_registry_must_exist_as_a_readable_local_directory() {
     let root = fixture_root();
     fs::remove_dir(root.path().join("models/production")).expect("remove model registry");
@@ -447,12 +470,29 @@ fn checked_in_default_and_schema_match_the_canonical_generators() {
         .expect("crate must be under workspace root");
     let default_text =
         fs::read_to_string(workspace.join("configs/default.toml")).expect("checked-in default");
+    let validation_root = tempfile::tempdir().expect("private default validation root");
+    for directory in ["data", "logs"] {
+        let path = validation_root.path().join(directory);
+        fs::create_dir(&path).expect("private writable root");
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o700))
+            .expect("writable root must be owner-only");
+    }
+    fs::create_dir_all(validation_root.path().join("fixtures/binance")).expect("fixture parent");
+    fs::copy(
+        workspace.join("fixtures/binance/btcusdt-book-v1.jsonl"),
+        validation_root
+            .path()
+            .join("fixtures/binance/btcusdt-book-v1.jsonl"),
+    )
+    .expect("checked-in fixture copied into validation root");
+    fs::create_dir_all(validation_root.path().join("models/public-test-artifacts"))
+        .expect("model registry");
     let effective = load(
         &default_text,
         "configs/default.toml",
         None,
         Overrides::default(),
-        workspace,
+        validation_root.path(),
     )
     .expect("checked-in default validates");
     assert_eq!(effective.config.ingestion_queue_capacity(), 1024);

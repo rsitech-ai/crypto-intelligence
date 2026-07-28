@@ -9,6 +9,7 @@ publish.workspace = true
 [dependencies]
 config = { path = "../crates/config" }
 hex.workspace = true
+observability = { path = "../crates/observability" }
 prost.workspace = true
 prost-build.workspace = true
 prost-types.workspace = true
