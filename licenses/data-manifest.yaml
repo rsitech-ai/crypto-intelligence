@@ -1,4 +1,6 @@
 schema_version: 1
-artifact_id: "licenses/data-manifest.yaml"
-status: implemented
-local_only: true
+category: dataset
+status: absent
+authoritative_inventory: licenses/artifact-provenance.toml
+scope: data
+policy: no distributable dataset is committed; only data/.gitkeep is allowed

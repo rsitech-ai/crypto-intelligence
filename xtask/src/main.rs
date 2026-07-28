@@ -4,7 +4,7 @@ use std::{
     ffi::OsString,
     fs,
     io::{self, Read, Write},
-    path::{Path, PathBuf},
+    path::{Component, Path, PathBuf},
     process::{Command, ExitCode, ExitStatus, Output},
 };
 
@@ -12,6 +12,7 @@ use prost::Message as _;
 use prost_build::Module;
 use prost_types::compiler::{CodeGeneratorRequest, CodeGeneratorResponse, code_generator_response};
 use serde::Deserialize;
+use sha2::{Digest as _, Sha256};
 use thiserror::Error;
 
 #[path = "../../build-support/protoc_toolchain.rs"]
@@ -151,6 +152,8 @@ enum XtaskError {
         #[source]
         source: io::Error,
     },
+    #[error("license policy violation: {reason}")]
+    LicensePolicy { reason: String },
 }
 
 #[derive(Debug, Deserialize)]
@@ -163,6 +166,41 @@ struct CargoMetadata {
 struct MetadataPackage {
     id: String,
     manifest_path: PathBuf,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ArtifactInventory {
+    schema_version: u32,
+    code_license: String,
+    docs_license: String,
+    category: Vec<ArtifactCategory>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ArtifactCategory {
+    name: String,
+    status: String,
+    scope: String,
+    origin: String,
+    license: String,
+    redistribution: String,
+    ownership: String,
+    version: String,
+    retention: String,
+    #[serde(default)]
+    evidence: Vec<String>,
+    verification: Option<String>,
+    #[serde(default)]
+    artifact: Vec<ArtifactEntry>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ArtifactEntry {
+    path: String,
+    sha256: String,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -199,11 +237,12 @@ fn run() -> Result<(), XtaskError> {
             Ok(())
         }
         "workspace-check" if options.is_empty() => workspace_check(),
+        "license-check" if options.is_empty() => license_check(),
         "generate-config-schema" => generate_config_schema(options),
         "generate-proto" => generate_proto_command(options),
         "proto-check" if options.is_empty() => proto_check(),
         "protoc-gen-local-api" if options.is_empty() => protoc_gen_local_api(),
-        "help" | "proto-check" | "protoc-gen-local-api" | "workspace-check" => {
+        "help" | "license-check" | "proto-check" | "protoc-gen-local-api" | "workspace-check" => {
             Err(XtaskError::InvalidInvocation)
         }
         command => Err(XtaskError::UnknownCommand {
@@ -214,7 +253,7 @@ fn run() -> Result<(), XtaskError> {
 
 fn print_help() {
     println!(
-        "xtask commands:\n  help\n  workspace-check\n  generate-config-schema [--check]\n  generate-proto [--check]\n  proto-check"
+        "xtask commands:\n  help\n  workspace-check\n  license-check\n  generate-config-schema [--check]\n  generate-proto [--check]\n  proto-check"
     );
 }
 
@@ -261,6 +300,486 @@ fn workspace_check() -> Result<(), XtaskError> {
 
     println!("workspace-check: ok");
     Ok(())
+}
+
+fn license_check() -> Result<(), XtaskError> {
+    let path = workspace_root().join("licenses/artifact-provenance.toml");
+    let source = fs::read_to_string(&path).map_err(|error| XtaskError::LicensePolicy {
+        reason: format!("could not read {}: {error}", path.display()),
+    })?;
+    validate_license_inventory(workspace_root(), &source)?;
+    println!("license-check: ok");
+    Ok(())
+}
+
+fn validate_license_inventory(root: &Path, source: &str) -> Result<(), XtaskError> {
+    let inventory = toml::from_str::<ArtifactInventory>(source).map_err(license_policy)?;
+    if inventory.schema_version != 1 {
+        return Err(license_policy("schema_version must be 1"));
+    }
+    if inventory.code_license != "MIT OR Apache-2.0"
+        || inventory.docs_license != "MIT OR Apache-2.0"
+    {
+        return Err(license_policy(
+            "code_license and docs_license must use the approved SPDX expression",
+        ));
+    }
+
+    let expected_categories = BTreeSet::from([
+        "dataset",
+        "fixture",
+        "generated-schema",
+        "model",
+        "vendored-source",
+    ]);
+    let actual_categories = inventory
+        .category
+        .iter()
+        .map(|category| category.name.as_str())
+        .collect::<BTreeSet<_>>();
+    if inventory.category.len() != expected_categories.len()
+        || actual_categories != expected_categories
+    {
+        return Err(license_policy(format!(
+            "categories must be exactly {expected_categories:?}, got {actual_categories:?}"
+        )));
+    }
+
+    let mut inventoried_paths = BTreeSet::new();
+    for category in &inventory.category {
+        validate_category_metadata(category)?;
+        let category_paths = category
+            .artifact
+            .iter()
+            .map(|artifact| PathBuf::from(&artifact.path))
+            .collect::<BTreeSet<_>>();
+
+        for artifact in &category.artifact {
+            validate_artifact(root, category, artifact)?;
+            if !inventoried_paths.insert(artifact.path.clone()) {
+                return Err(license_policy(format!(
+                    "artifact path is listed more than once: {}",
+                    artifact.path
+                )));
+            }
+        }
+        for evidence in &category.evidence {
+            validate_safe_relative_path(evidence)?;
+            if !root.join(evidence).is_file() {
+                return Err(license_policy(format!(
+                    "{} evidence is missing: {evidence}",
+                    category.name
+                )));
+            }
+            if !category
+                .artifact
+                .iter()
+                .any(|artifact| artifact.path == *evidence)
+            {
+                return Err(license_policy(format!(
+                    "{} evidence is not integrity-checked: {evidence}",
+                    category.name
+                )));
+            }
+        }
+
+        match category.name.as_str() {
+            "fixture" => {
+                require_category_state(category, "tracked", "fixtures", true)?;
+                require_category_license(category, "MIT OR Apache-2.0", "allowed")?;
+                require_scope_coverage(root, &category.scope, &category_paths)?;
+            }
+            "dataset" => {
+                require_category_state(category, "absent", "data", false)?;
+                require_category_license(category, "not-applicable", "not-applicable")?;
+                require_absent_dataset_scope(root, &category.scope)?;
+            }
+            "model" => {
+                require_category_state(category, "metadata-only", "models", true)?;
+                require_category_license(category, "MIT OR Apache-2.0", "allowed")?;
+                require_scope_coverage(root, &category.scope, &category_paths)?;
+            }
+            "generated-schema" => {
+                require_category_state(category, "tracked", "configs/schema.json", true)?;
+                require_category_license(category, "MIT OR Apache-2.0", "allowed")?;
+                if category_paths != BTreeSet::from([PathBuf::from("configs/schema.json")]) {
+                    return Err(license_policy(
+                        "generated-schema must inventory configs/schema.json exactly",
+                    ));
+                }
+            }
+            "vendored-source" => {
+                require_category_state(
+                    category,
+                    "tracked",
+                    "apps/macos/Vendor/grpc-swift-nio-transport",
+                    true,
+                )?;
+                require_category_license(
+                    category,
+                    "Apache-2.0",
+                    "allowed-with-license-and-notices",
+                )?;
+                validate_vendor_verification(root, category)?;
+            }
+            _ => {
+                return Err(license_policy(format!(
+                    "unsupported artifact category {}",
+                    category.name
+                )));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_category_metadata(category: &ArtifactCategory) -> Result<(), XtaskError> {
+    let fields = [
+        ("name", category.name.as_str()),
+        ("status", category.status.as_str()),
+        ("scope", category.scope.as_str()),
+        ("origin", category.origin.as_str()),
+        ("license", category.license.as_str()),
+        ("redistribution", category.redistribution.as_str()),
+        ("ownership", category.ownership.as_str()),
+        ("version", category.version.as_str()),
+        ("retention", category.retention.as_str()),
+    ];
+    for (field, value) in fields {
+        let normalized = value.trim().to_ascii_lowercase();
+        if normalized.is_empty()
+            || ["pending", "placeholder", "tbd", "todo", "unknown"]
+                .iter()
+                .any(|marker| normalized.contains(marker))
+        {
+            return Err(license_policy(format!(
+                "{}.{field} is empty or contains placeholder metadata",
+                category.name
+            )));
+        }
+    }
+    if category.status != "absent"
+        && (category.license == "not-applicable" || category.redistribution == "not-applicable")
+    {
+        return Err(license_policy(format!(
+            "{} must declare an applicable license and redistribution policy",
+            category.name
+        )));
+    }
+    Ok(())
+}
+
+fn require_category_license(
+    category: &ArtifactCategory,
+    license: &str,
+    redistribution: &str,
+) -> Result<(), XtaskError> {
+    if category.license != license || category.redistribution != redistribution {
+        return Err(license_policy(format!(
+            "{} must declare license {license:?} and redistribution {redistribution:?}",
+            category.name
+        )));
+    }
+    Ok(())
+}
+
+fn require_category_state(
+    category: &ArtifactCategory,
+    status: &str,
+    scope: &str,
+    artifacts_required: bool,
+) -> Result<(), XtaskError> {
+    if category.status != status || category.scope != scope {
+        return Err(license_policy(format!(
+            "{} must have status {status:?} and scope {scope:?}",
+            category.name
+        )));
+    }
+    if category.artifact.is_empty() == artifacts_required {
+        let requirement = if artifacts_required {
+            "at least one artifact"
+        } else {
+            "no artifacts"
+        };
+        return Err(license_policy(format!(
+            "{} must contain {requirement}",
+            category.name
+        )));
+    }
+    Ok(())
+}
+
+fn validate_artifact(
+    root: &Path,
+    category: &ArtifactCategory,
+    artifact: &ArtifactEntry,
+) -> Result<(), XtaskError> {
+    validate_safe_relative_path(&artifact.path)?;
+    let relative = Path::new(&artifact.path);
+    let scope = Path::new(&category.scope);
+    if relative != scope && !relative.starts_with(scope) {
+        return Err(license_policy(format!(
+            "{} artifact is outside its declared scope: {}",
+            category.name, artifact.path
+        )));
+    }
+    if artifact.sha256.len() != 64
+        || !artifact
+            .sha256
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    {
+        return Err(license_policy(format!(
+            "{} has an invalid SHA-256 digest",
+            artifact.path
+        )));
+    }
+
+    let path = root.join(relative);
+    let canonical_root = root.canonicalize().map_err(license_policy)?;
+    let canonical_path = path.canonicalize().map_err(|error| {
+        license_policy(format!(
+            "could not resolve artifact {}: {error}",
+            artifact.path
+        ))
+    })?;
+    if !canonical_path.starts_with(&canonical_root) || !canonical_path.is_file() {
+        return Err(license_policy(format!(
+            "artifact is not a repository-owned regular file: {}",
+            artifact.path
+        )));
+    }
+    let bytes = fs::read(&canonical_path).map_err(|error| {
+        license_policy(format!(
+            "could not read artifact {}: {error}",
+            artifact.path
+        ))
+    })?;
+    let actual = hex::encode(Sha256::digest(bytes));
+    if actual != artifact.sha256 {
+        return Err(license_policy(format!(
+            "SHA-256 mismatch for {}: expected {}, got {actual}",
+            artifact.path, artifact.sha256
+        )));
+    }
+    Ok(())
+}
+
+fn validate_safe_relative_path(path: &str) -> Result<(), XtaskError> {
+    let path = Path::new(path);
+    if path.as_os_str().is_empty()
+        || path.is_absolute()
+        || path.components().any(|component| {
+            matches!(
+                component,
+                Component::ParentDir | Component::RootDir | Component::Prefix(_)
+            )
+        })
+    {
+        return Err(license_policy(format!(
+            "inventory path is not a safe repository-relative path: {}",
+            path.display()
+        )));
+    }
+    Ok(())
+}
+
+fn require_scope_coverage(
+    root: &Path,
+    scope: &str,
+    expected: &BTreeSet<PathBuf>,
+) -> Result<(), XtaskError> {
+    let mut actual = BTreeSet::new();
+    collect_regular_files(root, &root.join(scope), &mut actual)?;
+    if &actual != expected {
+        return Err(license_policy(format!(
+            "scope {scope:?} does not match its inventory: expected {expected:?}, found {actual:?}"
+        )));
+    }
+    Ok(())
+}
+
+fn require_absent_dataset_scope(root: &Path, scope: &str) -> Result<(), XtaskError> {
+    let mut actual = BTreeSet::new();
+    collect_regular_files(root, &root.join(scope), &mut actual)?;
+    if actual.is_empty() {
+        return Ok(());
+    }
+
+    let marker = PathBuf::from(scope).join(".gitkeep");
+    if actual != BTreeSet::from([marker.clone()]) {
+        return Err(license_policy(format!(
+            "absent dataset scope may contain only {marker:?}, found {actual:?}"
+        )));
+    }
+    let marker_path = root.join(marker);
+    let metadata = fs::metadata(&marker_path).map_err(|error| {
+        license_policy(format!(
+            "could not inspect absent dataset marker {}: {error}",
+            marker_path.display()
+        ))
+    })?;
+    if metadata.len() != 0 {
+        return Err(license_policy(format!(
+            "absent dataset marker must be empty: {}",
+            marker_path.display()
+        )));
+    }
+    Ok(())
+}
+
+fn collect_regular_files(
+    root: &Path,
+    path: &Path,
+    files: &mut BTreeSet<PathBuf>,
+) -> Result<(), XtaskError> {
+    let metadata = fs::symlink_metadata(path).map_err(|error| {
+        license_policy(format!("could not inspect {}: {error}", path.display()))
+    })?;
+    if metadata.file_type().is_symlink() {
+        return Err(license_policy(format!(
+            "inventory scopes must not contain symlinks: {}",
+            path.display()
+        )));
+    }
+    if metadata.is_file() {
+        let relative = path.strip_prefix(root).map_err(|error| {
+            license_policy(format!(
+                "could not make {} repository-relative: {error}",
+                path.display()
+            ))
+        })?;
+        files.insert(relative.to_path_buf());
+        return Ok(());
+    }
+    if !metadata.is_dir() {
+        return Err(license_policy(format!(
+            "inventory scope contains a non-file entry: {}",
+            path.display()
+        )));
+    }
+    let mut entries = fs::read_dir(path)
+        .map_err(|error| license_policy(format!("could not read {}: {error}", path.display())))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(license_policy)?;
+    entries.sort_by_key(fs::DirEntry::file_name);
+    for entry in entries {
+        collect_regular_files(root, &entry.path(), files)?;
+    }
+    Ok(())
+}
+
+fn validate_vendor_verification(
+    root: &Path,
+    category: &ArtifactCategory,
+) -> Result<(), XtaskError> {
+    let expected = "scripts/verify-vendored-grpc-transport.sh";
+    if category.verification.as_deref() != Some(expected) {
+        return Err(license_policy(format!(
+            "vendored-source verification must be {expected}"
+        )));
+    }
+    let package_path = root.join("apps/macos/Vendor/grpc-swift-nio-transport/Package.swift");
+    let package = fs::read_to_string(&package_path).map_err(|error| {
+        license_policy(format!(
+            "could not read vendored package manifest {}: {error}",
+            package_path.display()
+        ))
+    })?;
+    validate_vendor_package_patch(&package)?;
+
+    let output = Command::new(root.join(expected))
+        .current_dir(root)
+        .output()
+        .map_err(|error| license_policy(format!("could not run {expected}: {error}")))?;
+    if !output.status.success() {
+        return Err(license_policy(format!(
+            "{expected} failed with {}: {}",
+            output.status,
+            String::from_utf8_lossy(&output.stderr).trim()
+        )));
+    }
+
+    let manifest_path =
+        root.join("apps/macos/Vendor/grpc-swift-nio-transport/UPSTREAM_FILES.sha256");
+    let manifest = fs::read_to_string(&manifest_path).map_err(|error| {
+        license_policy(format!(
+            "could not read vendor integrity manifest {}: {error}",
+            manifest_path.display()
+        ))
+    })?;
+    let mut covered = category
+        .artifact
+        .iter()
+        .map(|artifact| PathBuf::from(&artifact.path))
+        .collect::<BTreeSet<_>>();
+    let mut manifest_paths = BTreeSet::new();
+    for (index, line) in manifest.lines().enumerate() {
+        let Some((digest, path)) = line.split_once("  ") else {
+            return Err(license_policy(format!(
+                "vendor integrity manifest line {} is malformed",
+                index + 1
+            )));
+        };
+        if digest.len() != 64
+            || !digest
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        {
+            return Err(license_policy(format!(
+                "vendor integrity manifest line {} has an invalid SHA-256 digest",
+                index + 1
+            )));
+        }
+        validate_safe_relative_path(path)?;
+        if !Path::new(path).starts_with(&category.scope) {
+            return Err(license_policy(format!(
+                "vendor integrity manifest path is outside its scope: {path}"
+            )));
+        }
+        if !manifest_paths.insert(PathBuf::from(path)) {
+            return Err(license_policy(format!(
+                "vendor integrity path is listed more than once: {path}"
+            )));
+        }
+    }
+    covered.extend(manifest_paths);
+
+    let mut actual = BTreeSet::new();
+    collect_regular_files(root, &root.join(&category.scope), &mut actual)?;
+    if covered != actual {
+        return Err(license_policy(format!(
+            "vendored-source scope does not match its upstream integrity coverage: expected {covered:?}, found {actual:?}"
+        )));
+    }
+    Ok(())
+}
+
+fn validate_vendor_package_patch(source: &str) -> Result<(), XtaskError> {
+    const APPROVED_LINES: [&str; 2] = [
+        "      .product(name: \"NIOHTTP1\", package: \"swift-nio\"),",
+        "      .product(name: \"NIOTLS\", package: \"swift-nio\"),",
+    ];
+    for approved in APPROVED_LINES {
+        let signature = approved.trim();
+        let exact_count = source.lines().filter(|line| *line == approved).count();
+        let signature_count = source
+            .lines()
+            .filter(|line| line.contains(signature))
+            .count();
+        if exact_count != 1 || signature_count != 1 {
+            return Err(license_policy(format!(
+                "vendored Package.swift must contain exactly one canonical patch line {approved:?}"
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn license_policy(reason: impl std::fmt::Display) -> XtaskError {
+    XtaskError::LicensePolicy {
+        reason: reason.to_string(),
+    }
 }
 
 fn generate_proto_command(options: &[OsString]) -> Result<(), XtaskError> {
@@ -640,6 +1159,21 @@ mod tests {
     use super::*;
     use prost_types::FileDescriptorProto;
 
+    fn checked_in_license_inventory() -> (String, String) {
+        let source = fs::read_to_string(workspace_root().join("licenses/artifact-provenance.toml"))
+            .expect("checked-in artifact inventory must be readable");
+        let inventory = toml::from_str::<ArtifactInventory>(&source)
+            .expect("checked-in artifact inventory must parse");
+        let digest = inventory
+            .category
+            .iter()
+            .find(|category| category.name == "generated-schema")
+            .and_then(|category| category.artifact.first())
+            .map(|artifact| artifact.sha256.clone())
+            .expect("generated schema must have an integrity digest");
+        (source, digest)
+    }
+
     fn manifest(source: &str) -> toml::Value {
         toml::from_str(source).expect("test manifest must parse")
     }
@@ -761,5 +1295,100 @@ mod tests {
             protoc_toolchain::validate_version_output(&contract.protoc, b"libprotoc 33.3\n"),
             Err(protoc_toolchain::ProtocToolchainError::VersionMismatch { .. })
         ));
+    }
+
+    #[test]
+    fn checked_in_license_inventory_is_semantic_and_tamper_sensitive() {
+        let (source, digest) = checked_in_license_inventory();
+        validate_license_inventory(workspace_root(), &source)
+            .expect("checked-in artifact inventory must validate");
+
+        let mut replacement = digest.clone().into_bytes();
+        replacement[0] = if replacement[0] == b'0' { b'1' } else { b'0' };
+        let replacement =
+            String::from_utf8(replacement).expect("a hexadecimal digest must remain UTF-8");
+        let tampered = source.replacen(&digest, &replacement, 1);
+        assert!(matches!(
+            validate_license_inventory(workspace_root(), &tampered),
+            Err(XtaskError::LicensePolicy { .. })
+        ));
+    }
+
+    #[test]
+    fn license_inventory_rejects_placeholder_integrity_and_missing_categories() {
+        let (source, digest) = checked_in_license_inventory();
+
+        let placeholder = source.replacen(&digest, "PENDING", 1);
+        assert!(matches!(
+            validate_license_inventory(workspace_root(), &placeholder),
+            Err(XtaskError::LicensePolicy { .. })
+        ));
+
+        let missing_model = source.replacen("name = \"model\"", "name = \"fixture\"", 1);
+        assert!(matches!(
+            validate_license_inventory(workspace_root(), &missing_model),
+            Err(XtaskError::LicensePolicy { .. })
+        ));
+
+        let incompatible_license = source.replacen(
+            "license = \"MIT OR Apache-2.0\"",
+            "license = \"Proprietary\"",
+            1,
+        );
+        assert!(matches!(
+            validate_license_inventory(workspace_root(), &incompatible_license),
+            Err(XtaskError::LicensePolicy { .. })
+        ));
+
+        let denied_redistribution = source.replacen(
+            "redistribution = \"allowed\"",
+            "redistribution = \"denied\"",
+            1,
+        );
+        assert!(matches!(
+            validate_license_inventory(workspace_root(), &denied_redistribution),
+            Err(XtaskError::LicensePolicy { .. })
+        ));
+    }
+
+    #[test]
+    fn absent_dataset_rejects_nested_or_nonempty_gitkeep_files() {
+        let nested = tempfile::tempdir().expect("temporary repository root must exist");
+        fs::create_dir_all(nested.path().join("data/private"))
+            .expect("nested dataset directory must exist");
+        fs::write(
+            nested.path().join("data/private/.gitkeep"),
+            b"secret dataset",
+        )
+        .expect("nested dataset fixture must be written");
+        assert!(
+            require_absent_dataset_scope(nested.path(), "data").is_err(),
+            "a nested .gitkeep must not make committed data look absent"
+        );
+
+        let nonempty = tempfile::tempdir().expect("temporary repository root must exist");
+        fs::create_dir(nonempty.path().join("data")).expect("dataset directory must exist");
+        fs::write(nonempty.path().join("data/.gitkeep"), b"not empty")
+            .expect("dataset marker fixture must be written");
+        assert!(
+            require_absent_dataset_scope(nonempty.path(), "data").is_err(),
+            "a non-empty root .gitkeep must not make committed data look absent"
+        );
+    }
+
+    #[test]
+    fn vendor_patch_rejects_same_line_prefix_or_suffix_content() {
+        let source = fs::read_to_string(
+            workspace_root().join("apps/macos/Vendor/grpc-swift-nio-transport/Package.swift"),
+        )
+        .expect("vendored package manifest must be readable");
+        validate_vendor_package_patch(&source).expect("checked-in patch must be canonical");
+
+        let exact = "      .product(name: \"NIOHTTP1\", package: \"swift-nio\"),";
+        let suffixed = source.replacen(exact, &format!("{exact} // hidden change"), 1);
+        assert!(validate_vendor_package_patch(&suffixed).is_err());
+
+        let prefixed = source.replacen(exact, &format!("unexpected {exact}"), 1);
+        assert!(validate_vendor_package_patch(&prefixed).is_err());
     }
 }

@@ -18,6 +18,7 @@ patch declares `NIOHTTP1` and `NIOTLS` directly on that target. SwiftPM builds
 were already green without the correction; the correction is required for the
 same pinned source to link under Xcode.
 
-`UPSTREAM_FILES.sha256` covers every upstream file except `Package.swift`.
+`UPSTREAM_FILES.sha256` covers every upstream file except the patched root
+`Package.swift`.
 Run `scripts/verify-vendored-grpc-transport.sh` to validate the exact source
 archive and the two-line manifest patch.
