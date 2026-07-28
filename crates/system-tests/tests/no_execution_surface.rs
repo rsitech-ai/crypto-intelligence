@@ -52,7 +52,7 @@ const APPROVED_FOUNDATION_DEPENDENCY_CAPABILITIES: &[&str] =
 const APPROVED_LOCAL_API_BUILD_SCRIPT_BLAKE3: &str =
     "c763491bf93f30a5f85ceeb4c9d853053d1788facc5748df1635047fa6b87b3a";
 const APPROVED_GENERATED_BINDING_POLICY_BLAKE3: &str =
-    "404ef337ba5e2ccc5425f15bde4810abf7c30f4d059b90ae00a1f3e92b1aed1a";
+    "e757a3640abc0ba8de5039149cefe1eaa0a27f091742c54167fa89a6ffee95b6";
 
 #[derive(Debug, Eq, PartialEq)]
 struct SurfaceInventory {
@@ -2027,6 +2027,20 @@ fn generated_client_policy_cannot_be_desynchronized_by_preceding_literals() {
             generated_binding_policy::grpc_client_module(generated),
             Some("market_service_client"),
             "preceding literal desynchronized generated-client policy"
+        );
+    }
+}
+
+#[test]
+fn generated_client_policy_rejects_external_module_declarations() {
+    for generated in [
+        "pub mod market_service_client;\n",
+        "#[path = \"/private/tmp/generated-client.rs\"] pub mod market_service_client;\n",
+    ] {
+        assert_eq!(
+            generated_binding_policy::grpc_client_module(generated),
+            Some("market_service_client"),
+            "external generated-client module escaped structural policy"
         );
     }
 }
