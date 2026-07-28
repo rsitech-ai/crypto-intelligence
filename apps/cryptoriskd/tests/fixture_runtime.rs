@@ -204,9 +204,13 @@ async fn blank_fixture_records_are_persisted_before_the_runtime_rejects_them() {
         let mut segment = raw_wal::segment::Segment::open(&directory.path().join("market.wal"))
             .expect("persisted WAL must reopen");
         let recovery = segment.recover().expect("persisted prefix must recover");
+        let recovered_payloads = recovery
+            .records()
+            .iter()
+            .map(raw_wal::recovery::RecoveredRecordOwned::payload)
+            .collect::<Vec<_>>();
         assert_eq!(
-            recovery.records(),
-            expected_prefix,
+            recovered_payloads, expected_prefix,
             "{case} blank must remain in the WAL"
         );
     }
@@ -219,8 +223,8 @@ async fn cancellation_is_observed_before_wal_recovery_and_syncs_partial_state() 
     let fixture_path = directory.path().join("fixture.jsonl");
     fs::write(&fixture_path, FIXTURE).expect("fixture must write");
     let wal_path = directory.path().join("market.wal");
-    let mut original = raw_wal::frame::encode(b"first").expect("first frame must encode");
-    let mut torn = raw_wal::frame::encode(b"second").expect("second frame must encode");
+    let mut original = raw_wal::frame::encode_legacy(b"first").expect("first frame must encode");
+    let mut torn = raw_wal::frame::encode_legacy(b"second").expect("second frame must encode");
     let last = torn.last_mut().expect("second frame must have a checksum");
     *last ^= 0x80;
     original.extend_from_slice(&torn);

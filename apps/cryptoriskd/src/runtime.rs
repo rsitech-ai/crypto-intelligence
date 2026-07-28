@@ -327,7 +327,7 @@ pub async fn start_fixture_runtime_with_limits(
     } = options;
     let tracing = init_local_tracing(log, limits.log_level);
     let fixture_records = read_fixture_records(fixture)?;
-    let mut segment = Segment::from_file(wal);
+    let mut segment = Segment::from_file(wal).map_err(segment_io_error)?;
     if is_cancelled(&cancellation) {
         cancel_startup(SegmentSink { segment }, tracing)?;
         return Err(RuntimeError::Cancelled);
@@ -342,7 +342,7 @@ pub async fn start_fixture_runtime_with_limits(
             .records()
             .iter()
             .zip(&fixture_records)
-            .all(|(recovered, expected)| recovered == expected)
+            .all(|(recovered, expected)| recovered.payload() == expected)
     {
         return Err(RuntimeError::RecoveryMismatch);
     }
@@ -352,7 +352,7 @@ pub async fn start_fixture_runtime_with_limits(
     initialize_runtime_metrics(&metrics)?;
     let mut engine = IngestionEngine::new(SegmentSink { segment }, metrics.clone());
     for record in recovery.records() {
-        engine.process_persisted(record)?;
+        engine.process_persisted(record.payload())?;
     }
     if is_cancelled(&cancellation) {
         cancel_startup(engine.into_wal(), tracing)?;

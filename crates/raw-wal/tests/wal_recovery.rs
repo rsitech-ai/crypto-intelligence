@@ -4,23 +4,35 @@ use std::{
 };
 
 use raw_wal::{
-    frame::{CHECKSUM_LENGTH, HEADER_LENGTH, MAGIC, MAX_PAYLOAD_LENGTH, SCHEMA_VERSION, encode},
+    frame::{
+        CHECKSUM_LENGTH, LEGACY_HEADER_LENGTH, LEGACY_SCHEMA_VERSION, MAGIC, MAX_PAYLOAD_LENGTH,
+        encode_legacy,
+    },
     recovery::RecoveryError,
     segment::Segment,
 };
 
 #[test]
 fn frame_layout_uses_versioned_big_endian_crc32c() {
-    let frame = encode(b"123456789").expect("known payload must encode");
+    let frame = encode_legacy(b"123456789").expect("known payload must encode");
 
     assert_eq!(&frame[..MAGIC.len()], &MAGIC);
     assert_eq!(
         &frame[MAGIC.len()..MAGIC.len() + 2],
-        &SCHEMA_VERSION.to_be_bytes()
+        &LEGACY_SCHEMA_VERSION.to_be_bytes()
     );
-    assert_eq!(&frame[MAGIC.len() + 2..HEADER_LENGTH], &9_u32.to_be_bytes());
-    assert_eq!(&frame[HEADER_LENGTH..HEADER_LENGTH + 9], b"123456789");
-    assert_eq!(&frame[HEADER_LENGTH + 9..], &0xe306_9283_u32.to_be_bytes());
+    assert_eq!(
+        &frame[MAGIC.len() + 2..LEGACY_HEADER_LENGTH],
+        &9_u32.to_be_bytes()
+    );
+    assert_eq!(
+        &frame[LEGACY_HEADER_LENGTH..LEGACY_HEADER_LENGTH + 9],
+        b"123456789"
+    );
+    assert_eq!(
+        &frame[LEGACY_HEADER_LENGTH + 9..],
+        &0xe306_9283_u32.to_be_bytes()
+    );
 }
 
 #[test]
@@ -37,13 +49,9 @@ fn append_syncs_each_frame_and_recovery_returns_payloads_in_order() {
         .expect("second frame must persist");
 
     let report = segment.recover().expect("synced frames must recover");
-    assert_eq!(
-        report.records(),
-        [
-            br#"{"sequence":100}"#.as_slice(),
-            br#"{"sequence":101}"#.as_slice()
-        ]
-    );
+    assert_eq!(report.records().len(), 2);
+    assert_eq!(report.records()[0].payload(), br#"{"sequence":100}"#);
+    assert_eq!(report.records()[1].payload(), br#"{"sequence":101}"#);
     assert_eq!(report.truncated_bytes(), 0);
 }
 
@@ -75,7 +83,7 @@ fn declared_frame_extending_past_eof_fails_without_truncation() {
     let mut segment = Segment::open(&path).expect("segment must reopen");
     assert!(matches!(
         segment.recover(),
-        Err(RecoveryError::Corruption { offset }) if offset == first_frame_length
+        Err(RecoveryError::Corruption { offset, .. }) if offset == first_frame_length
     ));
     assert_eq!(
         fs::read(&path).expect("failed recovery must preserve bytes"),
@@ -86,8 +94,8 @@ fn declared_frame_extending_past_eof_fails_without_truncation() {
 
 #[test]
 fn every_valid_partial_final_header_prefix_is_repaired() {
-    let second = encode(b"second").expect("second frame must encode");
-    for partial_length in 1..HEADER_LENGTH {
+    let second = encode_legacy(b"second").expect("second frame must encode");
+    for partial_length in 1..LEGACY_HEADER_LENGTH {
         let directory = tempfile::tempdir().expect("temporary directory must exist");
         let path = directory.path().join("market.wal");
         let first_frame_length;
@@ -108,7 +116,8 @@ fn every_valid_partial_final_header_prefix_is_repaired() {
         let report = segment
             .recover()
             .expect("exact partial header prefix must be repairable");
-        assert_eq!(report.records(), [b"first".as_slice()]);
+        assert_eq!(report.records().len(), 1);
+        assert_eq!(report.records()[0].payload(), b"first");
         assert_eq!(report.truncated_bytes(), partial_length as u64);
         assert_eq!(
             fs::metadata(&path)
@@ -148,7 +157,7 @@ fn arbitrary_short_final_junk_fails_without_truncation() {
         let mut segment = Segment::open(&path).expect("segment must reopen");
         assert!(matches!(
             segment.recover(),
-            Err(RecoveryError::Corruption { offset }) if offset == first_frame_length
+            Err(RecoveryError::Corruption { offset, .. }) if offset == first_frame_length
         ));
         assert_eq!(
             fs::read(&path).expect("failed recovery must preserve junk bytes"),
@@ -196,7 +205,7 @@ fn inflated_length_before_valid_frame_fails_without_truncation() {
     let mut segment = Segment::open(&path).expect("segment must reopen");
     assert!(matches!(
         segment.recover(),
-        Err(RecoveryError::Corruption { offset }) if offset == first_frame_length
+        Err(RecoveryError::Corruption { offset, .. }) if offset == first_frame_length
     ));
     assert_eq!(
         fs::read(&path).expect("failed recovery must preserve bytes"),
@@ -226,7 +235,7 @@ fn length_claim_consuming_a_later_valid_frame_fails_without_truncation() {
         .len();
     let claimed_payload_length = usize::try_from(original_length - first_frame_length)
         .expect("test file length must fit usize")
-        - HEADER_LENGTH
+        - LEGACY_HEADER_LENGTH
         - CHECKSUM_LENGTH;
     let mut file = OpenOptions::new()
         .read(true)
@@ -250,7 +259,7 @@ fn length_claim_consuming_a_later_valid_frame_fails_without_truncation() {
     let mut segment = Segment::open(&path).expect("segment must reopen");
     assert!(matches!(
         segment.recover(),
-        Err(RecoveryError::Corruption { offset }) if offset == first_frame_length
+        Err(RecoveryError::Corruption { offset, .. }) if offset == first_frame_length
     ));
     assert_eq!(
         fs::read(&path).expect("failed recovery must preserve bytes"),
@@ -282,7 +291,7 @@ fn checksum_corrupt_final_frame_fails_without_truncation() {
     let mut segment = Segment::open(&path).expect("segment must reopen");
     assert!(matches!(
         segment.recover(),
-        Err(RecoveryError::Corruption { offset }) if offset == first_frame_length
+        Err(RecoveryError::Corruption { offset, .. }) if offset == first_frame_length
     ));
     assert_eq!(
         fs::read(&path).expect("failed recovery must preserve bytes"),
@@ -309,7 +318,7 @@ fn corruption_before_a_later_valid_frame_fails_closed_without_truncation() {
             .expect("third frame must persist");
     }
     let original = fs::read(&path).expect("segment bytes must read");
-    flip_byte(&path, first_frame_length + HEADER_LENGTH as u64);
+    flip_byte(&path, first_frame_length + LEGACY_HEADER_LENGTH as u64);
 
     let mut segment = Segment::open(&path).expect("segment must reopen");
     let error = segment
@@ -351,7 +360,7 @@ fn corrupt_frame_followed_by_another_corrupt_frame_fails_without_truncation() {
     let mut segment = Segment::open(&path).expect("segment must reopen");
     assert!(matches!(
         segment.recover(),
-        Err(RecoveryError::Corruption { offset }) if offset == first_frame_length
+        Err(RecoveryError::Corruption { offset, .. }) if offset == first_frame_length
     ));
     assert_eq!(
         fs::read(&path).expect("failed recovery must preserve bytes"),
@@ -391,7 +400,7 @@ fn damaged_final_frame_header_fails_without_truncation() {
         match damaged_field {
             "magic" => file.write_all(b"X").expect("magic must corrupt"),
             "schema" => file
-                .write_all(&SCHEMA_VERSION.wrapping_add(1).to_be_bytes())
+                .write_all(&LEGACY_SCHEMA_VERSION.wrapping_add(2).to_be_bytes())
                 .expect("schema must corrupt"),
             "length" => file
                 .write_all(&u32::MAX.to_be_bytes())
@@ -403,13 +412,21 @@ fn damaged_final_frame_header_fails_without_truncation() {
         let original = fs::read(&path).expect("mutated segment bytes must read");
 
         let mut segment = Segment::open(&path).expect("segment must reopen");
-        assert!(
-            matches!(
-                segment.recover(),
-                Err(RecoveryError::Corruption { offset }) if offset == first_frame_length
+        let error = segment
+            .recover()
+            .expect_err("damaged header must fail closed");
+        let expected_error = match damaged_field {
+            "schema" => matches!(
+                error,
+                RecoveryError::UnsupportedFormat { offset, .. }
+                    if offset == first_frame_length
             ),
-            "{damaged_field} damage must fail closed"
-        );
+            _ => matches!(
+                error,
+                RecoveryError::Corruption { offset, .. } if offset == first_frame_length
+            ),
+        };
+        assert!(expected_error, "{damaged_field} damage must fail closed");
         assert_eq!(
             fs::read(&path).expect("failed recovery must preserve bytes"),
             original,
@@ -437,8 +454,9 @@ fn wrong_magic_or_schema_before_a_valid_frame_fails_closed() {
     let mut segment = Segment::open(&path).expect("segment must reopen");
     assert!(matches!(
         segment.recover(),
-        Err(RecoveryError::Corruption { offset: 0 })
+        Err(RecoveryError::Corruption { offset: 0, .. })
     ));
+    drop(segment);
 
     let mut file = OpenOptions::new()
         .read(true)
@@ -449,7 +467,7 @@ fn wrong_magic_or_schema_before_a_valid_frame_fails_closed() {
     file.write_all(&MAGIC).expect("magic must restore");
     file.seek(SeekFrom::Start(MAGIC.len() as u64))
         .expect("test file must seek");
-    file.write_all(&SCHEMA_VERSION.wrapping_add(1).to_be_bytes())
+    file.write_all(&LEGACY_SCHEMA_VERSION.wrapping_add(2).to_be_bytes())
         .expect("schema must corrupt");
     file.sync_data().expect("test mutation must sync");
     drop(file);
@@ -457,9 +475,9 @@ fn wrong_magic_or_schema_before_a_valid_frame_fails_closed() {
     let mut segment = Segment::open(&path).expect("segment must reopen");
     assert!(matches!(
         segment.recover(),
-        Err(RecoveryError::Corruption { offset: 0 })
+        Err(RecoveryError::UnsupportedFormat { offset: 0, .. })
     ));
-    assert!(first_frame_length > HEADER_LENGTH as u64);
+    assert!(first_frame_length > LEGACY_HEADER_LENGTH as u64);
 }
 
 fn flip_byte(path: &std::path::Path, offset: u64) {
