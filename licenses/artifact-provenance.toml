@@ -132,7 +132,7 @@ retention = "configuration validation contract"
 
 [[category.artifact]]
 path = "configs/schema.json"
-sha256 = "f5684140ce69eb15f6b844a239feb65b5b6e2cc77c153db38d3678cdc5238199"
+sha256 = "9492b24e724febf73f7a8bb19d176996a73143678eda9c428d379e756e7dfedc"
 
 [[category]]
 name = "vendored-source"
