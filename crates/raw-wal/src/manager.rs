@@ -15,7 +15,7 @@ use thiserror::Error;
 use crate::{
     frame::{self, FrameError, RecordMetadata},
     prologue::{self, PrologueError, SegmentMetadata},
-    recovery::{RecoveredRecord, RecoveryError},
+    recovery::{RecoveredRecord, RecoveryError, TARGET_SEGMENT_LENGTH},
     seal::{
         CompressionJob, ManifestError, SealedSegmentManifest, SealingError, SegmentPredecessor,
         compression_job_for_verified_segment, manifest_path_for,
@@ -42,7 +42,10 @@ impl RotationPolicy {
     pub const DEFAULT_MAX_SEGMENT_AGE_NS: u64 = 300 * 1_000_000_000;
 
     pub fn new(max_segment_bytes: u64, max_segment_age_ns: u64) -> Result<Self, ManagerError> {
-        if max_segment_bytes == 0 || max_segment_age_ns == 0 {
+        if max_segment_bytes == 0
+            || max_segment_bytes > TARGET_SEGMENT_LENGTH
+            || max_segment_age_ns == 0
+        {
             return Err(ManagerError::InvalidPolicy);
         }
         Ok(Self {
@@ -147,7 +150,9 @@ pub enum InventoryError {
 
 #[derive(Debug, Error)]
 pub enum ManagerError {
-    #[error("WAL rotation policy requires nonzero byte and age limits")]
+    #[error(
+        "WAL rotation policy requires nonzero byte/age limits and a byte limit no greater than the recovery target"
+    )]
     InvalidPolicy,
     #[error("segmented WAL manager already has a live owner")]
     AlreadyOpen,
