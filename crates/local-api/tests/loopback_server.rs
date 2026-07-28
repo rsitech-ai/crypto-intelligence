@@ -10,12 +10,8 @@ use local_api::{
         SessionAuthenticator, SessionSecret, TOKEN_METADATA_KEY, insert_authentication_metadata,
     },
     proto::{
-        health_v1::{
-            CheckRequest, CheckResponse, ServingStatus, health_service_client::HealthServiceClient,
-        },
-        market_v1::{
-            GetSnapshotRequest, SnapshotHealth, market_service_client::MarketServiceClient,
-        },
+        health_v1::{CheckRequest, CheckResponse, ServingStatus},
+        market_v1::{GetSnapshotRequest, GetSnapshotResponse, SnapshotHealth},
     },
     server::{LoopbackServer, MarketSnapshot, ServerError},
     session::{SessionDescriptor, TOKEN_LIFETIME_SECONDS},
@@ -23,7 +19,7 @@ use local_api::{
 use prost::Message;
 use tokio::net::TcpStream;
 use tonic::{
-    Code, Request,
+    Code, IntoRequest, Request, Response, Status,
     client::Grpc,
     codegen::http::uri::PathAndQuery,
     transport::{Channel, Endpoint},
@@ -36,6 +32,52 @@ const SECRET_BYTES: [u8; 32] = [0x6b; 32];
 struct OversizedRequest {
     #[prost(bytes = "vec", tag = "1")]
     padding: Vec<u8>,
+}
+
+struct HealthTestClient {
+    inner: Grpc<Channel>,
+}
+
+impl HealthTestClient {
+    async fn check(
+        &mut self,
+        request: impl IntoRequest<CheckRequest>,
+    ) -> Result<Response<CheckResponse>, Status> {
+        self.inner
+            .ready()
+            .await
+            .map_err(|_| Status::unavailable("loopback transport unavailable"))?;
+        self.inner
+            .unary(
+                request.into_request(),
+                PathAndQuery::from_static("/cmti.health.v1.HealthService/Check"),
+                tonic_prost::ProstCodec::default(),
+            )
+            .await
+    }
+}
+
+struct MarketTestClient {
+    inner: Grpc<Channel>,
+}
+
+impl MarketTestClient {
+    async fn get_snapshot(
+        &mut self,
+        request: impl IntoRequest<GetSnapshotRequest>,
+    ) -> Result<Response<GetSnapshotResponse>, Status> {
+        self.inner
+            .ready()
+            .await
+            .map_err(|_| Status::unavailable("loopback transport unavailable"))?;
+        self.inner
+            .unary(
+                request.into_request(),
+                PathAndQuery::from_static("/cmti.market.v1.MarketService/GetSnapshot"),
+                tonic_prost::ProstCodec::default(),
+            )
+            .await
+    }
 }
 
 fn current_unix_seconds() -> i64 {
@@ -93,20 +135,19 @@ fn snapshot() -> MarketSnapshot {
     .expect("fixture snapshot must be valid")
 }
 
-async fn connect(
-    address: SocketAddr,
-) -> (
-    HealthServiceClient<tonic::transport::Channel>,
-    MarketServiceClient<tonic::transport::Channel>,
-) {
+async fn connect(address: SocketAddr) -> (HealthTestClient, MarketTestClient) {
     let channel = Endpoint::from_shared(format!("http://{address}"))
         .expect("loopback endpoint must be valid")
         .connect()
         .await
         .expect("server must accept a local connection");
     (
-        HealthServiceClient::new(channel.clone()),
-        MarketServiceClient::new(channel),
+        HealthTestClient {
+            inner: Grpc::new(channel.clone()),
+        },
+        MarketTestClient {
+            inner: Grpc::new(channel),
+        },
     )
 }
 

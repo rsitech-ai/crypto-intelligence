@@ -73,7 +73,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut prost_config = prost_build::Config::new();
     prost_config.protoc_executable(protoc.path());
     tonic_prost_build::configure()
-        .build_client(true)
+        .build_client(false)
         .build_server(true)
         .compile_with_config(prost_config, &proto_files, &[proto_root])?;
 
@@ -82,6 +82,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "OUT_DIR is missing"))?,
     );
     verify_generated_outputs(&output_dir)?;
+    verify_server_only_outputs(&output_dir)?;
     Ok(())
 }
 
@@ -101,6 +102,20 @@ fn verify_generated_outputs(output_dir: &Path) -> Result<(), io::Error> {
         return Err(io::Error::other(format!(
             "generated protobuf outputs differ: expected {expected:?}, got {actual:?}"
         )));
+    }
+    Ok(())
+}
+
+fn verify_server_only_outputs(output_dir: &Path) -> Result<(), io::Error> {
+    for generated_file in GENERATED_FILES {
+        let generated = fs::read_to_string(output_dir.join(generated_file))?;
+        for forbidden in ["_client"] {
+            if generated.contains(forbidden) {
+                return Err(io::Error::other(format!(
+                    "generated protobuf output {generated_file} contains forbidden client surface {forbidden}"
+                )));
+            }
+        }
     }
     Ok(())
 }

@@ -280,11 +280,11 @@ impl LoopbackServer {
         snapshot: MarketSnapshot,
         clock: Arc<dyn Clock>,
     ) -> Result<Self, ServerError> {
-        if bind != LOOPBACK_BIND {
+        if bind != crate::server::LOOPBACK_BIND {
             return Err(ServerError::NonLoopbackBind);
         }
 
-        let listener = TcpListener::bind(bind)
+        let listener = TcpListener::bind(crate::server::LOOPBACK_BIND)
             .await
             .map_err(|source| ServerError::Bind { source })?;
         let local_addr = listener
@@ -373,13 +373,18 @@ mod tests {
 
     use domain::{SourceKind, VenueId};
     use fixed_decimal::FixedDecimal;
-    use tonic::{Code, Request, transport::Endpoint};
+    use tonic::{
+        Code, Request, Response, Status,
+        client::Grpc,
+        codegen::http::uri::PathAndQuery,
+        transport::{Channel, Endpoint},
+    };
     use zeroize::Zeroizing;
 
     use super::*;
     use crate::{
         auth::{SessionAuthenticator, insert_authentication_metadata},
-        proto::market_v1::{GetSnapshotRequest, market_service_client::MarketServiceClient},
+        proto::market_v1::{GetSnapshotRequest, GetSnapshotResponse},
     };
 
     const ISSUED_AT: i64 = 1_700_000_000;
@@ -449,6 +454,23 @@ mod tests {
         .expect("snapshot must be valid")
     }
 
+    async fn get_snapshot(
+        client: &mut Grpc<Channel>,
+        request: Request<GetSnapshotRequest>,
+    ) -> Result<Response<GetSnapshotResponse>, Status> {
+        client
+            .ready()
+            .await
+            .map_err(|_| Status::unavailable("loopback transport unavailable"))?;
+        client
+            .unary(
+                request,
+                PathAndQuery::from_static("/cmti.market.v1.MarketService/GetSnapshot"),
+                tonic_prost::ProstCodec::default(),
+            )
+            .await
+    }
+
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn per_connection_concurrency_is_bounded_before_authentication() {
         let (entered_sender, entered_receiver) = mpsc::channel();
@@ -475,18 +497,20 @@ mod tests {
             .connect()
             .await
             .expect("test connection must open");
-        let mut first_client = MarketServiceClient::new(channel.clone());
-        let mut second_client = MarketServiceClient::new(channel);
+        let mut first_client = Grpc::new(channel.clone());
+        let mut second_client = Grpc::new(channel);
         let first_descriptor = descriptor.clone();
         let first_token = token.clone();
         let first_request = tokio::spawn(async move {
-            first_client
-                .get_snapshot(insert_authentication_metadata(
+            get_snapshot(
+                &mut first_client,
+                insert_authentication_metadata(
                     Request::new(GetSnapshotRequest {}),
                     &first_descriptor,
                     &first_token,
-                ))
-                .await
+                ),
+            )
+            .await
         });
         tokio::task::spawn_blocking(move || entered_receiver.recv_timeout(Duration::from_secs(1)))
             .await
@@ -495,11 +519,14 @@ mod tests {
 
         let second_result = tokio::time::timeout(
             Duration::from_secs(1),
-            second_client.get_snapshot(insert_authentication_metadata(
-                Request::new(GetSnapshotRequest {}),
-                &descriptor,
-                &token,
-            )),
+            get_snapshot(
+                &mut second_client,
+                insert_authentication_metadata(
+                    Request::new(GetSnapshotRequest {}),
+                    &descriptor,
+                    &token,
+                ),
+            ),
         )
         .await;
         release_sender
