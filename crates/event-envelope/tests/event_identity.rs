@@ -19,7 +19,7 @@ fn fixture() -> (UncheckedEventMetadata, UncheckedEventPayload) {
     let venue = VenueId::new("binance").expect("venue");
     let instrument = InstrumentId::new(venue.clone(), "BTCUSDT", 1).expect("instrument identity");
     let metadata = UncheckedEventMetadata {
-        schema_version: 1,
+        schema_version: 2,
         source: SourceId::new(SourceKind::Exchange, "binance-fixture", 1).expect("source"),
         venue: Some(venue),
         instrument_id: Some(instrument),
@@ -88,6 +88,7 @@ fn source_event_identity_fields_change_event_identity() {
         source,
         SourceId::new(SourceKind::Exchange, "binance-fixture", 2).expect("source")
     );
+    mutation!(schema_version, 1);
     mutation!(venue, Some(VenueId::new("kraken").expect("venue")));
     mutation!(
         instrument_id,
@@ -99,6 +100,7 @@ fn source_event_identity_fields_change_event_identity() {
     mutation!(exchange_timestamp, Some(UnixNanos::new(1_001)));
     mutation!(exchange_transaction_timestamp, Some(UnixNanos::new(1_002)));
     mutation!(sequence_number, Some(101));
+    mutation!(previous_sequence_number, Some(98));
 
     for (field, changed) in mutations {
         assert_ne!(
@@ -123,12 +125,10 @@ fn local_processing_lineage_does_not_change_source_event_identity() {
         }};
     }
 
-    mutation!(schema_version, 2);
     mutation!(receive_wall_timestamp, UnixNanos::new(1_101));
     mutation!(receive_monotonic_ns, 101);
     mutation!(normalization_timestamp, UnixNanos::new(1_102));
     mutation!(connection_started_at, UnixNanos::new(899));
-    mutation!(previous_sequence_number, Some(98));
     mutation!(connection_epoch, 2);
     mutation!(subscription_epoch, 2);
     mutation!(snapshot_kind, SnapshotKind::Delta);
@@ -398,9 +398,27 @@ fn independent_known_vector_freezes_the_canonical_contract() {
 
     assert_eq!(
         hex::encode(independent),
-        "4d37e6c1c70bcb78f1208ff6aa90d08de4968d7b23acae15ad887234e6e9a3b9"
+        "ef2b8d555e27846bbd44cd484ff47856f8568d68b531e21abf52e74846579915"
     );
     assert_eq!(production.as_bytes(), &independent);
+
+    let mut legacy_metadata = metadata;
+    legacy_metadata.schema_version = 1;
+    let legacy_production =
+        canonical_event_id_unchecked(&legacy_metadata, &payload).expect("legacy identity");
+    let legacy_independent = independent_fixture_identity(&legacy_metadata, &payload);
+    assert_eq!(
+        hex::encode(legacy_independent),
+        "4d37e6c1c70bcb78f1208ff6aa90d08de4968d7b23acae15ad887234e6e9a3b9"
+    );
+    assert_eq!(legacy_production.as_bytes(), &legacy_independent);
+
+    let legacy_envelope =
+        EventEnvelope::new(legacy_metadata, payload).expect("legacy envelope remains supported");
+    let wire = serde_json::to_vec(&legacy_envelope).expect("serialize legacy envelope");
+    let decoded: EventEnvelope =
+        serde_json::from_slice(&wire).expect("deserialize legacy v1 envelope");
+    assert_eq!(decoded.id(), legacy_envelope.id());
 }
 
 fn independent_fixture_identity(
@@ -473,6 +491,15 @@ fn independent_fixture_identity(
         &mut bytes,
         metadata.sequence_number.expect("fixture sequence"),
     );
+    if metadata.schema_version >= 2 {
+        bytes.push(1);
+        u64_field(
+            &mut bytes,
+            metadata
+                .previous_sequence_number
+                .expect("fixture previous sequence"),
+        );
+    }
 
     let UncheckedEventPayload::BookSnapshot(snapshot) = payload else {
         panic!("known vector uses snapshot");
@@ -495,7 +522,11 @@ fn independent_fixture_identity(
     u64_field(&mut bytes, snapshot.last_sequence);
 
     let mut hasher = blake3::Hasher::new();
-    hasher.update(b"cmti:event:v1\0");
+    hasher.update(match metadata.schema_version {
+        1 => b"cmti:event:v1\0",
+        2 => b"cmti:event:v2\0",
+        _ => panic!("known vector schema is supported"),
+    });
     hasher.update(&bytes);
     *hasher.finalize().as_bytes()
 }

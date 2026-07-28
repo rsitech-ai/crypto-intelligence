@@ -1,4 +1,5 @@
 use connector_binance::parse_fixture_line;
+use domain::{InstrumentId, VenueId};
 use event_envelope::UncheckedEventPayload;
 use fixed_decimal::{FixedDecimal, Price, Quantity};
 use orderbook::{
@@ -129,4 +130,3 @@ fn quantity(value: &str) -> Quantity {
     Quantity::new(FixedDecimal::parse_canonical(value).expect("canonical quantity"))
         .expect("nonnegative quantity")
 }
-use domain::{InstrumentId, VenueId};

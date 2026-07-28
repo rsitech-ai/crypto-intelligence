@@ -151,6 +151,10 @@ fn complete_timing_epoch_and_sequence_contract_fails_closed() {
     invalid.previous_sequence_number = Some(10);
     assert!(EventEnvelope::new(invalid, trade_payload()).is_err());
 
+    let mut invalid = valid.clone();
+    invalid.schema_version = 3;
+    assert!(EventEnvelope::new(invalid, trade_payload()).is_err());
+
     let mut invalid = valid;
     invalid.parser_version.clear();
     assert!(EventEnvelope::new(invalid, trade_payload()).is_err());
@@ -768,12 +772,76 @@ fn partial_book_delta_is_not_misclassified_as_a_crossed_complete_book() {
         last_sequence: 10,
     });
 
-    EventEnvelope::new(event_metadata.clone(), payload.clone())
+    EventEnvelope::new(event_metadata, payload)
         .expect("partial delta crossing is evaluated only after applying it to complete state");
+}
 
-    event_metadata.previous_sequence_number = Some(8);
+#[test]
+fn futures_delta_preserves_the_source_previous_final_sequence() {
+    let mut event_metadata = metadata();
+    event_metadata.snapshot_kind = SnapshotKind::Delta;
+    event_metadata.sequence_number = Some(160);
+    event_metadata.previous_sequence_number = Some(149);
+    let payload = UncheckedEventPayload::BookDelta(BookDelta {
+        bids: vec![BookLevel {
+            price: price("101"),
+            quantity: quantity("1"),
+            order_count: None,
+        }],
+        asks: Vec::new(),
+        first_sequence: 157,
+        last_sequence: 160,
+    });
+
+    assert!(
+        EventEnvelope::new(event_metadata.clone(), payload.clone()).is_err(),
+        "legacy schema 1 cannot encode an independent previous-final sequence"
+    );
+
+    event_metadata.schema_version = 2;
+    let valid = EventEnvelope::new(event_metadata.clone(), payload.clone())
+        .expect("Binance futures pu is the previous batch final, not U - 1");
+
+    event_metadata.previous_sequence_number = Some(150);
+    let different_predecessor = EventEnvelope::new(event_metadata.clone(), payload.clone())
+        .expect("another source predecessor before U is structurally valid");
+    assert_ne!(
+        valid.id(),
+        different_predecessor.id(),
+        "a behavior-significant predecessor must change event identity"
+    );
+
+    event_metadata.previous_sequence_number = None;
+    assert!(
+        EventEnvelope::new(event_metadata.clone(), payload.clone()).is_err(),
+        "book deltas require an explicit source predecessor"
+    );
+
+    event_metadata.previous_sequence_number = Some(157);
     assert!(
         EventEnvelope::new(event_metadata, payload).is_err(),
-        "delta predecessor metadata must bind to first_sequence - 1"
+        "the previous final must precede the delta range"
     );
+}
+
+#[test]
+fn zero_origin_delta_uses_the_versioned_none_predecessor_boundary() {
+    let mut event_metadata = metadata();
+    event_metadata.schema_version = 2;
+    event_metadata.snapshot_kind = SnapshotKind::Delta;
+    event_metadata.sequence_number = Some(0);
+    event_metadata.previous_sequence_number = None;
+    let payload = UncheckedEventPayload::BookDelta(BookDelta {
+        bids: vec![BookLevel {
+            price: price("101"),
+            quantity: quantity("1"),
+            order_count: None,
+        }],
+        asks: Vec::new(),
+        first_sequence: 0,
+        last_sequence: 0,
+    });
+
+    EventEnvelope::new(event_metadata, payload)
+        .expect("a zero-origin source has no representable predecessor");
 }

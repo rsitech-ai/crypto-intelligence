@@ -627,18 +627,25 @@ impl OrderBookEngine {
         first_replayed: bool,
         previous_final_sequence: Option<u64>,
     ) -> Result<bool, BookError> {
-        let expected = current.checked_add(1).ok_or_else(|| {
-            self.invalidate();
-            BookError::SequenceOverflow
-        })?;
-        let range_contains_next =
-            delta.first_sequence <= expected && expected <= delta.last_sequence;
         Ok(match self.config.sequence_policy {
-            SequencePolicy::ExactNext => delta.first_sequence == expected,
-            SequencePolicy::RangeContainsNext => range_contains_next,
-            SequencePolicy::PreviousFinal if first_replayed => range_contains_next,
-            SequencePolicy::PreviousFinal => {
-                range_contains_next && previous_final_sequence == Some(current)
+            SequencePolicy::PreviousFinal if !first_replayed => {
+                previous_final_sequence == Some(current)
+            }
+            SequencePolicy::ExactNext
+            | SequencePolicy::RangeContainsNext
+            | SequencePolicy::PreviousFinal => {
+                let expected = current.checked_add(1).ok_or_else(|| {
+                    self.invalidate();
+                    BookError::SequenceOverflow
+                })?;
+                let range_contains_next =
+                    delta.first_sequence <= expected && expected <= delta.last_sequence;
+                match self.config.sequence_policy {
+                    SequencePolicy::ExactNext => delta.first_sequence == expected,
+                    SequencePolicy::RangeContainsNext | SequencePolicy::PreviousFinal => {
+                        range_contains_next
+                    }
+                }
             }
         })
     }

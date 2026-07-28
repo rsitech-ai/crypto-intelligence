@@ -14,7 +14,6 @@ serde.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
-connector-binance = { path = "../connector-binance" }
 proptest.workspace = true
 
 [lints]

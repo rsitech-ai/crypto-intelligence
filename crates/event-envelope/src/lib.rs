@@ -12,7 +12,8 @@ use serde::{Deserialize, Serialize, de::Error as _, ser::SerializeStruct as _};
 use std::{fmt, io};
 use thiserror::Error;
 
-const EVENT_DOMAIN: &[u8] = b"cmti:event:v1\0";
+const EVENT_DOMAIN_V1: &[u8] = b"cmti:event:v1\0";
+const EVENT_DOMAIN_V2: &[u8] = b"cmti:event:v2\0";
 const MAX_BOOK_LEVELS: usize = 100_000;
 const MAX_METADATA_TEXT: usize = 4_096;
 /// Maximum serialized event size accepted before any untrusted serde allocation.
@@ -85,7 +86,7 @@ pub struct UncheckedEventMetadata {
 
 impl UncheckedEventMetadata {
     fn validate(&self) -> Result<(), EventError> {
-        if self.schema_version == 0 {
+        if !matches!(self.schema_version, 1 | 2) {
             return Err(EventError::InvalidMetadata("schema_version"));
         }
         if self.connection_epoch == 0 {
@@ -337,10 +338,19 @@ impl UncheckedEventPayload {
             }
             Self::BookDelta(delta) => {
                 validate_book(&delta.bids, &delta.asks, true, false)?;
+                let valid_predecessor = match metadata.schema_version {
+                    1 => metadata.previous_sequence_number == delta.first_sequence.checked_sub(1),
+                    2 => metadata
+                        .previous_sequence_number
+                        .map_or(delta.first_sequence == 0, |previous| {
+                            previous < delta.first_sequence
+                        }),
+                    _ => false,
+                };
                 if delta.first_sequence > delta.last_sequence
                     || metadata.snapshot_kind != SnapshotKind::Delta
                     || metadata.sequence_number != Some(delta.last_sequence)
-                    || metadata.previous_sequence_number != delta.first_sequence.checked_sub(1)
+                    || !valid_predecessor
                 {
                     return Err(EventError::SequenceMismatch);
                 }
@@ -740,12 +750,17 @@ pub fn canonical_event_id_unchecked(
     metadata: &UncheckedEventMetadata,
     payload: &UncheckedEventPayload,
 ) -> Result<EventId, EventError> {
+    let domain = match metadata.schema_version {
+        1 => EVENT_DOMAIN_V1,
+        2 => EVENT_DOMAIN_V2,
+        _ => return Err(EventError::InvalidMetadata("schema_version")),
+    };
     let mut writer = CanonicalWriter::new();
     encode_identity_metadata(&mut writer, metadata)?;
     encode_payload(&mut writer, payload)?;
 
     let mut hasher = blake3::Hasher::new();
-    hasher.update(EVENT_DOMAIN);
+    hasher.update(domain);
     hasher.update(writer.as_bytes());
     Ok(EventId(*hasher.finalize().as_bytes()))
 }
@@ -814,6 +829,15 @@ fn encode_identity_metadata(
         writer.u64(sequence);
         Ok(())
     })?;
+    if metadata.schema_version >= 2 {
+        writer.optional(
+            metadata.previous_sequence_number,
+            |writer, previous_sequence| {
+                writer.u64(previous_sequence);
+                Ok(())
+            },
+        )?;
+    }
     Ok(())
 }
 
