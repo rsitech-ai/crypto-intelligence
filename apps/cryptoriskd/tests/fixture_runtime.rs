@@ -8,14 +8,12 @@ use std::{
 
 use local_api::{
     auth::{SessionAuthenticator, SessionSecret, insert_authentication_metadata},
-    proto::market_v1::{
-        GetSnapshotRequest, SnapshotHealth, market_service_client::MarketServiceClient,
-    },
+    proto::market_v1::{GetSnapshotRequest, SnapshotHealth},
     session::SessionDescriptor,
 };
 use observability::{Component, MetricKey, MetricName, Metrics, Outcome, Venue};
 use tokio::sync::mpsc::error::TrySendError;
-use tonic::{Code, Request, transport::Endpoint};
+use tonic::{Code, Request};
 use zeroize::Zeroizing;
 
 #[path = "../src/runtime.rs"]
@@ -23,6 +21,7 @@ mod runtime;
 #[allow(dead_code)]
 #[path = "../src/startup.rs"]
 mod startup;
+mod support;
 
 use runtime::{
     INGESTION_QUEUE_CAPACITY, IngestionEngine, RuntimeError, RuntimeHealth, RuntimeOptions,
@@ -546,11 +545,8 @@ fn secret() -> SessionSecret {
         .expect("test secret must be exact")
 }
 
-async fn connect(address: std::net::SocketAddr) -> MarketServiceClient<tonic::transport::Channel> {
-    let endpoint = Endpoint::from_shared(format!("http://{address}"))
-        .expect("loopback endpoint must be valid");
-    let channel = endpoint.connect().await.expect("loopback RPC must connect");
-    MarketServiceClient::new(channel)
+async fn connect(address: std::net::SocketAddr) -> support::MarketTestClient {
+    support::MarketTestClient::connect(format!("http://{address}")).await
 }
 
 fn running_address(running: &runtime::RunningDaemon) -> std::net::SocketAddr {
