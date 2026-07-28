@@ -6,7 +6,9 @@ use std::{
     fs::File,
     io,
     os::unix::ffi::OsStrExt,
+    os::unix::fs::FileExt,
     path::{Path, PathBuf},
+    sync::Arc,
 };
 
 use rustix::fs::{AtFlags, CWD, Dir, FileType, FlockOperation, Mode, OFlags};
@@ -80,6 +82,19 @@ pub struct WalPosition {
     next_offset: u64,
 }
 
+/// Stable identity of one managed WAL chain.
+///
+/// The identity is the root segment identifier and remains unchanged as the
+/// active segment rotates.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct WalIdentity([u8; 16]);
+
+impl WalIdentity {
+    pub const fn root_segment_id(&self) -> &[u8; 16] {
+        &self.0
+    }
+}
+
 impl WalPosition {
     pub const fn segment_ordinal(self) -> u64 {
         self.segment_ordinal
@@ -98,19 +113,155 @@ impl WalPosition {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Debug)]
 pub struct AppendOutcome {
-    position: WalPosition,
+    proof: WalAppendProof,
     compression_job: Option<CompressionJob>,
 }
 
 impl AppendOutcome {
     pub const fn position(&self) -> WalPosition {
-        self.position
+        self.proof.position
+    }
+
+    pub fn into_parts(self) -> (WalAppendProof, Option<CompressionJob>) {
+        (self.proof, self.compression_job)
     }
 
     pub const fn compression_job(&self) -> Option<&CompressionJob> {
         self.compression_job.as_ref()
+    }
+}
+
+/// Identity proof produced only after one frame has been durably appended.
+#[derive(Debug)]
+pub struct WalAppendProof {
+    authority: Arc<WalAppendAuthorityInner>,
+    wal_identity: WalIdentity,
+    position: WalPosition,
+    metadata: RecordMetadata,
+    payload_hash: [u8; 32],
+    stream_source_name: String,
+    segment_device: u64,
+    segment_inode: u64,
+    prologue_length: u64,
+    prologue_hash: [u8; 32],
+}
+
+impl WalAppendProof {
+    pub const fn wal_identity(&self) -> WalIdentity {
+        self.wal_identity
+    }
+
+    pub const fn position(&self) -> WalPosition {
+        self.position
+    }
+
+    pub const fn metadata(&self) -> RecordMetadata {
+        self.metadata
+    }
+
+    pub const fn payload_hash(&self) -> &[u8; 32] {
+        &self.payload_hash
+    }
+
+    pub fn stream_source_name(&self) -> &str {
+        &self.stream_source_name
+    }
+}
+
+/// Opaque authority for accepting proofs from one live WAL writer owner.
+#[derive(Clone, Debug)]
+pub struct WalAppendAuthority {
+    inner: Arc<WalAppendAuthorityInner>,
+}
+
+#[derive(Debug)]
+struct WalAppendAuthorityInner {
+    directory: File,
+    display_path: PathBuf,
+}
+
+impl WalAppendAuthority {
+    fn open_at(directory: &File, display_path: &Path) -> Result<Self, ManagerError> {
+        let directory = File::from(
+            rustix::fs::openat(
+                directory,
+                ".",
+                OFlags::RDONLY | OFlags::CLOEXEC | OFlags::NOFOLLOW | OFlags::DIRECTORY,
+                Mode::empty(),
+            )
+            .map_err(map_open_error)?,
+        );
+        validate_managed_directory(&directory)?;
+        Ok(Self {
+            inner: Arc::new(WalAppendAuthorityInner {
+                directory,
+                display_path: display_path.to_owned(),
+            }),
+        })
+    }
+
+    /// Verifies writer ownership, current directory identity, and record extent.
+    pub fn validates(&self, proof: &WalAppendProof) -> bool {
+        if !Arc::ptr_eq(&self.inner, &proof.authority)
+            || ensure_directory_path_identity(&self.inner.display_path, &self.inner.directory)
+                .is_err()
+        {
+            return false;
+        }
+        let active = active_name(proof.position.segment_ordinal, &proof.position.segment_id);
+        let sealed = sealed_path_for(&active).ok();
+        [Some(active), sealed]
+            .into_iter()
+            .flatten()
+            .any(|name| self.validates_artifact(&name, proof))
+    }
+
+    fn validates_artifact(&self, name: &Path, proof: &WalAppendProof) -> bool {
+        let Ok(file) = open_managed_file_at(&self.inner.directory, name, OFlags::RDONLY) else {
+            return false;
+        };
+        let Ok(stat) = rustix::fs::fstat(&file) else {
+            return false;
+        };
+        if u64::try_from(stat.st_dev).ok() != Some(proof.segment_device)
+            || stat.st_ino != proof.segment_inode
+            || u64::try_from(stat.st_size)
+                .ok()
+                .is_none_or(|length| length < proof.position.next_offset)
+        {
+            return false;
+        }
+        let Some(prologue_length) = usize::try_from(proof.prologue_length).ok() else {
+            return false;
+        };
+        let mut prologue = vec![0_u8; prologue_length];
+        if file.read_exact_at(&mut prologue, 0).is_err()
+            || blake3::hash(&prologue).as_bytes() != &proof.prologue_hash
+        {
+            return false;
+        }
+        let Some(frame_length) = proof
+            .position
+            .next_offset
+            .checked_sub(proof.position.frame_offset)
+            .and_then(|length| usize::try_from(length).ok())
+        else {
+            return false;
+        };
+        let mut encoded = vec![0_u8; frame_length];
+        if file
+            .read_exact_at(&mut encoded, proof.position.frame_offset)
+            .is_err()
+        {
+            return false;
+        }
+        frame::decode(&encoded).is_ok_and(|decoded| {
+            decoded.encoded_length() == frame_length
+                && decoded.metadata() == Some(proof.metadata)
+                && blake3::hash(decoded.payload()).as_bytes() == &proof.payload_hash
+        })
     }
 }
 
@@ -222,6 +373,8 @@ pub struct SegmentedWalWriter {
     directory_lock: File,
     directory: PathBuf,
     policy: RotationPolicy,
+    wal_identity: WalIdentity,
+    append_authority: WalAppendAuthority,
     active: Option<Segment>,
     active_name: PathBuf,
     active_path: PathBuf,
@@ -316,6 +469,7 @@ impl SegmentedWalWriter {
     ) -> Result<Self, ManagerError> {
         ensure_directory_path_identity(directory, &directory_lock)?;
         ensure_new_directory(&directory_lock)?;
+        let append_authority = WalAppendAuthority::open_at(&directory_lock, directory)?;
         let active_name = active_name(1, metadata.segment_id());
         let active_path = directory.join(&active_name);
         let active_length = u64::try_from(prologue::encode(&metadata)?.len())
@@ -326,6 +480,8 @@ impl SegmentedWalWriter {
             directory_lock,
             directory: directory.to_owned(),
             policy,
+            wal_identity: WalIdentity(*metadata.segment_id()),
+            append_authority,
             active: Some(active),
             active_name,
             active_path,
@@ -386,6 +542,7 @@ impl SegmentedWalWriter {
         mut visitor: impl FnMut(RecoveredRecord<'_>),
     ) -> Result<Self, ManagerError> {
         ensure_directory_path_identity(directory, &directory_lock)?;
+        let append_authority = WalAppendAuthority::open_at(&directory_lock, directory)?;
         let mut inventory = inventory(&directory_lock)?;
         let temporary_paths = std::mem::take(&mut inventory.temporary);
         let pending_transition = take_pending_transition(&directory_lock, &mut inventory)?;
@@ -567,10 +724,19 @@ impl SegmentedWalWriter {
         if ensure_directory_path_identity(directory, &directory_lock).is_err() {
             return Err(ManagerError::DirectoryReplacedAfterRecovery);
         }
+        let wal_identity = WalIdentity(
+            manifests
+                .first()
+                .map(SealedSegmentManifest::segment_id)
+                .unwrap_or_else(|| active_metadata.segment_id())
+                .to_owned(),
+        );
         let mut recovered = Self {
             directory_lock,
             directory: directory.to_owned(),
             policy,
+            wal_identity,
+            append_authority,
             active: Some(active),
             active_name,
             active_path,
@@ -601,6 +767,14 @@ impl SegmentedWalWriter {
         if !self.active_metadata.contains_stream(metadata.stream_id) {
             return Err(SegmentError::UndeclaredStream(metadata.stream_id).into());
         }
+        let stream_source_name = self
+            .active_metadata
+            .streams()
+            .iter()
+            .find(|stream| stream.stream_id() == metadata.stream_id)
+            .ok_or(SegmentError::UndeclaredStream(metadata.stream_id))?
+            .source_name()
+            .to_owned();
         let frame_length = u64::try_from(frame::encoded_length(metadata, payload.len())?)
             .map_err(|_| ManagerError::Inactive)?;
         let projected_length = self
@@ -616,6 +790,29 @@ impl SegmentedWalWriter {
             None
         };
 
+        let (segment_device, segment_inode, prologue_length, prologue_hash) = match self
+            .active
+            .as_ref()
+            .ok_or(ManagerError::Inactive)?
+            .file_identity()
+            .and_then(|(device, inode)| {
+                self.active
+                    .as_ref()
+                    .ok_or(SegmentError::FormatMismatch)?
+                    .prologue_identity()
+                    .map(|(length, hash)| (device, inode, length, hash))
+            }) {
+            Ok(identity) => identity,
+            Err(source) => {
+                if let Some(compression_job) = compression_job.take() {
+                    return Err(ManagerError::PostRotationAppend {
+                        compression_job: Box::new(compression_job),
+                        source: Box::new(source),
+                    });
+                }
+                return Err(source.into());
+            }
+        };
         let durable = match self
             .active
             .as_mut()
@@ -649,21 +846,42 @@ impl SegmentedWalWriter {
             metadata.record_sequence,
         );
         let outcome = AppendOutcome {
-            position: WalPosition {
-                segment_ordinal: self.active_ordinal,
-                segment_id: *durable.segment_id(),
-                frame_offset: durable.frame_offset(),
-                next_offset: durable.next_offset(),
+            proof: WalAppendProof {
+                authority: Arc::clone(&self.append_authority.inner),
+                wal_identity: self.wal_identity,
+                position: WalPosition {
+                    segment_ordinal: self.active_ordinal,
+                    segment_id: *durable.segment_id(),
+                    frame_offset: durable.frame_offset(),
+                    next_offset: durable.next_offset(),
+                },
+                metadata,
+                payload_hash: *blake3::hash(payload).as_bytes(),
+                stream_source_name,
+                segment_device,
+                segment_inode,
+                prologue_length,
+                prologue_hash,
             },
             compression_job,
         };
         if outcome.compression_job.is_some() && self.ensure_directory_identity().is_err() {
             return Err(ManagerError::DirectoryReplacedAfterAppend {
-                sealed_ordinal: outcome.position.segment_ordinal.saturating_sub(1),
-                position: outcome.position,
+                sealed_ordinal: outcome.position().segment_ordinal.saturating_sub(1),
+                position: outcome.position(),
             });
         }
         Ok(outcome)
+    }
+
+    /// Returns the stable identity of this managed WAL chain.
+    pub const fn wal_identity(&self) -> WalIdentity {
+        self.wal_identity
+    }
+
+    /// Returns the process-local authority required to accept this writer's proofs.
+    pub fn append_authority(&self) -> WalAppendAuthority {
+        self.append_authority.clone()
     }
 
     pub fn poll_rotation(

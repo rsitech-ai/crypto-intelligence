@@ -5,7 +5,7 @@ use std::{
     ffi::OsString,
     fs::{self, File, OpenOptions},
     io::{self, Read, Seek, SeekFrom, Write},
-    os::unix::fs::OpenOptionsExt,
+    os::unix::fs::{FileExt, OpenOptionsExt},
     path::{Path, PathBuf},
     sync::atomic::{AtomicU64, Ordering},
 };
@@ -93,6 +93,21 @@ pub struct Segment {
 }
 
 impl Segment {
+    pub(crate) fn file_identity(&self) -> Result<(u64, u64), SegmentError> {
+        let stat = rustix::fs::fstat(&self.file).map_err(io::Error::from)?;
+        let device = u64::try_from(stat.st_dev)
+            .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "negative device identity"))?;
+        Ok((device, stat.st_ino))
+    }
+
+    pub(crate) fn prologue_identity(&self) -> Result<(u64, [u8; 32]), SegmentError> {
+        let length = usize::try_from(self.record_start_offset)
+            .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "prologue length overflow"))?;
+        let mut encoded = vec![0_u8; length];
+        self.file.read_exact_at(&mut encoded, 0)?;
+        Ok((self.record_start_offset, *blake3::hash(&encoded).as_bytes()))
+    }
+
     pub fn open(path: &Path) -> Result<Self, SegmentError> {
         let file = OpenOptions::new()
             .create(true)

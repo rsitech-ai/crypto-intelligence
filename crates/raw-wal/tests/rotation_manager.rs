@@ -1,7 +1,7 @@
 use std::{
     fs::{self, File, OpenOptions},
     io::{Read, Write},
-    os::unix::fs::{PermissionsExt, symlink},
+    os::unix::fs::{FileExt, OpenOptionsExt, PermissionsExt, symlink},
     sync::{Arc, Barrier},
     thread,
 };
@@ -72,6 +72,121 @@ fn segment_limit_for_one(payload: &[u8]) -> u64 {
                 .len(),
         )
         .expect("frame length must fit")
+}
+
+#[test]
+fn append_proof_is_bound_to_the_exact_active_inode_and_frame_bytes() {
+    let directory = tempfile::tempdir().expect("temporary directory");
+    let mut writer =
+        SegmentedWalWriter::create(directory.path(), metadata(), RotationPolicy::default(), 10)
+            .expect("writer");
+    let authority = writer.append_authority();
+    let (proof, job) = writer
+        .append(record(1), b"one", 11, CREATED_WALL_NS + 1)
+        .expect("append")
+        .into_parts();
+    assert!(job.is_none());
+    assert!(authority.validates(&proof));
+
+    let active = writer.active_path().expect("active path").to_owned();
+    let original = active.with_extension("original");
+    fs::rename(&active, &original).expect("move original active segment");
+    let replacement = OpenOptions::new()
+        .create_new(true)
+        .read(true)
+        .write(true)
+        .mode(0o600)
+        .open(&active)
+        .expect("replacement active segment");
+    replacement
+        .set_len(proof.position().next_offset())
+        .expect("replacement extent");
+    assert!(
+        !authority.validates(&proof),
+        "a same-name, same-length replacement must not satisfy the proof"
+    );
+
+    fs::remove_file(&active).expect("remove replacement");
+    fs::rename(&original, &active).expect("restore original");
+    assert!(authority.validates(&proof));
+    let file = OpenOptions::new()
+        .write(true)
+        .open(&active)
+        .expect("open original for corruption");
+    file.write_all_at(&[0_u8], proof.position().frame_offset())
+        .expect("corrupt frame byte");
+    file.sync_data().expect("sync corruption");
+    assert!(
+        !authority.validates(&proof),
+        "in-place frame corruption must invalidate the proof"
+    );
+}
+
+#[test]
+fn append_proof_survives_rotation_rename_but_not_sealed_file_replacement() {
+    let directory = tempfile::tempdir().expect("temporary directory");
+    let policy = RotationPolicy::new(TARGET_SEGMENT_LENGTH, 1).expect("age rotation policy");
+    let mut writer =
+        SegmentedWalWriter::create(directory.path(), metadata(), policy, 10).expect("writer");
+    let authority = writer.append_authority();
+    let (proof, job) = writer
+        .append(record(1), b"one", 11, CREATED_WALL_NS + 1)
+        .expect("append")
+        .into_parts();
+    assert!(job.is_none());
+    let rotation = writer
+        .poll_rotation(12, CREATED_WALL_NS + 2)
+        .expect("rotation")
+        .expect("age-due rotation job");
+    assert!(
+        authority.validates(&proof),
+        "active-to-sealed rename preserves the proven inode and frame"
+    );
+
+    let sealed = rotation.source_display_path().to_owned();
+    let original = sealed.with_extension("sealed-original");
+    fs::rename(&sealed, &original).expect("move sealed segment");
+    let replacement = OpenOptions::new()
+        .create_new(true)
+        .read(true)
+        .write(true)
+        .mode(0o600)
+        .open(&sealed)
+        .expect("replacement sealed segment");
+    replacement
+        .set_len(proof.position().next_offset())
+        .expect("replacement extent");
+    assert!(
+        !authority.validates(&proof),
+        "a replacement sealed pathname must not satisfy the proof"
+    );
+}
+
+#[test]
+fn append_proof_rejects_prologue_source_mapping_corruption() {
+    let directory = tempfile::tempdir().expect("temporary directory");
+    let mut writer =
+        SegmentedWalWriter::create(directory.path(), metadata(), RotationPolicy::default(), 10)
+            .expect("writer");
+    let authority = writer.append_authority();
+    let (proof, job) = writer
+        .append(record(1), b"one", 11, CREATED_WALL_NS + 1)
+        .expect("append")
+        .into_parts();
+    assert!(job.is_none());
+    assert!(authority.validates(&proof));
+    let active = writer.active_path().expect("active path");
+    let file = OpenOptions::new()
+        .write(true)
+        .open(active)
+        .expect("open prologue");
+    file.write_all_at(&[0_u8], 16)
+        .expect("mutate only prologue bytes");
+    file.sync_data().expect("sync mutation");
+    assert!(
+        !authority.validates(&proof),
+        "the durable stream-to-source mapping is part of append proof validity"
+    );
 }
 
 fn reference_pending_manifest() -> Vec<u8> {

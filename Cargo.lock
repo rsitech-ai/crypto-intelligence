@@ -301,6 +301,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "connector-core"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "domain",
+ "event-envelope",
+ "raw-wal",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
 name = "constant_time_eq"
 version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
