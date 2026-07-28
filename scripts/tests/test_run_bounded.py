@@ -89,6 +89,32 @@ class RunBoundedTests(unittest.TestCase):
         )
         self.assertEqual(completed.returncode, 0, completed.stderr)
 
+    def test_verifier_stages_the_canonical_layered_runtime_config(self) -> None:
+        verifier = (ROOT / "scripts" / "verify-foundation-runtime.sh").read_text()
+
+        self.assertIn(
+            'configs/default.toml > "${runtime_root}/config.toml"',
+            verifier,
+        )
+        self.assertIn(
+            '"${runtime_root}/fixtures/binance"',
+            verifier,
+        )
+        self.assertIn(
+            '"${runtime_root}/models/public-test-artifacts"',
+            verifier,
+        )
+        self.assertIn(
+            'chmod 700 "${runtime_root}/data" "${runtime_root}/logs"',
+            verifier,
+        )
+        self.assertIn(
+            '"${runtime_root}/fixtures/binance/btcusdt-book-v1.jsonl"',
+            verifier,
+        )
+        self.assertNotIn('data_root = "./data"', verifier)
+        self.assertNotIn('fixture_input = "./fixture.jsonl"', verifier)
+
     def test_cleanup_failure_overrides_a_nominal_command_success(self) -> None:
         helper_module = load_helper_module()
         process = mock.Mock(pid=4242)

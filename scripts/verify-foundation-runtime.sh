@@ -282,23 +282,23 @@ run_gate xcode-generation 180 scripts/generate-xcode-project.sh --check
 run_gate swift-package-tests 600 swift test --package-path apps/macos/Packages/TransitionClient
 
 readonly runtime_root="${temporary_root}/runtime"
-mkdir -p -- "${runtime_root}/data" "${runtime_root}/logs"
-cp -- fixtures/binance/btcusdt-book-v1.jsonl "${runtime_root}/fixture.jsonl"
-cat > "${runtime_root}/config.toml" <<'EOF'
-schema_version = 1
-data_root = "./data"
-log_root = "./logs"
-fixture_input = "./fixture.jsonl"
-bind_address = "127.0.0.1:0"
-session_secret_fd = 3
-ingestion_queue_capacity = 1024
-maximum_request_bytes = 8388608
-maximum_concurrent_requests = 128
-request_timeout_seconds = 30
-shutdown_grace_seconds = 5
-remote_export = false
-remote_telemetry = false
-EOF
+mkdir -p -- \
+  "${runtime_root}/data" \
+  "${runtime_root}/logs" \
+  "${runtime_root}/fixtures/binance" \
+  "${runtime_root}/models/public-test-artifacts"
+chmod 700 "${runtime_root}/data" "${runtime_root}/logs"
+cp -- \
+  fixtures/binance/btcusdt-book-v1.jsonl \
+  "${runtime_root}/fixtures/binance/btcusdt-book-v1.jsonl"
+cp -R -- \
+  models/public-test-artifacts/. \
+  "${runtime_root}/models/public-test-artifacts/"
+sed \
+  -e 's/^maximum_request_bytes = .*/maximum_request_bytes = 8388608/' \
+  -e 's/^maximum_concurrent_requests = .*/maximum_concurrent_requests = 128/' \
+  -e 's/^request_timeout_seconds = .*/request_timeout_seconds = 30/' \
+  configs/default.toml > "${runtime_root}/config.toml"
 
 wait_for_readiness() {
   local pid="$1"

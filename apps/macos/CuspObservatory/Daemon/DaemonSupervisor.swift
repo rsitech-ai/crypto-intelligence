@@ -391,7 +391,7 @@ actor DaemonSupervisor {
         try ensureActive(runID)
 
         let remaining = try Self.remaining(until: deadline)
-        let snapshot = try await transport.getSnapshot(
+        let snapshot = try await transport.getOrderBookSnapshot(
           using: credentials,
           timeout: remaining
         )

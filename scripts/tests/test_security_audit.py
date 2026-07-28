@@ -9,6 +9,11 @@ import unittest
 
 
 SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "security-audit.py"
+VENDOR_ROOT = "apps/macos/Vendor/grpc-swift-nio-transport"
+VENDORED_TLS_TEST = (
+    f"{VENDOR_ROOT}/Tests/GRPCNIOTransportHTTP2Tests/"
+    "HTTP2TransportTLSEnabledTests.swift"
+)
 
 
 class SecurityAuditTests(unittest.TestCase):
@@ -23,6 +28,8 @@ class SecurityAuditTests(unittest.TestCase):
                 path = root / relative_path
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text(content, encoding="utf-8")
+                if relative_path == "scripts/verify-vendored-grpc-transport.sh":
+                    path.chmod(0o755)
 
             subprocess.run(
                 ["python3", str(copied_scanner)],
@@ -72,6 +79,59 @@ class SecurityAuditTests(unittest.TestCase):
             "config/default.toml",
             {finding["path"] for finding in report["findings"]},
         )
+
+    def test_verified_upstream_tls_test_password_is_narrowly_excluded(self) -> None:
+        report = self.run_audit(
+            {
+                VENDORED_TLS_TEST: (
+                    "let pass" + 'word = "public-test-password"\n'
+                ),
+                "licenses/artifact-provenance.toml": (
+                    f'scope = "{VENDOR_ROOT}"\n'
+                    'verification = "scripts/verify-vendored-grpc-transport.sh"\n'
+                ),
+                "scripts/verify-vendored-grpc-transport.sh": (
+                    "#!/usr/bin/env bash\nexit 0\n"
+                ),
+            }
+        )
+
+        self.assertNotIn(
+            VENDORED_TLS_TEST,
+            {finding["path"] for finding in report["findings"]},
+        )
+        self.assertEqual(
+            report["verified_secret_pattern_exclusions"],
+            [
+                {
+                    "path": VENDORED_TLS_TEST,
+                    "reason": "integrity-verified upstream public TLS test fixture",
+                    "verifier": "scripts/verify-vendored-grpc-transport.sh",
+                }
+            ],
+        )
+
+    def test_unverified_vendor_password_assignment_is_reported(self) -> None:
+        report = self.run_audit(
+            {
+                VENDORED_TLS_TEST: (
+                    "let pass" + 'word = "public-test-password"\n'
+                ),
+                "licenses/artifact-provenance.toml": (
+                    f'scope = "{VENDOR_ROOT}"\n'
+                    'verification = "scripts/verify-vendored-grpc-transport.sh"\n'
+                ),
+                "scripts/verify-vendored-grpc-transport.sh": (
+                    "#!/usr/bin/env bash\nexit 1\n"
+                ),
+            }
+        )
+
+        self.assertIn(
+            VENDORED_TLS_TEST,
+            {finding["path"] for finding in report["findings"]},
+        )
+        self.assertEqual(report["verified_secret_pattern_exclusions"], [])
 
     def test_report_discloses_narrow_scan_scope(self) -> None:
         report = self.run_audit({})
