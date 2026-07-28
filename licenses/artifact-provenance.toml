@@ -1,0 +1,173 @@
+schema_version = 1
+code_license = "MIT OR Apache-2.0"
+docs_license = "MIT OR Apache-2.0"
+
+[[category]]
+name = "fixture"
+status = "tracked"
+scope = "fixtures"
+origin = "repository-owned synthetic test inputs and metadata manifests"
+license = "MIT OR Apache-2.0"
+redistribution = "allowed"
+ownership = "repository"
+version = "1"
+retention = "deterministic tests and contract inventories"
+
+[[category.artifact]]
+path = "fixtures/binance/btcusdt-book-v1.jsonl"
+sha256 = "466de1750efd922ed76d682b1e29b11b8ded586b407dd02c9842e37f31aa4df5"
+
+[[category.artifact]]
+path = "fixtures/chains/bitcoin/manifest.toml"
+sha256 = "2b14c5baff11dd903239b239445e3ddb56ba898af35f2fe51cf7255474b17847"
+
+[[category.artifact]]
+path = "fixtures/chains/ethereum/manifest.toml"
+sha256 = "38ea6d05b7e4b161cd065f900717aa1e0c481174a61c76d2e053f5dbbc0fcf1a"
+
+[[category.artifact]]
+path = "fixtures/exchanges/binance/manifest.toml"
+sha256 = "b23066b165bc9d43f7dcd4d702a933d47bf6dcf91cc7b1b2045117631f8791ed"
+
+[[category.artifact]]
+path = "fixtures/exchanges/bybit/manifest.toml"
+sha256 = "62e97521efdf90e52d88fe138d367bf5abe4a104f85c3ed9f7bb49bb4ad1a7a9"
+
+[[category.artifact]]
+path = "fixtures/exchanges/deribit/manifest.toml"
+sha256 = "30e87e745afcba1e21d2fa2ec09825a015acac2f70abcbd92a9ce9e18f9cf279"
+
+[[category.artifact]]
+path = "fixtures/exchanges/kraken/manifest.toml"
+sha256 = "16529f6093028e1c64293c1b4de091c25d60863d17240616a52fa76d8c18a9ab"
+
+[[category.artifact]]
+path = "fixtures/golden-replays/features-v1/manifest.toml"
+sha256 = "424feda47ba4d054ce97862e09ec745b03d27f92ca1bc179487cfacb50d1c1f5"
+
+[[category.artifact]]
+path = "fixtures/golden-replays/market-foundation/manifest.toml"
+sha256 = "026be0748ef6a7858d10c5c8df269944e2393cd5b8f7d7a1f192da7d2bacc41f"
+
+[[category.artifact]]
+path = "fixtures/golden-replays/model-host-v1/manifest.toml"
+sha256 = "68e7c084e56d894c06ca3444481a9f3b1369ad6da8323e704cd7376cb6bc5a13"
+
+[[category.artifact]]
+path = "fixtures/golden-replays/risk-v1/manifest.toml"
+sha256 = "0b2765dc467b1b6d9d3f474d75a6bb3d942b70dfbf8d281e727f4aa746ef0c33"
+
+[[category.artifact]]
+path = "fixtures/golden-replays/slow-sources-v1/manifest.toml"
+sha256 = "d2c624b28e9ae48ba7702aaa43fb274a7907ae05c9dcf5671fde0108231295ed"
+
+[[category.artifact]]
+path = "fixtures/numerical/cusp_roots.json"
+sha256 = "b7698a5f1f793edeb4ef2e7b6c2eab7b332d21f014ab5bb7c635c6009773fd26"
+
+[[category.artifact]]
+path = "fixtures/prompts/adversarial/manifest.json"
+sha256 = "09c1bc30a21586bd428025b366ab9e331cf63a998b9a0fe74a1cc813f86e5a42"
+
+[[category.artifact]]
+path = "fixtures/prompts/event-extraction/manifest.json"
+sha256 = "4b1cf2037513f48db5a72416aee17923102cf70be20ad6ceb9ee8fa4e25bc139"
+
+[[category.artifact]]
+path = "fixtures/prompts/explanations/manifest.json"
+sha256 = "1fffca05ae4f8e4af39846ef770695df03c672524ac8d671a91c646922eb64bf"
+
+[[category]]
+name = "dataset"
+status = "absent"
+scope = "data"
+origin = "no distributable dataset committed"
+license = "not-applicable"
+redistribution = "not-applicable"
+ownership = "repository"
+version = "1"
+retention = "data/.gitkeep only"
+
+[[category]]
+name = "model"
+status = "metadata-only"
+scope = "models"
+origin = "repository-owned schemas, trust metadata, and a synthetic test manifest; no weights"
+license = "MIT OR Apache-2.0"
+redistribution = "allowed"
+ownership = "repository"
+version = "1"
+retention = "model contract and test metadata"
+
+[[category.artifact]]
+path = "models/public-test-artifacts/temporal-linear/model-manifest.json"
+sha256 = "2fa09e0a641a635878712fd2c060953471fc21d563eca2abea549d1a95d0635c"
+
+[[category.artifact]]
+path = "models/schemas/attribution-label.schema.json"
+sha256 = "0aa079760c67edbce504cce92f6e0f65de2af5166e6dddeea2d441c43fddae56"
+
+[[category.artifact]]
+path = "models/schemas/cusp-control-map.schema.json"
+sha256 = "50689e41fe9e002cf594ad226b15ae1b1828130ff6f91f9b4b519abffc7426e0"
+
+[[category.artifact]]
+path = "models/schemas/model-package.schema.json"
+sha256 = "87c4c7520c2b5e92aeff58f3db4a718cab6a36d8afcbf329029900b66daf3e8c"
+
+[[category.artifact]]
+path = "models/trusted-keys.json"
+sha256 = "058a240d9076542238d27cc216ac0555eed43a00f20d5b7ea340b05eb9a61a3d"
+
+[[category]]
+name = "generated-schema"
+status = "tracked"
+scope = "configs/schema.json"
+origin = "generated deterministically by config::schema through xtask generate-config-schema"
+license = "MIT OR Apache-2.0"
+redistribution = "allowed"
+ownership = "repository"
+version = "1"
+retention = "configuration validation contract"
+
+[[category.artifact]]
+path = "configs/schema.json"
+sha256 = "913fe161d2ce2d64921225326db62454a1c63339210e546341221ec3c9df1385"
+
+[[category]]
+name = "vendored-source"
+status = "tracked"
+scope = "apps/macos/Vendor/grpc-swift-nio-transport"
+origin = "https://github.com/grpc/grpc-swift-nio-transport tag 2.9.0 commit 2ca31f06658ed288a2560e23ad649acbb3d6b3a3"
+license = "Apache-2.0"
+redistribution = "allowed-with-license-and-notices"
+ownership = "grpc upstream; locally patched Package.swift"
+version = "2.9.0+local.1"
+retention = "pinned native gRPC transport source"
+evidence = [
+  "apps/macos/Vendor/grpc-swift-nio-transport/UPSTREAM.md",
+  "apps/macos/Vendor/grpc-swift-nio-transport/UPSTREAM_FILES.sha256",
+  "apps/macos/Vendor/grpc-swift-nio-transport/LICENSE",
+  "apps/macos/Vendor/grpc-swift-nio-transport/NOTICES.txt",
+]
+verification = "scripts/verify-vendored-grpc-transport.sh"
+
+[[category.artifact]]
+path = "apps/macos/Vendor/grpc-swift-nio-transport/UPSTREAM.md"
+sha256 = "5bf4f9eee7bf56729769fc186ced44bb98f6ada6a48f931dbb81e5772ead1698"
+
+[[category.artifact]]
+path = "apps/macos/Vendor/grpc-swift-nio-transport/UPSTREAM_FILES.sha256"
+sha256 = "d58f72bfdcca740a50dada3f2ca9d48d43b4bd75a925f35094d4f2f26e90e188"
+
+[[category.artifact]]
+path = "apps/macos/Vendor/grpc-swift-nio-transport/LICENSE"
+sha256 = "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+
+[[category.artifact]]
+path = "apps/macos/Vendor/grpc-swift-nio-transport/NOTICES.txt"
+sha256 = "53ab4b7f9add0b13c39b86a748a7ce71878d648702f409f6b5818e26bd775fbe"
+
+[[category.artifact]]
+path = "apps/macos/Vendor/grpc-swift-nio-transport/Package.swift"
+sha256 = "ada6e61ca9649fa34fdef619242fc0e21ab3a8bfde664f11611173d28ac2ad76"

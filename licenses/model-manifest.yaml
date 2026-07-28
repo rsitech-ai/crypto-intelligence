@@ -1,4 +1,6 @@
 schema_version: 1
-artifact_id: "licenses/model-manifest.yaml"
-status: implemented
-local_only: true
+category: model
+status: metadata-only
+authoritative_inventory: licenses/artifact-provenance.toml
+scope: models
+policy: schemas, trust metadata, and a test manifest are present; no model weights are committed

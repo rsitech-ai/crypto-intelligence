@@ -1,4 +1,6 @@
 schema_version: 1
-artifact_id: "licenses/fixture-manifest.yaml"
-status: implemented
-local_only: true
+category: fixture
+status: tracked
+authoritative_inventory: licenses/artifact-provenance.toml
+scope: fixtures
+policy: repository-owned synthetic inputs and metadata are explicitly licensed and integrity-checked

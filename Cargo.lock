@@ -1741,11 +1741,13 @@ name = "xtask"
 version = "0.1.0"
 dependencies = [
  "config",
+ "hex",
  "prost",
  "prost-build",
  "prost-types",
  "serde",
  "serde_json",
+ "sha2",
  "tempfile",
  "thiserror",
  "toml",
