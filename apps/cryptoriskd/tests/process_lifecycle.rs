@@ -10,7 +10,7 @@ use std::{
 
 use local_api::{
     auth::{SessionAuthenticator, SessionSecret, insert_authentication_metadata},
-    proto::market_v1::{GetSnapshotRequest, SnapshotHealth},
+    proto::market_v1::{GetOrderBookSnapshotRequest, SnapshotHealth},
     session::SessionDescriptor,
 };
 use serde::Deserialize;
@@ -257,8 +257,8 @@ async fn assert_authenticated_snapshot(readiness: &Readiness) {
     let token = SessionAuthenticator::new(secret).token(&descriptor);
     let mut market = support::MarketTestClient::connect(readiness.endpoint.clone()).await;
     let snapshot = market
-        .get_snapshot(insert_authentication_metadata(
-            Request::new(GetSnapshotRequest {}),
+        .get_order_book_snapshot(insert_authentication_metadata(
+            Request::new(GetOrderBookSnapshotRequest {}),
             &descriptor,
             &token,
         ))

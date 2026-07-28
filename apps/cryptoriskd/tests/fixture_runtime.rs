@@ -8,7 +8,7 @@ use std::{
 
 use local_api::{
     auth::{SessionAuthenticator, SessionSecret, insert_authentication_metadata},
-    proto::market_v1::{GetSnapshotRequest, SnapshotHealth},
+    proto::market_v1::{GetOrderBookSnapshotRequest, SnapshotHealth},
     session::SessionDescriptor,
 };
 use observability::{Component, MetricKey, MetricName, Metrics, Outcome, Venue};
@@ -101,8 +101,8 @@ async fn runtime_serves_exact_authenticated_fixture_snapshot_without_secret_outp
 
     let mut market = connect(running_address(&running)).await;
     let response = market
-        .get_snapshot(insert_authentication_metadata(
-            Request::new(GetSnapshotRequest {}),
+        .get_order_book_snapshot(insert_authentication_metadata(
+            Request::new(GetOrderBookSnapshotRequest {}),
             &descriptor,
             &token,
         ))
@@ -149,8 +149,8 @@ async fn restart_recovers_exact_fixture_without_appending_duplicates() {
     let token = authenticator.token(&second_descriptor);
     let mut market = connect(running_address(&second)).await;
     let response = market
-        .get_snapshot(insert_authentication_metadata(
-            Request::new(GetSnapshotRequest {}),
+        .get_order_book_snapshot(insert_authentication_metadata(
+            Request::new(GetOrderBookSnapshotRequest {}),
             &second_descriptor,
             &token,
         ))
@@ -447,7 +447,7 @@ async fn authentication_failure_does_not_change_the_authoritative_snapshot() {
     let mut market = connect(running_address(&running)).await;
 
     let status = market
-        .get_snapshot(Request::new(GetSnapshotRequest {}))
+        .get_order_book_snapshot(Request::new(GetOrderBookSnapshotRequest {}))
         .await
         .expect_err("missing authentication must fail");
     assert_eq!(status.code(), Code::Unauthenticated);
@@ -455,8 +455,8 @@ async fn authentication_failure_does_not_change_the_authoritative_snapshot() {
     let authenticator = SessionAuthenticator::new(secret());
     let token = authenticator.token(&descriptor);
     let response = market
-        .get_snapshot(insert_authentication_metadata(
-            Request::new(GetSnapshotRequest {}),
+        .get_order_book_snapshot(insert_authentication_metadata(
+            Request::new(GetOrderBookSnapshotRequest {}),
             &descriptor,
             &token,
         ))

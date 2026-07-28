@@ -35,7 +35,7 @@ public struct GRPCTransport: RPCTransport {
     self.priceDisplayScale = priceDisplayScale
   }
 
-  public func getSnapshot(
+  public func getOrderBookSnapshot(
     using credentials: SessionCredentials,
     timeout: Duration
   ) async throws -> MarketSnapshot {
@@ -47,15 +47,15 @@ public struct GRPCTransport: RPCTransport {
         transportSecurity: .plaintext
       )
     ) { client in
-      let market = Cmti_Market_V1_MarketService.Client(
+      let market = Cmti_Market_V1_MarketStateService.Client(
         wrapping: client
       )
       var options = CallOptions.defaults
       options.timeout = timeout
-      let response: Cmti_Market_V1_GetSnapshotResponse
+      let response: Cmti_Market_V1_GetOrderBookSnapshotResponse
       do {
-        response = try await market.getSnapshot(
-          Cmti_Market_V1_GetSnapshotRequest(),
+        response = try await market.getOrderBookSnapshot(
+          Cmti_Market_V1_GetOrderBookSnapshotRequest(),
           metadata: Self.authenticationMetadata(using: credentials),
           options: options
         )
@@ -85,7 +85,7 @@ public struct GRPCTransport: RPCTransport {
   }
 
   static func map(
-    _ response: Cmti_Market_V1_GetSnapshotResponse,
+    _ response: Cmti_Market_V1_GetOrderBookSnapshotResponse,
     priceDisplayScale: Int
   ) throws -> MarketSnapshot {
     guard (0...18).contains(priceDisplayScale),

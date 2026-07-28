@@ -1,0 +1,89 @@
+syntax = "proto3";
+
+package cmti.market.v1;
+
+import "cmti/common/v1/common.proto";
+
+enum SnapshotHealth {
+  SNAPSHOT_HEALTH_UNSPECIFIED = 0;
+  SNAPSHOT_HEALTH_HEALTHY = 1;
+  SNAPSHOT_HEALTH_DEGRADED = 2;
+  SNAPSHOT_HEALTH_STALE = 3;
+  SNAPSHOT_HEALTH_UNAVAILABLE = 4;
+}
+
+message ListAssetsRequest {}
+
+message ListAssetsResponse {
+  repeated cmti.common.v1.AssetId assets = 1;
+}
+
+message ListVenuesRequest {}
+
+message ListVenuesResponse {
+  repeated string venue_ids = 1;
+}
+
+message GetInstrumentRequest {
+  string instrument_id = 1;
+  uint32 generation = 2;
+}
+
+message GetInstrumentResponse {
+  string instrument_id = 1;
+  uint32 generation = 2;
+  cmti.common.v1.AssetId base_asset = 3;
+  cmti.common.v1.AssetId quote_asset = 4;
+  string venue_id = 5;
+}
+
+message SubscribeAssetStateRequest {
+  repeated cmti.common.v1.AssetId assets = 1;
+  string resume_token = 2;
+}
+
+message SubscribeAssetStateResponse {
+  cmti.common.v1.StreamMetadata stream = 1;
+  cmti.common.v1.AssetId asset = 2;
+  string consolidated_price = 3;
+  SnapshotHealth health = 4;
+}
+
+message SubscribeVenueStateRequest {
+  repeated string venue_ids = 1;
+  string resume_token = 2;
+}
+
+message SubscribeVenueStateResponse {
+  cmti.common.v1.StreamMetadata stream = 1;
+  string venue_id = 2;
+  SnapshotHealth health = 3;
+  uint64 source_latency_millis = 4;
+}
+
+message GetOrderBookSnapshotRequest {}
+
+message GetOrderBookSnapshotResponse {
+  string source = 1;
+  string symbol = 2;
+  uint32 generation = 3;
+  uint64 sequence = 4;
+  string best_bid = 5;
+  string best_ask = 6;
+  SnapshotHealth health = 7;
+  sint64 event_unix_nanos = 8;
+  sint64 receive_unix_nanos = 9;
+  uint64 freshness_millis = 10;
+}
+
+service CatalogService {
+  rpc ListAssets(ListAssetsRequest) returns (ListAssetsResponse);
+  rpc ListVenues(ListVenuesRequest) returns (ListVenuesResponse);
+  rpc GetInstrument(GetInstrumentRequest) returns (GetInstrumentResponse);
+}
+
+service MarketStateService {
+  rpc SubscribeAssetState(SubscribeAssetStateRequest) returns (stream SubscribeAssetStateResponse);
+  rpc SubscribeVenueState(SubscribeVenueStateRequest) returns (stream SubscribeVenueStateResponse);
+  rpc GetOrderBookSnapshot(GetOrderBookSnapshotRequest) returns (GetOrderBookSnapshotResponse);
+}

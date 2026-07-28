@@ -43,14 +43,17 @@ const APPROVED_FOUNDATION_DEPENDENCIES: &[&str] = &[
     "tonic-prost-build",
     "zeroize",
 ];
+// The generated wrapper is an exact local include surface. Proto reproducibility
+// and the one-way binding policy independently constrain every included file.
 const APPROVED_FOUNDATION_NETWORK_CAPABILITIES: &[&str] = &[
     "configs/default.toml bind_address=\"127.0.0.1:0\"",
+    "crates/local-api/src/generated.rs production source indirection",
     "crates/local-api/src/server.rs TcpListener::bind(crate::server::LOOPBACK_BIND)",
 ];
 const APPROVED_FOUNDATION_DEPENDENCY_CAPABILITIES: &[&str] =
     &["rustix@1.1.4:features=alloc,default,fs,process,std"];
 const APPROVED_LOCAL_API_BUILD_SCRIPT_BLAKE3: &str =
-    "c763491bf93f30a5f85ceeb4c9d853053d1788facc5748df1635047fa6b87b3a";
+    "3fcb1a95bcde42ceed9d46788b20d746956ad33d877b89e18fa35cde74a396c3";
 const APPROVED_GENERATED_BINDING_POLICY_BLAKE3: &str =
     "a041c60568e96cc3af126117cfe113235a01ae31e4ce5cbb610769c608b62a2c";
 
@@ -1650,7 +1653,7 @@ fn every_network_capability_family_is_detected_by_mutation() {
         (
             "generated-tonic-client-alias",
             concat!(
-                "use local_api::proto::market_v1::market_service_client::MarketServiceClient as RemoteClient;\n",
+                "use local_api::proto::market_v1::market_state_service_client::MarketStateServiceClient as RemoteClient;\n",
                 "pub async fn mutate(uri: String) { let _ = RemoteClient::connect::<String>(uri).await; }\n",
             ),
         ),
@@ -1816,7 +1819,7 @@ fn production_custom_build_output_policy_rejects_appended_client_generation() {
         .expect("approved local-api build script must read");
     mutated.push_str(
         "\nfn append_client_surface(output: &std::path::Path) {\n\
-         std::fs::write(output.join(\"cmti.market.v1.rs\"), \"pub mod market_service_client {}\").unwrap();\n\
+         std::fs::write(output.join(\"cmti.market.v1.rs\"), \"pub mod market_state_service_client {}\").unwrap();\n\
          }\n",
     );
     fs::write(&build_script, mutated).expect("custom-build mutation must write");
@@ -1832,7 +1835,13 @@ fn production_custom_build_output_policy_rejects_appended_client_generation() {
 
 fn copy_tracked_repository(source: &Path, destination: &Path) {
     let listed = Command::new("git")
-        .args(["ls-files", "-z"])
+        .args([
+            "ls-files",
+            "-z",
+            "--cached",
+            "--others",
+            "--exclude-standard",
+        ])
         .current_dir(source)
         .output()
         .expect("tracked repository inventory must run");
@@ -1849,6 +1858,9 @@ fn copy_tracked_repository(source: &Path, destination: &Path) {
             std::str::from_utf8(relative).expect("tracked repository path must be UTF-8"),
         );
         let from = source.join(relative);
+        if !from.is_file() {
+            continue;
+        }
         let to = destination.join(relative);
         fs::create_dir_all(to.parent().expect("tracked path must have a parent"))
             .expect("tracked destination directory must write");
@@ -1985,15 +1997,15 @@ fn cargo_metadata_target_outside_package_src_cannot_escape_source_ownership() {
 #[test]
 fn generated_client_policy_rejects_multiline_module_declarations() {
     let generated = concat!(
-        "pub mod market_service_client\n",
+        "pub mod market_state_service_client\n",
         "{\n",
-        "    pub struct MarketServiceClient<T>(T);\n",
+        "    pub struct MarketStateServiceClient<T>(T);\n",
         "}\n",
     );
 
     assert_eq!(
         generated_binding_policy::grpc_client_module(generated),
-        Some("market_service_client"),
+        Some("market_state_service_client"),
         "valid multiline Rust module declaration escaped generated-client policy"
     );
 }
@@ -2001,14 +2013,14 @@ fn generated_client_policy_rejects_multiline_module_declarations() {
 #[test]
 fn generated_client_policy_skips_comments_between_module_tokens() {
     for generated in [
-        "pub /* outer /* nested */ comment */ mod market_service_client {}\n",
-        "pub // generated visibility\nmod market_service_client {}\n",
-        "pub mod market_service_client /* generated body */ {}\n",
-        "pub mod r#market_service_client {}\n",
+        "pub /* outer /* nested */ comment */ mod market_state_service_client {}\n",
+        "pub // generated visibility\nmod market_state_service_client {}\n",
+        "pub mod market_state_service_client /* generated body */ {}\n",
+        "pub mod r#market_state_service_client {}\n",
     ] {
         assert_eq!(
             generated_binding_policy::grpc_client_module(generated),
-            Some("market_service_client"),
+            Some("market_state_service_client"),
             "valid commented or raw-identifier module escaped generated-client policy"
         );
     }
@@ -2017,15 +2029,15 @@ fn generated_client_policy_skips_comments_between_module_tokens() {
 #[test]
 fn generated_client_policy_cannot_be_desynchronized_by_preceding_literals() {
     for generated in [
-        "\"/*\"; pub mod market_service_client {}\n",
-        "'/'; pub mod market_service_client {}\n",
-        "r#\"/*\"#; pub mod market_service_client {}\n",
-        "b\"/*\"; pub mod market_service_client {}\n",
-        "br#\"/*\"#; pub mod market_service_client {}\n",
+        "\"/*\"; pub mod market_state_service_client {}\n",
+        "'/'; pub mod market_state_service_client {}\n",
+        "r#\"/*\"#; pub mod market_state_service_client {}\n",
+        "b\"/*\"; pub mod market_state_service_client {}\n",
+        "br#\"/*\"#; pub mod market_state_service_client {}\n",
     ] {
         assert_eq!(
             generated_binding_policy::grpc_client_module(generated),
-            Some("market_service_client"),
+            Some("market_state_service_client"),
             "preceding literal desynchronized generated-client policy"
         );
     }
@@ -2034,12 +2046,12 @@ fn generated_client_policy_cannot_be_desynchronized_by_preceding_literals() {
 #[test]
 fn generated_client_policy_rejects_external_module_declarations() {
     for generated in [
-        "pub mod market_service_client;\n",
-        "#[path = \"/private/tmp/generated-client.rs\"] pub mod market_service_client;\n",
+        "pub mod market_state_service_client;\n",
+        "#[path = \"/private/tmp/generated-client.rs\"] pub mod market_state_service_client;\n",
     ] {
         assert_eq!(
             generated_binding_policy::grpc_client_module(generated),
-            Some("market_service_client"),
+            Some("market_state_service_client"),
             "external generated-client module escaped structural policy"
         );
     }
@@ -2236,7 +2248,44 @@ fn active_runtime_exposes_market_observation_but_no_execution_authority() {
 
     assert_eq!(
         inventory.protobuf_methods,
-        ["HealthService.Check", "MarketService.GetSnapshot"]
+        [
+            "AdminService.ApplyConfiguration",
+            "AdminService.GetRuntimeStatus",
+            "AdminService.RequestGracefulShutdown",
+            "AlertService.ListRules",
+            "AlertService.SubscribeAlertEvents",
+            "AlertService.UpsertRule",
+            "CatalogService.GetInstrument",
+            "CatalogService.ListAssets",
+            "CatalogService.ListVenues",
+            "CuspService.GetCuspState",
+            "DataQualityService.SubscribeQuality",
+            "ExportService.CreateExport",
+            "ForecastService.GetEvidence",
+            "ForecastService.GetForecast",
+            "ForecastService.GetScenario",
+            "ForecastService.SubscribeForecasts",
+            "HealthService.Check",
+            "MarketStateService.GetOrderBookSnapshot",
+            "MarketStateService.SubscribeAssetState",
+            "MarketStateService.SubscribeVenueState",
+            "ModelHostService.GetCapabilities",
+            "ModelHostService.InferBatch",
+            "ModelHostService.WarmModel",
+            "ModelRegistryService.GetModelCard",
+            "ModelRegistryService.ListModels",
+            "ReplayService.ControlReplay",
+            "ReplayService.CreateReplay",
+            "ReplayService.SubscribeReplayState",
+            "RiskService.GetCuspState",
+            "RiskService.GetEvidenceBundle",
+            "RiskService.GetForecastSnapshot",
+            "RiskService.GetScenarioDistribution",
+            "RiskService.SubscribeForecasts",
+            "SessionService.NegotiateSession",
+            "SettingsService.GetSettings",
+            "SettingsService.UpdateSettings",
+        ]
     );
     assert_eq!(
         inventory.cli_options,

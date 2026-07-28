@@ -120,28 +120,28 @@
   "proto/buf.yaml": [
     "2026-07-24-phase-00-foundations-contracts.md:task-6:Create versioned protobuf contracts and reproducible code generation"
   ],
-  "proto/buf.lock": [
+  "proto/FIELD_NUMBERS.md": [
     "2026-07-24-phase-00-foundations-contracts.md:task-6:Create versioned protobuf contracts and reproducible code generation"
   ],
   "proto/buf.gen.yaml": [
     "2026-07-24-phase-00-foundations-contracts.md:task-6:Create versioned protobuf contracts and reproducible code generation",
     "2026-07-24-phase-06-macos-rpc-product.md:task-2:Generate Swift protobufs and implement the actor-isolated gRPC transport"
   ],
-  "proto/common/v1/common.proto": [
+  "proto/cmti/common/v1/common.proto": [
     "2026-07-24-phase-00-foundations-contracts.md:task-6:Create versioned protobuf contracts and reproducible code generation"
   ],
-  "proto/market/v1/market.proto": [
+  "proto/cmti/market/v1/market.proto": [
     "2026-07-24-phase-00-foundations-contracts.md:task-6:Create versioned protobuf contracts and reproducible code generation"
   ],
-  "proto/risk/v1/risk.proto": [
+  "proto/cmti/risk/v1/risk.proto": [
     "2026-07-24-phase-00-foundations-contracts.md:task-6:Create versioned protobuf contracts and reproducible code generation",
     "2026-07-24-phase-03-stochastic-cusp.md:task-10:Expose cusp RPC data and automate the production-inclusion ablation gate",
     "2026-07-24-phase-04-risk-calibration-alerts.md:task-13:Expose forecast/evidence/scenario/alert services and prove latency/coherence under load"
   ],
-  "proto/replay/v1/replay.proto": [
+  "proto/cmti/replay/v1/replay.proto": [
     "2026-07-24-phase-00-foundations-contracts.md:task-6:Create versioned protobuf contracts and reproducible code generation"
   ],
-  "proto/admin/v1/admin.proto": [
+  "proto/cmti/admin/v1/admin.proto": [
     "2026-07-24-phase-00-foundations-contracts.md:task-6:Create versioned protobuf contracts and reproducible code generation",
     "2026-07-24-phase-07-local-apple-models.md:task-2:Create the isolated Swift model-host process and authenticated ModelHostService bridge"
   ],
@@ -1536,7 +1536,7 @@
   "crates/observability/tests/observability_contract.rs": [
     "2026-07-24-phase-08-hardening-shadow-release.md:task-1:Implement local observability, stable telemetry fields, log redaction, and SLO snapshots"
   ],
-  "proto/health/v1/health.proto": [
+  "proto/cmti/health/v1/health.proto": [
     "2026-07-24-phase-08-hardening-shadow-release.md:task-1:Implement local observability, stable telemetry fields, log redaction, and SLO snapshots",
     "2026-07-24-phase-08-hardening-shadow-release.md:task-7:Implement disk, clock, sleep/wake, and network failure state machines"
   ],
@@ -1569,7 +1569,7 @@
   "apps/crypto-evaluate/src/capacity.rs": [
     "2026-07-24-phase-08-hardening-shadow-release.md:task-2:Implement the hardware-aware capacity planner and source admission controller"
   ],
-  "proto/settings/v1/settings.proto": [
+  "proto/cmti/settings/v1/settings.proto": [
     "2026-07-24-phase-08-hardening-shadow-release.md:task-2:Implement the hardware-aware capacity planner and source admission controller"
   ],
   "apps/macos/Packages/TransitionClient/Sources/TransitionClient/Domain/Capacity.swift": [

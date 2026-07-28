@@ -3,15 +3,25 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use domain::{InstrumentId, SourceId, SourceKind, UnixNanos, VenueId};
+use domain::{
+    AssetId as DomainAssetId, AssetNamespace as DomainAssetNamespace, InstrumentId, SourceId,
+    SourceKind, UnixNanos, VenueId,
+};
 use fixed_decimal::{FixedDecimal, Price};
 use local_api::{
     auth::{
         SessionAuthenticator, SessionSecret, TOKEN_METADATA_KEY, insert_authentication_metadata,
     },
     proto::{
+        common_v1::{
+            AssetId, AssetNamespace, StreamDeliveryPolicy, StreamFrameKind, StreamTerminalStatus,
+        },
         health_v1::{CheckRequest, CheckResponse, ServingStatus},
-        market_v1::{GetSnapshotRequest, GetSnapshotResponse, SnapshotHealth},
+        market_v1::{
+            GetOrderBookSnapshotRequest, GetOrderBookSnapshotResponse, SnapshotHealth,
+            SubscribeAssetStateRequest, SubscribeAssetStateResponse, SubscribeVenueStateRequest,
+            SubscribeVenueStateResponse,
+        },
     },
     server::{LoopbackServer, MarketSnapshot, ServerError},
     session::{SessionDescriptor, TOKEN_LIFETIME_SECONDS},
@@ -62,10 +72,10 @@ struct MarketTestClient {
 }
 
 impl MarketTestClient {
-    async fn get_snapshot(
+    async fn get_order_book_snapshot(
         &mut self,
-        request: impl IntoRequest<GetSnapshotRequest>,
-    ) -> Result<Response<GetSnapshotResponse>, Status> {
+        request: impl IntoRequest<GetOrderBookSnapshotRequest>,
+    ) -> Result<Response<GetOrderBookSnapshotResponse>, Status> {
         self.inner
             .ready()
             .await
@@ -73,7 +83,43 @@ impl MarketTestClient {
         self.inner
             .unary(
                 request.into_request(),
-                PathAndQuery::from_static("/cmti.market.v1.MarketService/GetSnapshot"),
+                PathAndQuery::from_static(
+                    "/cmti.market.v1.MarketStateService/GetOrderBookSnapshot",
+                ),
+                tonic_prost::ProstCodec::default(),
+            )
+            .await
+    }
+
+    async fn subscribe_asset_state(
+        &mut self,
+        request: impl IntoRequest<SubscribeAssetStateRequest>,
+    ) -> Result<Response<tonic::codec::Streaming<SubscribeAssetStateResponse>>, Status> {
+        self.inner
+            .ready()
+            .await
+            .map_err(|_| Status::unavailable("loopback transport unavailable"))?;
+        self.inner
+            .server_streaming(
+                request.into_request(),
+                PathAndQuery::from_static("/cmti.market.v1.MarketStateService/SubscribeAssetState"),
+                tonic_prost::ProstCodec::default(),
+            )
+            .await
+    }
+
+    async fn subscribe_venue_state(
+        &mut self,
+        request: impl IntoRequest<SubscribeVenueStateRequest>,
+    ) -> Result<Response<tonic::codec::Streaming<SubscribeVenueStateResponse>>, Status> {
+        self.inner
+            .ready()
+            .await
+            .map_err(|_| Status::unavailable("loopback transport unavailable"))?;
+        self.inner
+            .server_streaming(
+                request.into_request(),
+                PathAndQuery::from_static("/cmti.market.v1.MarketStateService/SubscribeVenueState"),
                 tonic_prost::ProstCodec::default(),
             )
             .await
@@ -124,6 +170,8 @@ fn snapshot() -> MarketSnapshot {
     MarketSnapshot::new(
         source,
         instrument,
+        DomainAssetId::new(DomainAssetNamespace::Native, "bitcoin", "", "BTC", 7)
+            .expect("fixture asset must be valid"),
         9_001,
         best_bid,
         best_ask,
@@ -133,6 +181,16 @@ fn snapshot() -> MarketSnapshot {
         25,
     )
     .expect("fixture snapshot must be valid")
+}
+
+fn requested_asset() -> AssetId {
+    AssetId {
+        namespace: AssetNamespace::Native as i32,
+        chain_id: "bitcoin".to_owned(),
+        contract_or_mint: String::new(),
+        canonical_symbol: "BTC".to_owned(),
+        generation: 7,
+    }
 }
 
 async fn connect(address: SocketAddr) -> (HealthTestClient, MarketTestClient) {
@@ -208,7 +266,7 @@ async fn liveness_is_unauthenticated_and_wire_minimal() {
     );
 
     let unauthenticated = market
-        .get_snapshot(GetSnapshotRequest {})
+        .get_order_book_snapshot(GetOrderBookSnapshotRequest {})
         .await
         .expect_err("snapshot must reject missing metadata");
     assert_eq!(unauthenticated.code(), Code::Unauthenticated);
@@ -234,11 +292,14 @@ async fn authenticated_snapshot_returns_only_canonical_authoritative_fields() {
     .await
     .expect("exact loopback bind must start");
     let (_, mut market) = connect(server.local_addr()).await;
-    let request =
-        insert_authentication_metadata(Request::new(GetSnapshotRequest {}), &session, &token);
+    let request = insert_authentication_metadata(
+        Request::new(GetOrderBookSnapshotRequest {}),
+        &session,
+        &token,
+    );
 
     let response = market
-        .get_snapshot(request)
+        .get_order_book_snapshot(request)
         .await
         .expect("valid session metadata must authenticate")
         .into_inner();
@@ -252,6 +313,277 @@ async fn authenticated_snapshot_returns_only_canonical_authoritative_fields() {
     assert_eq!(response.event_unix_nanos, 1_700_000_000_100_000_000);
     assert_eq!(response.receive_unix_nanos, 1_700_000_000_125_000_000);
     assert_eq!(response.freshness_millis, 25);
+
+    server
+        .shutdown()
+        .await
+        .expect("server must shut down cleanly");
+}
+
+#[tokio::test]
+async fn authenticated_asset_stream_falls_back_to_snapshot_and_terminates_explicitly() {
+    let session = descriptor();
+    let client_authenticator = SessionAuthenticator::new(secret());
+    let token = client_authenticator.token(&session);
+    let server = LoopbackServer::spawn(
+        "127.0.0.1:0".parse().expect("bind address must parse"),
+        secret(),
+        session.clone(),
+        snapshot(),
+    )
+    .await
+    .expect("exact loopback bind must start");
+    let (_, mut market) = connect(server.local_addr()).await;
+    let asset = requested_asset();
+    let request = insert_authentication_metadata(
+        Request::new(SubscribeAssetStateRequest {
+            assets: vec![asset.clone()],
+            resume_token: "not-retained".to_owned(),
+        }),
+        &session,
+        &token,
+    );
+
+    let mut stream = market
+        .subscribe_asset_state(request)
+        .await
+        .expect("valid stream request must authenticate")
+        .into_inner();
+    let first = stream
+        .message()
+        .await
+        .expect("snapshot frame must decode")
+        .expect("snapshot frame must be present");
+    assert_eq!(first.asset, Some(asset.clone()));
+    assert_eq!(first.consolidated_price, "67234.105");
+    assert_eq!(first.health, SnapshotHealth::Healthy as i32);
+    let first_metadata = first.stream.expect("snapshot metadata must be present");
+    assert_eq!(first_metadata.stream_id, "market-asset-state");
+    assert_eq!(first_metadata.stream_sequence, 1);
+    assert_eq!(
+        first_metadata.snapshot_or_delta,
+        StreamFrameKind::Snapshot as i32
+    );
+    assert_eq!(first_metadata.resume_token, "1");
+    assert_eq!(first_metadata.schema_version, 1);
+    assert_eq!(first_metadata.dropped_since_previous, 0);
+    assert_eq!(first_metadata.coalesced_since_previous, 0);
+    assert_eq!(
+        first_metadata.delivery_policy,
+        StreamDeliveryPolicy::CoalesceSuperseded as i32
+    );
+    assert_eq!(
+        first_metadata.terminal_status,
+        StreamTerminalStatus::Open as i32
+    );
+    assert!(first_metadata.terminal_error.is_none());
+
+    let second = stream
+        .message()
+        .await
+        .expect("terminal frame must decode")
+        .expect("terminal frame must be present");
+    assert_eq!(second.asset, Some(asset));
+    let second_metadata = second.stream.expect("terminal metadata must be present");
+    assert_eq!(second_metadata.stream_id, "market-asset-state");
+    assert_eq!(second_metadata.stream_sequence, 2);
+    assert_eq!(
+        second_metadata.snapshot_or_delta,
+        StreamFrameKind::Terminal as i32
+    );
+    assert_eq!(second_metadata.resume_token, "2");
+    assert_eq!(
+        second_metadata.terminal_status,
+        StreamTerminalStatus::Completed as i32
+    );
+    assert!(second_metadata.terminal_error.is_none());
+    assert!(
+        stream
+            .message()
+            .await
+            .expect("stream completion must decode")
+            .is_none(),
+        "stream must close immediately after its typed terminal frame"
+    );
+
+    server
+        .shutdown()
+        .await
+        .expect("server must shut down cleanly");
+}
+
+#[tokio::test]
+async fn asset_stream_rejects_missing_authentication_and_empty_selection() {
+    let session = descriptor();
+    let client_authenticator = SessionAuthenticator::new(secret());
+    let token = client_authenticator.token(&session);
+    let server = LoopbackServer::spawn(
+        "127.0.0.1:0".parse().expect("bind address must parse"),
+        secret(),
+        session.clone(),
+        snapshot(),
+    )
+    .await
+    .expect("exact loopback bind must start");
+    let (_, mut market) = connect(server.local_addr()).await;
+
+    let unauthenticated = market
+        .subscribe_asset_state(SubscribeAssetStateRequest {
+            assets: Vec::new(),
+            resume_token: String::new(),
+        })
+        .await
+        .expect_err("missing stream credentials must fail");
+    assert_eq!(unauthenticated.code(), Code::Unauthenticated);
+    assert_eq!(unauthenticated.message(), "authentication failed");
+
+    let empty = insert_authentication_metadata(
+        Request::new(SubscribeAssetStateRequest {
+            assets: Vec::new(),
+            resume_token: String::new(),
+        }),
+        &session,
+        &token,
+    );
+    let invalid = market
+        .subscribe_asset_state(empty)
+        .await
+        .expect_err("empty stream selection must fail");
+    assert_eq!(invalid.code(), Code::InvalidArgument);
+    assert_eq!(
+        invalid.message(),
+        "exactly one asset is required by this runtime"
+    );
+
+    server
+        .shutdown()
+        .await
+        .expect("server must shut down cleanly");
+}
+
+#[tokio::test]
+async fn market_streams_reject_identity_confusion_and_multiple_filters() {
+    let session = descriptor();
+    let client_authenticator = SessionAuthenticator::new(secret());
+    let token = client_authenticator.token(&session);
+    let server = LoopbackServer::spawn(
+        "127.0.0.1:0".parse().expect("bind address must parse"),
+        secret(),
+        session.clone(),
+        snapshot(),
+    )
+    .await
+    .expect("exact loopback bind must start");
+    let (_, mut market) = connect(server.local_addr()).await;
+
+    let mut different_asset = requested_asset();
+    different_asset.canonical_symbol = "ETH".to_owned();
+    let mismatch = insert_authentication_metadata(
+        Request::new(SubscribeAssetStateRequest {
+            assets: vec![different_asset],
+            resume_token: String::new(),
+        }),
+        &session,
+        &token,
+    );
+    let mismatch = market
+        .subscribe_asset_state(mismatch)
+        .await
+        .expect_err("a different asset must not inherit the configured snapshot");
+    assert_eq!(mismatch.code(), Code::NotFound);
+    assert_eq!(mismatch.message(), "requested asset is not available");
+
+    let multiple = insert_authentication_metadata(
+        Request::new(SubscribeAssetStateRequest {
+            assets: vec![requested_asset(), requested_asset()],
+            resume_token: String::new(),
+        }),
+        &session,
+        &token,
+    );
+    let multiple = market
+        .subscribe_asset_state(multiple)
+        .await
+        .expect_err("the single-snapshot runtime must reject multiple assets");
+    assert_eq!(multiple.code(), Code::InvalidArgument);
+    assert_eq!(
+        multiple.message(),
+        "exactly one asset is required by this runtime"
+    );
+
+    let wrong_venue = insert_authentication_metadata(
+        Request::new(SubscribeVenueStateRequest {
+            venue_ids: vec!["coinbase".to_owned()],
+            resume_token: String::new(),
+        }),
+        &session,
+        &token,
+    );
+    let wrong_venue = market
+        .subscribe_venue_state(wrong_venue)
+        .await
+        .expect_err("a different venue must not inherit the configured snapshot");
+    assert_eq!(wrong_venue.code(), Code::NotFound);
+    assert_eq!(wrong_venue.message(), "requested venue is not available");
+
+    let multiple_venues = insert_authentication_metadata(
+        Request::new(SubscribeVenueStateRequest {
+            venue_ids: vec!["binance".to_owned(), "binance".to_owned()],
+            resume_token: String::new(),
+        }),
+        &session,
+        &token,
+    );
+    let multiple_venues = market
+        .subscribe_venue_state(multiple_venues)
+        .await
+        .expect_err("the single-snapshot runtime must reject multiple venues");
+    assert_eq!(multiple_venues.code(), Code::InvalidArgument);
+    assert_eq!(
+        multiple_venues.message(),
+        "exactly one venue is required by this runtime"
+    );
+
+    let valid_venue = insert_authentication_metadata(
+        Request::new(SubscribeVenueStateRequest {
+            venue_ids: vec!["binance".to_owned()],
+            resume_token: "not-retained".to_owned(),
+        }),
+        &session,
+        &token,
+    );
+    let mut venue_stream = market
+        .subscribe_venue_state(valid_venue)
+        .await
+        .expect("the configured venue must stream")
+        .into_inner();
+    let snapshot = venue_stream
+        .message()
+        .await
+        .expect("venue snapshot must decode")
+        .expect("venue snapshot must be present");
+    assert_eq!(snapshot.venue_id, "binance");
+    let metadata = snapshot.stream.expect("venue snapshot metadata must exist");
+    assert_eq!(metadata.snapshot_or_delta, StreamFrameKind::Snapshot as i32);
+    assert_eq!(metadata.stream_sequence, 1);
+    let terminal = venue_stream
+        .message()
+        .await
+        .expect("venue terminal frame must decode")
+        .expect("venue terminal frame must be present");
+    let metadata = terminal.stream.expect("venue terminal metadata must exist");
+    assert_eq!(metadata.snapshot_or_delta, StreamFrameKind::Terminal as i32);
+    assert_eq!(
+        metadata.terminal_status,
+        StreamTerminalStatus::Completed as i32
+    );
+    assert!(
+        venue_stream
+            .message()
+            .await
+            .expect("venue completion must decode")
+            .is_none()
+    );
 
     server
         .shutdown()
@@ -274,12 +606,15 @@ async fn missing_and_mutated_credentials_fail_closed() {
     .expect("exact loopback bind must start");
     let (_, mut market) = connect(server.local_addr()).await;
 
-    let mut missing_token =
-        insert_authentication_metadata(Request::new(GetSnapshotRequest {}), &session, &token);
+    let mut missing_token = insert_authentication_metadata(
+        Request::new(GetOrderBookSnapshotRequest {}),
+        &session,
+        &token,
+    );
     missing_token.metadata_mut().remove_bin(TOKEN_METADATA_KEY);
     assert_eq!(
         market
-            .get_snapshot(missing_token)
+            .get_order_book_snapshot(missing_token)
             .await
             .expect_err("missing token must fail")
             .code(),
@@ -289,21 +624,27 @@ async fn missing_and_mutated_credentials_fail_closed() {
     let mut mutated = *token.as_bytes();
     mutated[0] ^= 1;
     let mutated = local_api::auth::AuthenticationToken::from_bytes(mutated);
-    let mutated_request =
-        insert_authentication_metadata(Request::new(GetSnapshotRequest {}), &session, &mutated);
+    let mutated_request = insert_authentication_metadata(
+        Request::new(GetOrderBookSnapshotRequest {}),
+        &session,
+        &mutated,
+    );
     assert_eq!(
         market
-            .get_snapshot(mutated_request)
+            .get_order_book_snapshot(mutated_request)
             .await
             .expect_err("mutated token must fail")
             .code(),
         Code::Unauthenticated
     );
 
-    let valid_request =
-        insert_authentication_metadata(Request::new(GetSnapshotRequest {}), &session, &token);
+    let valid_request = insert_authentication_metadata(
+        Request::new(GetOrderBookSnapshotRequest {}),
+        &session,
+        &token,
+    );
     market
-        .get_snapshot(valid_request)
+        .get_order_book_snapshot(valid_request)
         .await
         .expect("token must work before expiry");
 
@@ -329,8 +670,8 @@ async fn public_server_uses_system_time_to_reject_an_already_expired_session() {
     let (_, mut market) = connect(server.local_addr()).await;
 
     let status = market
-        .get_snapshot(insert_authentication_metadata(
-            Request::new(GetSnapshotRequest {}),
+        .get_order_book_snapshot(insert_authentication_metadata(
+            Request::new(GetOrderBookSnapshotRequest {}),
             &session,
             &token,
         ))

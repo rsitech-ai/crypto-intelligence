@@ -5,7 +5,7 @@ use std::{
 };
 
 use connector_binance::{ParseError, parse_fixture_line};
-use domain::{InstrumentId, SourceId, UnixNanos};
+use domain::{AssetId, AssetNamespace, InstrumentId, SourceId, UnixNanos};
 use event_envelope::UncheckedEventPayload;
 use fixed_decimal::Price;
 use local_api::{
@@ -329,6 +329,8 @@ pub async fn start_fixture_runtime(options: RuntimeOptions) -> Result<RunningDae
     let market_snapshot = MarketSnapshot::new(
         published.source,
         published.instrument,
+        AssetId::new(AssetNamespace::Native, "bitcoin", "", "BTC", 1)
+            .expect("the fixed BTC fixture identity must be valid"),
         published.sequence,
         published.best_bid,
         published.best_ask,

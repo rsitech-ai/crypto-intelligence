@@ -1,0 +1,38 @@
+syntax = "proto3";
+
+package cmti.health.v1;
+
+import "cmti/common/v1/common.proto";
+
+// Minimal unauthenticated serving state.
+enum ServingStatus {
+  SERVING_STATUS_UNSPECIFIED = 0;
+  SERVING_STATUS_SERVING = 1;
+  SERVING_STATUS_NOT_SERVING = 2;
+}
+
+message CheckRequest {}
+
+message CheckResponse {
+  ServingStatus status = 1;
+  cmti.common.v1.ProtocolVersion protocol = 2;
+}
+
+message SubscribeQualityRequest {
+  repeated string source_ids = 1;
+  string resume_token = 2;
+}
+
+message SubscribeQualityResponse {
+  cmti.common.v1.StreamMetadata stream = 1;
+  string source_id = 2;
+  cmti.common.v1.DataQualitySummary quality = 3;
+}
+
+service HealthService {
+  rpc Check(CheckRequest) returns (CheckResponse);
+}
+
+service DataQualityService {
+  rpc SubscribeQuality(SubscribeQualityRequest) returns (stream SubscribeQualityResponse);
+}

@@ -1,0 +1,62 @@
+syntax = "proto3";
+
+package cmti.replay.v1;
+
+import "cmti/common/v1/common.proto";
+
+enum ReplayControlAction {
+  REPLAY_CONTROL_ACTION_UNSPECIFIED = 0;
+  REPLAY_CONTROL_ACTION_PAUSE = 1;
+  REPLAY_CONTROL_ACTION_RESUME = 2;
+  REPLAY_CONTROL_ACTION_SEEK = 3;
+  REPLAY_CONTROL_ACTION_STOP = 4;
+}
+
+message ReplayInterval {
+  cmti.common.v1.UnixNanos start_inclusive = 1;
+  cmti.common.v1.UnixNanos end_exclusive = 2;
+}
+
+message CreateReplayRequest {
+  ReplayInterval interval = 1;
+  repeated string instruments = 2;
+  uint32 speed_ppm = 3;
+}
+
+message CreateReplayResponse {
+  string replay_id = 1;
+  string state = 2;
+  cmti.common.v1.UnixNanos cursor = 3;
+  bytes configuration_blake3 = 4;
+  bytes model_set_blake3 = 5;
+}
+
+message ControlReplayRequest {
+  string replay_id = 1;
+  ReplayControlAction action = 2;
+  cmti.common.v1.UnixNanos seek_cursor = 3;
+}
+
+message ControlReplayResponse {
+  string replay_id = 1;
+  string state = 2;
+  cmti.common.v1.UnixNanos cursor = 3;
+}
+
+message SubscribeReplayStateRequest {
+  string replay_id = 1;
+  string resume_token = 2;
+}
+
+message SubscribeReplayStateResponse {
+  cmti.common.v1.StreamMetadata stream = 1;
+  string replay_id = 2;
+  string state = 3;
+  cmti.common.v1.UnixNanos cursor = 4;
+}
+
+service ReplayService {
+  rpc CreateReplay(CreateReplayRequest) returns (CreateReplayResponse);
+  rpc ControlReplay(ControlReplayRequest) returns (ControlReplayResponse);
+  rpc SubscribeReplayState(SubscribeReplayStateRequest) returns (stream SubscribeReplayStateResponse);
+}

@@ -1,0 +1,96 @@
+syntax = "proto3";
+
+package cmti.admin.v1;
+
+import "cmti/common/v1/common.proto";
+
+message GetRuntimeStatusRequest {}
+
+message GetRuntimeStatusResponse {
+  string runtime_state = 1;
+  cmti.common.v1.UnixNanos observed_at = 2;
+  bytes configuration_blake3 = 3;
+  uint64 uptime_seconds = 4;
+}
+
+message ApplyConfigurationRequest {
+  bytes expected_configuration_blake3 = 1;
+  bytes proposed_configuration = 2;
+  string actor = 3;
+}
+
+message ApplyConfigurationResponse {
+  bytes old_configuration_blake3 = 1;
+  bytes new_configuration_blake3 = 2;
+  bool restart_required = 3;
+}
+
+message RequestGracefulShutdownRequest {
+  string reason = 1;
+}
+
+message RequestGracefulShutdownResponse {
+  bool accepted = 1;
+  cmti.common.v1.UnixNanos deadline = 2;
+}
+
+message ListModelsRequest {}
+
+message ListModelsResponse {
+  repeated string model_package_ids = 1;
+}
+
+message GetModelCardRequest {
+  string model_package_id = 1;
+}
+
+message GetModelCardResponse {
+  string model_package_id = 1;
+  bytes model_card_json = 2;
+  bytes artifact_blake3 = 3;
+}
+
+message GetCapabilitiesRequest {}
+
+message GetCapabilitiesResponse {
+  repeated string capabilities = 1;
+  uint64 maximum_batch_size = 2;
+  bool available = 3;
+}
+
+message WarmModelRequest {
+  string model_package_id = 1;
+}
+
+message WarmModelResponse {
+  bool ready = 1;
+  uint64 resident_bytes = 2;
+}
+
+message InferBatchRequest {
+  string model_package_id = 1;
+  repeated bytes inputs = 2;
+  uint64 deadline_millis = 3;
+}
+
+message InferBatchResponse {
+  repeated bytes outputs = 1;
+  uint64 elapsed_micros = 2;
+}
+
+service AdminService {
+  rpc GetRuntimeStatus(GetRuntimeStatusRequest) returns (GetRuntimeStatusResponse);
+  rpc ApplyConfiguration(ApplyConfigurationRequest) returns (ApplyConfigurationResponse);
+  rpc RequestGracefulShutdown(RequestGracefulShutdownRequest) returns (RequestGracefulShutdownResponse);
+}
+
+service ModelRegistryService {
+  rpc ListModels(ListModelsRequest) returns (ListModelsResponse);
+  rpc GetModelCard(GetModelCardRequest) returns (GetModelCardResponse);
+}
+
+service ModelHostService {
+  rpc GetCapabilities(GetCapabilitiesRequest) returns (GetCapabilitiesResponse);
+  rpc WarmModel(WarmModelRequest) returns (WarmModelResponse);
+  rpc InferBatch(InferBatchRequest) returns (InferBatchResponse);
+}

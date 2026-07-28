@@ -1,7 +1,0 @@
-syntax = "proto3";
-package cmti.replay.v1;
-import "common/v1/common.proto";
-message ReplayInterval { cmti.common.v1.UnixNanos start_inclusive = 1; cmti.common.v1.UnixNanos end_exclusive = 2; }
-message StartReplayRequest { ReplayInterval interval = 1; repeated string instruments = 2; uint32 speed_ppm = 3; }
-message ReplaySession { string session_id = 1; string state = 2; cmti.common.v1.UnixNanos cursor = 3; bytes configuration_blake3 = 4; bytes model_set_blake3 = 5; }
-service ReplayService { rpc StartReplay(StartReplayRequest) returns (ReplaySession); }

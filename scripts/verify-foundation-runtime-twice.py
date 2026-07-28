@@ -74,7 +74,7 @@ FIXED_ARTIFACTS = {
     "Cargo.lock",
     "configs/schema.json",
     "fixtures/binance/btcusdt-book-v1.jsonl",
-    "proto/buf.lock",
+    "proto/baselines/cmti-v1.binpb",
     "apps/macos/CuspObservatory.xcodeproj/project.pbxproj",
     "apps/macos/Packages/TransitionClient/Package.resolved",
     "target/debug/cryptoriskd",

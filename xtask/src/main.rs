@@ -10,25 +10,20 @@ use std::{
 
 use prost::Message as _;
 use prost_build::Module;
-use prost_types::compiler::{CodeGeneratorRequest, CodeGeneratorResponse, code_generator_response};
+use prost_types::{
+    DescriptorProto, EnumDescriptorProto, FileDescriptorSet,
+    compiler::{CodeGeneratorRequest, CodeGeneratorResponse, code_generator_response},
+};
 use serde::Deserialize;
 use sha2::{Digest as _, Sha256};
 use thiserror::Error;
 
+#[path = "../../build-support/proto_inventory.rs"]
+mod proto_inventory;
 #[path = "../../build-support/protoc_toolchain.rs"]
 mod protoc_toolchain;
 
 const UNKNOWN_COMMAND_EXIT_CODE: u8 = 2;
-const PROTO_FILES: [&str; 3] = [
-    "common/v1/common.proto",
-    "health/v1/health.proto",
-    "market/v1/market.proto",
-];
-const GENERATED_PROTO_FILES: [&str; 3] = [
-    "cmti.common.v1.rs",
-    "cmti.health.v1.rs",
-    "cmti.market.v1.rs",
-];
 
 #[derive(Debug, Error)]
 enum XtaskError {
@@ -239,6 +234,7 @@ fn run() -> Result<(), XtaskError> {
         "workspace-check" if options.is_empty() => workspace_check(),
         "license-check" if options.is_empty() => license_check(),
         "generate-config-schema" => generate_config_schema(options),
+        "generate-field-registry" => generate_field_registry(options),
         "generate-proto" => generate_proto_command(options),
         "proto-check" if options.is_empty() => proto_check(),
         "protoc-gen-local-api" if options.is_empty() => protoc_gen_local_api(),
@@ -253,7 +249,7 @@ fn run() -> Result<(), XtaskError> {
 
 fn print_help() {
     println!(
-        "xtask commands:\n  help\n  workspace-check\n  license-check\n  generate-config-schema [--check]\n  generate-proto [--check]\n  proto-check"
+        "xtask commands:\n  help\n  workspace-check\n  license-check\n  generate-config-schema [--check]\n  generate-field-registry [--check]\n  generate-proto [--check]\n  proto-check"
     );
 }
 
@@ -782,6 +778,208 @@ fn license_policy(reason: impl std::fmt::Display) -> XtaskError {
     }
 }
 
+fn generate_field_registry(options: &[OsString]) -> Result<(), XtaskError> {
+    let check = match options {
+        [] => false,
+        [option] if option == "--check" => true,
+        _ => return Err(XtaskError::InvalidInvocation),
+    };
+    let toolchain = read_proto_toolchain_contract()?;
+    ensure_proto_tool("buf", &toolchain.buf)?;
+    let descriptor_bytes = run_proto_tool(
+        "buf build descriptor",
+        "buf",
+        &[
+            "build",
+            "proto",
+            "--as-file-descriptor-set",
+            "--output",
+            "-",
+        ],
+    )?
+    .stdout;
+    let descriptor = FileDescriptorSet::decode(descriptor_bytes.as_slice()).map_err(|source| {
+        XtaskError::ProtoGenerate {
+            path: workspace_root().join("proto"),
+            reason: format!("could not decode descriptor set: {source}"),
+        }
+    })?;
+    let rendered = render_field_registry(&descriptor);
+    let path = workspace_root().join("proto/FIELD_NUMBERS.md");
+    if check {
+        let checked_in =
+            fs::read_to_string(&path).map_err(|source| XtaskError::ProtoOutputRead {
+                path: path.clone(),
+                source,
+            })?;
+        if checked_in != rendered {
+            return Err(XtaskError::ProtoGenerate {
+                path,
+                reason: "checked-in field-number registry is stale".to_owned(),
+            });
+        }
+    } else {
+        fs::write(&path, rendered).map_err(|source| XtaskError::ProtoOutputRead {
+            path: path.clone(),
+            source,
+        })?;
+        println!("generate-field-registry: wrote {}", path.display());
+    }
+    Ok(())
+}
+
+#[derive(Default)]
+struct RegistryAllocations {
+    fields: BTreeSet<(String, String, i32)>,
+    enums: BTreeSet<(String, String, i32)>,
+    reserved_field_numbers: BTreeSet<(String, i32)>,
+    reserved_field_names: BTreeSet<(String, String)>,
+    reserved_enum_numbers: BTreeSet<(String, i32)>,
+    reserved_enum_names: BTreeSet<(String, String)>,
+}
+
+fn render_field_registry(descriptor: &FileDescriptorSet) -> String {
+    let mut allocations = RegistryAllocations::default();
+    for file in &descriptor.file {
+        let package = file.package();
+        for message in &file.message_type {
+            collect_registry_message(package, "", message, &mut allocations);
+        }
+        for enumeration in &file.enum_type {
+            collect_registry_enum(package, "", enumeration, &mut allocations);
+        }
+    }
+
+    let mut output = String::from(
+        "# CMTI Protobuf Field Number Registry\n\n\
+This file is generated from the reviewed descriptor by `cargo run -p xtask -- \
+generate-field-registry`. Deleted field and enum names and numbers remain in the \
+reserved tables and must never be reused.\n\n\
+## Message fields\n\n\
+| Fully qualified message | Field | Number | Status |\n\
+|---|---|---:|---|\n",
+    );
+    for (message, field, number) in allocations.fields {
+        output.push_str(&format!(
+            "| `{message}` | `{field}` | {number} | Active |\n"
+        ));
+    }
+    output.push_str(
+        "\n## Enum values\n\n\
+| Fully qualified enum | Value | Number | Status |\n\
+|---|---|---:|---|\n",
+    );
+    for (enumeration, value, number) in allocations.enums {
+        output.push_str(&format!(
+            "| `{enumeration}` | `{value}` | {number} | Active |\n"
+        ));
+    }
+    output.push_str(
+        "\n## Reserved message field numbers\n\n\
+| Fully qualified message | Number |\n\
+|---|---:|\n",
+    );
+    for (message, number) in allocations.reserved_field_numbers {
+        output.push_str(&format!("| `{message}` | {number} |\n"));
+    }
+    output.push_str(
+        "\n## Reserved message field names\n\n\
+| Fully qualified message | Name |\n\
+|---|---|\n",
+    );
+    for (message, name) in allocations.reserved_field_names {
+        output.push_str(&format!("| `{message}` | `{name}` |\n"));
+    }
+    output.push_str(
+        "\n## Reserved enum numbers\n\n\
+| Fully qualified enum | Number |\n\
+|---|---:|\n",
+    );
+    for (enumeration, number) in allocations.reserved_enum_numbers {
+        output.push_str(&format!("| `{enumeration}` | {number} |\n"));
+    }
+    output.push_str(
+        "\n## Reserved enum names\n\n\
+| Fully qualified enum | Name |\n\
+|---|---|\n",
+    );
+    for (enumeration, name) in allocations.reserved_enum_names {
+        output.push_str(&format!("| `{enumeration}` | `{name}` |\n"));
+    }
+    output
+}
+
+fn collect_registry_message(
+    package: &str,
+    parents: &str,
+    message: &DescriptorProto,
+    allocations: &mut RegistryAllocations,
+) {
+    let name = message.name();
+    let qualified = if parents.is_empty() {
+        format!("{package}.{name}")
+    } else {
+        format!("{package}.{parents}.{name}")
+    };
+    for field in &message.field {
+        allocations
+            .fields
+            .insert((qualified.clone(), field.name().to_owned(), field.number()));
+    }
+    for reserved_name in &message.reserved_name {
+        allocations
+            .reserved_field_names
+            .insert((qualified.clone(), reserved_name.clone()));
+    }
+    for range in &message.reserved_range {
+        for number in range.start()..range.end() {
+            allocations
+                .reserved_field_numbers
+                .insert((qualified.clone(), number));
+        }
+    }
+    let nested_parents = qualified
+        .strip_prefix(&format!("{package}."))
+        .expect("qualified registry message must retain package");
+    for enumeration in &message.enum_type {
+        collect_registry_enum(package, nested_parents, enumeration, allocations);
+    }
+    for nested in &message.nested_type {
+        collect_registry_message(package, nested_parents, nested, allocations);
+    }
+}
+
+fn collect_registry_enum(
+    package: &str,
+    parents: &str,
+    enumeration: &EnumDescriptorProto,
+    allocations: &mut RegistryAllocations,
+) {
+    let name = enumeration.name();
+    let qualified = if parents.is_empty() {
+        format!("{package}.{name}")
+    } else {
+        format!("{package}.{parents}.{name}")
+    };
+    for value in &enumeration.value {
+        allocations
+            .enums
+            .insert((qualified.clone(), value.name().to_owned(), value.number()));
+    }
+    for reserved_name in &enumeration.reserved_name {
+        allocations
+            .reserved_enum_names
+            .insert((qualified.clone(), reserved_name.clone()));
+    }
+    for range in &enumeration.reserved_range {
+        for number in range.start()..=range.end() {
+            allocations
+                .reserved_enum_numbers
+                .insert((qualified.clone(), number));
+        }
+    }
+}
+
 fn generate_proto_command(options: &[OsString]) -> Result<(), XtaskError> {
     let check = match options {
         [] => false,
@@ -797,9 +995,63 @@ fn proto_check() -> Result<(), XtaskError> {
     let protoc = resolve_protoc(&toolchain)?;
     run_proto_tool("buf lint proto", "buf", &["lint", "proto"])?;
     run_proto_tool("buf build proto", "buf", &["build", "proto"])?;
+    run_proto_tool(
+        "buf breaking proto",
+        "buf",
+        &[
+            "breaking",
+            "proto",
+            "--against",
+            "proto/baselines/cmti-v1.binpb",
+        ],
+    )?;
     generate_proto_with_protoc(true, protoc.path())?;
+    generate_field_registry(&[OsString::from("--check")])?;
+    verify_buf_generation_template()?;
     println!("proto-check: ok");
     Ok(())
+}
+
+fn verify_buf_generation_template() -> Result<(), XtaskError> {
+    let temporary = tempfile::Builder::new()
+        .prefix("cmti-buf-generate-")
+        .tempdir()
+        .map_err(|source| XtaskError::ProtoOutputDirectory {
+            path: env::temp_dir(),
+            source,
+        })?;
+    let output_base = temporary
+        .path()
+        .to_str()
+        .ok_or_else(|| XtaskError::ProtoGenerate {
+            path: temporary.path().to_path_buf(),
+            reason: "temporary output path must be UTF-8".to_owned(),
+        })?;
+    let output = Command::new("buf")
+        .args([
+            "generate",
+            "proto",
+            "--template",
+            "proto/buf.gen.yaml",
+            "--output",
+            output_base,
+        ])
+        .current_dir(workspace_root())
+        .output()
+        .map_err(|source| XtaskError::ProtoToolSpawn {
+            tool: "buf",
+            source,
+        })?;
+    if !output.status.success() {
+        return Err(XtaskError::ProtoToolFailed {
+            command: "buf generate proto",
+            status: output.status,
+            stderr: String::from_utf8_lossy(&output.stderr).trim().to_owned(),
+        });
+    }
+    let generated = temporary.path().join("crates/local-api/src/generated");
+    let checked_in = workspace_root().join("crates/local-api/src/generated");
+    compare_generated_outputs(&generated, &checked_in, &expected_generated_proto_files()?)
 }
 
 fn generate_proto(check: bool) -> Result<(), XtaskError> {
@@ -809,6 +1061,7 @@ fn generate_proto(check: bool) -> Result<(), XtaskError> {
 }
 
 fn generate_proto_with_protoc(check: bool, protoc: &Path) -> Result<(), XtaskError> {
+    let generated_files = expected_generated_proto_files()?;
     if check {
         let first = tempfile::Builder::new()
             .prefix("cmti-proto-first-")
@@ -826,20 +1079,41 @@ fn generate_proto_with_protoc(check: bool, protoc: &Path) -> Result<(), XtaskErr
             })?;
         generate_proto_into(first.path(), protoc)?;
         generate_proto_into(second.path(), protoc)?;
-        compare_generated_outputs(first.path(), second.path())?;
+        compare_generated_outputs(first.path(), second.path(), &generated_files)?;
+        compare_generated_outputs(
+            first.path(),
+            &workspace_root().join("crates/local-api/src/generated"),
+            &generated_files,
+        )?;
         println!(
             "generate-proto: reproducible ({} files)",
-            GENERATED_PROTO_FILES.len()
+            generated_files.len()
         );
         return Ok(());
     }
 
-    let output = workspace_root().join("target/generated/local-api");
+    let temporary = tempfile::Builder::new()
+        .prefix("cmti-proto-write-")
+        .tempdir()
+        .map_err(|source| XtaskError::ProtoOutputDirectory {
+            path: env::temp_dir(),
+            source,
+        })?;
+    generate_proto_into(temporary.path(), protoc)?;
+    let output = workspace_root().join("crates/local-api/src/generated");
     fs::create_dir_all(&output).map_err(|source| XtaskError::ProtoOutputDirectory {
         path: output.clone(),
         source,
     })?;
-    generate_proto_into(&output, protoc)?;
+    for file in &generated_files {
+        fs::copy(temporary.path().join(file), output.join(file)).map_err(|source| {
+            XtaskError::ProtoOutputRead {
+                path: output.join(file),
+                source,
+            }
+        })?;
+    }
+    remove_unexpected_generated_files(&output, &generated_files)?;
     println!("generate-proto: wrote {}", output.display());
     Ok(())
 }
@@ -904,9 +1178,11 @@ fn run_proto_tool(
 
 fn generate_proto_into(output: &Path, protoc: &Path) -> Result<(), XtaskError> {
     let proto_root = workspace_root().join("proto");
-    let proto_files = PROTO_FILES
-        .map(|relative| proto_root.join(relative))
-        .to_vec();
+    let inventory = discover_proto_inventory()?;
+    let proto_files = inventory
+        .iter()
+        .map(|input| proto_root.join(&input.relative_path))
+        .collect::<Vec<_>>();
     for proto_file in &proto_files {
         if !proto_file.is_file() {
             return Err(XtaskError::ProtoGenerate {
@@ -919,7 +1195,7 @@ fn generate_proto_into(output: &Path, protoc: &Path) -> Result<(), XtaskError> {
     let mut prost_config = prost_build::Config::new();
     prost_config.protoc_executable(protoc);
     tonic_prost_build::configure()
-        .build_client(true)
+        .build_client(false)
         .build_server(true)
         .out_dir(output)
         .compile_with_config(prost_config, &proto_files, &[proto_root])
@@ -931,10 +1207,7 @@ fn generate_proto_into(output: &Path, protoc: &Path) -> Result<(), XtaskError> {
 }
 
 fn verify_generated_outputs(output: &Path) -> Result<(), XtaskError> {
-    let expected = GENERATED_PROTO_FILES
-        .into_iter()
-        .map(str::to_owned)
-        .collect::<BTreeSet<_>>();
+    let expected = expected_generated_proto_files()?;
     let actual = fs::read_dir(output)
         .map_err(|source| XtaskError::ProtoOutputRead {
             path: output.to_path_buf(),
@@ -957,8 +1230,14 @@ fn verify_generated_outputs(output: &Path) -> Result<(), XtaskError> {
     }
 }
 
-fn compare_generated_outputs(first: &Path, second: &Path) -> Result<(), XtaskError> {
-    for file in GENERATED_PROTO_FILES {
+fn compare_generated_outputs(
+    first: &Path,
+    second: &Path,
+    generated_files: &BTreeSet<String>,
+) -> Result<(), XtaskError> {
+    verify_generated_outputs(first)?;
+    verify_generated_outputs(second)?;
+    for file in generated_files {
         let first_path = first.join(file);
         let second_path = second.join(file);
         let first_bytes = fs::read(&first_path).map_err(|source| XtaskError::ProtoOutputRead {
@@ -971,12 +1250,56 @@ fn compare_generated_outputs(first: &Path, second: &Path) -> Result<(), XtaskErr
                 source,
             })?;
         if first_bytes != second_bytes {
-            return Err(XtaskError::ProtoNotDeterministic {
-                file: file.to_owned(),
-            });
+            return Err(XtaskError::ProtoNotDeterministic { file: file.clone() });
         }
     }
     Ok(())
+}
+
+fn remove_unexpected_generated_files(
+    output: &Path,
+    expected: &BTreeSet<String>,
+) -> Result<(), XtaskError> {
+    for entry in fs::read_dir(output).map_err(|source| XtaskError::ProtoOutputRead {
+        path: output.to_path_buf(),
+        source,
+    })? {
+        let entry = entry.map_err(|source| XtaskError::ProtoOutputRead {
+            path: output.to_path_buf(),
+            source,
+        })?;
+        let file_name = entry.file_name().to_string_lossy().into_owned();
+        if entry.path().extension().and_then(|value| value.to_str()) == Some("rs")
+            && !expected.contains(&file_name)
+        {
+            fs::remove_file(entry.path()).map_err(|source| XtaskError::ProtoOutputRead {
+                path: entry.path(),
+                source,
+            })?;
+        }
+    }
+    Ok(())
+}
+
+fn discover_proto_inventory() -> Result<Vec<proto_inventory::ProtoInput>, XtaskError> {
+    let proto_root = workspace_root().join("proto");
+    proto_inventory::discover(&proto_root).map_err(|source| XtaskError::ProtoGenerate {
+        path: proto_root,
+        reason: source.to_string(),
+    })
+}
+
+fn expected_proto_files() -> Result<BTreeSet<String>, XtaskError> {
+    Ok(discover_proto_inventory()?
+        .into_iter()
+        .map(|input| input.relative_path)
+        .collect())
+}
+
+fn expected_generated_proto_files() -> Result<BTreeSet<String>, XtaskError> {
+    Ok(proto_inventory::generated_rust_files(
+        &discover_proto_inventory()?,
+    ))
 }
 
 fn protoc_gen_local_api() -> Result<(), XtaskError> {
@@ -1013,7 +1336,7 @@ fn protoc_gen_local_api() -> Result<(), XtaskError> {
     let mut config = prost_build::Config::new();
     config.service_generator(
         tonic_prost_build::configure()
-            .build_client(true)
+            .build_client(false)
             .build_server(true)
             .service_generator(),
     );
@@ -1050,10 +1373,7 @@ fn protoc_gen_local_api() -> Result<(), XtaskError> {
 }
 
 fn validate_plugin_inputs(request: &CodeGeneratorRequest) -> Result<(), XtaskError> {
-    let expected = PROTO_FILES
-        .into_iter()
-        .map(str::to_owned)
-        .collect::<BTreeSet<_>>();
+    let expected = expected_proto_files()?;
     let actual = request
         .file_to_generate
         .iter()
@@ -1078,10 +1398,7 @@ fn validate_plugin_inputs(request: &CodeGeneratorRequest) -> Result<(), XtaskErr
 }
 
 fn validate_plugin_outputs(response: &CodeGeneratorResponse) -> Result<(), XtaskError> {
-    let expected = GENERATED_PROTO_FILES
-        .into_iter()
-        .map(str::to_owned)
-        .collect::<BTreeSet<_>>();
+    let expected = expected_generated_proto_files()?;
     let actual = response
         .file
         .iter()
@@ -1210,16 +1527,20 @@ mod tests {
         );
     }
 
-    fn plugin_request(files: &[&str]) -> CodeGeneratorRequest {
+    fn plugin_request(files: &[String]) -> CodeGeneratorRequest {
+        let expected = expected_proto_files()
+            .expect("checked-in protobuf inventory must be discoverable")
+            .into_iter()
+            .collect::<Vec<_>>();
         CodeGeneratorRequest {
-            file_to_generate: files.iter().map(|file| (*file).to_owned()).collect(),
-            proto_file: PROTO_FILES
+            file_to_generate: files.to_vec(),
+            proto_file: expected
                 .iter()
                 .map(|file| FileDescriptorProto {
-                    name: Some((*file).to_owned()),
+                    name: Some(file.clone()),
                     package: Some(format!(
                         "cmti.{}.v1",
-                        file.split('/').next().expect("fixture path has a package")
+                        file.split('/').nth(1).expect("fixture path has a package")
                     )),
                     ..FileDescriptorProto::default()
                 })
@@ -1228,12 +1549,12 @@ mod tests {
         }
     }
 
-    fn plugin_response(files: &[&str]) -> CodeGeneratorResponse {
+    fn plugin_response(files: &[String]) -> CodeGeneratorResponse {
         CodeGeneratorResponse {
             file: files
                 .iter()
                 .map(|file| code_generator_response::File {
-                    name: Some((*file).to_owned()),
+                    name: Some(file.clone()),
                     ..code_generator_response::File::default()
                 })
                 .collect(),
@@ -1242,17 +1563,22 @@ mod tests {
     }
 
     #[test]
-    fn plugin_requires_the_exact_three_input_paths() {
-        assert!(validate_plugin_inputs(&plugin_request(&PROTO_FILES)).is_ok());
+    fn plugin_requires_the_exact_discovered_input_paths() {
+        let proto_files = expected_proto_files()
+            .expect("checked-in protobuf inventory must be discoverable")
+            .into_iter()
+            .collect::<Vec<_>>();
+        assert_eq!(proto_files.len(), 7);
+        assert!(validate_plugin_inputs(&plugin_request(&proto_files)).is_ok());
 
-        let missing = &PROTO_FILES[..2];
+        let missing = &proto_files[..proto_files.len() - 1];
         assert!(matches!(
             validate_plugin_inputs(&plugin_request(missing)),
             Err(XtaskError::ProtoInputMismatch { .. })
         ));
 
-        let mut extra = PROTO_FILES.to_vec();
-        extra.push("admin/v1/admin.proto");
+        let mut extra = proto_files;
+        extra.push("cmti/unknown/v1/unknown.proto".to_owned());
         assert!(matches!(
             validate_plugin_inputs(&plugin_request(&extra)),
             Err(XtaskError::ProtoInputMismatch { .. })
@@ -1260,16 +1586,23 @@ mod tests {
     }
 
     #[test]
-    fn plugin_requires_the_exact_three_output_filenames() {
-        assert!(validate_plugin_outputs(&plugin_response(&GENERATED_PROTO_FILES)).is_ok());
+    fn plugin_requires_the_exact_discovered_output_filenames() {
+        let generated_files = expected_generated_proto_files()
+            .expect("checked-in protobuf inventory must be discoverable")
+            .into_iter()
+            .collect::<Vec<_>>();
+        assert_eq!(generated_files.len(), 7);
+        assert!(validate_plugin_outputs(&plugin_response(&generated_files)).is_ok());
 
         assert!(matches!(
-            validate_plugin_outputs(&plugin_response(&GENERATED_PROTO_FILES[..2])),
+            validate_plugin_outputs(&plugin_response(
+                &generated_files[..generated_files.len() - 1]
+            )),
             Err(XtaskError::ProtoOutputMismatch { .. })
         ));
 
-        let mut extra = GENERATED_PROTO_FILES.to_vec();
-        extra.push("cmti.admin.v1.rs");
+        let mut extra = generated_files;
+        extra.push("cmti.unknown.v1.rs".to_owned());
         assert!(matches!(
             validate_plugin_outputs(&plugin_response(&extra)),
             Err(XtaskError::ProtoOutputMismatch { .. })

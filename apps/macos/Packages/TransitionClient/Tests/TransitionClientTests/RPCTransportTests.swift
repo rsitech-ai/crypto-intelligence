@@ -66,7 +66,7 @@ struct RPCTransportTests {
 
   @Test("generated snapshot maps exact RPC strings and display metadata")
   func generatedSnapshotMapsWithoutNumericRecalculation() throws {
-    var response = Cmti_Market_V1_GetSnapshotResponse()
+    var response = Cmti_Market_V1_GetOrderBookSnapshotResponse()
     response.source = "binance-fixture"
     response.symbol = "BTCUSDT"
     response.generation = 1
@@ -98,7 +98,7 @@ struct RPCTransportTests {
       (.healthy, "60000.100"),
       (.healthy, "NaN"),
     ] {
-      var response = Cmti_Market_V1_GetSnapshotResponse()
+      var response = Cmti_Market_V1_GetOrderBookSnapshotResponse()
       response.source = "binance-fixture"
       response.symbol = "BTCUSDT"
       response.generation = 1
@@ -144,7 +144,7 @@ private actor SnapshotTransport: RPCTransport {
     self.result = result
   }
 
-  func getSnapshot(
+  func getOrderBookSnapshot(
     using credentials: SessionCredentials,
     timeout: Duration
   ) async throws -> MarketSnapshot {

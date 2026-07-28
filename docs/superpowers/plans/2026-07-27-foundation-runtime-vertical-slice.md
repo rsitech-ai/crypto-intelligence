@@ -120,7 +120,7 @@ Add these crates to the active workspace only after their focused tests pass. `F
 
 **Interfaces:**
 - Consumes: Task 2 canonical types/configuration
-- Produces: Buf-valid v1 contracts, deterministic Rust generation, `SessionDescriptor`, `SessionAuthenticator`, minimal `HealthService`, authenticated `MarketService.GetSnapshot`, and a loopback server handle with graceful shutdown
+- Produces: Buf-valid v1 contracts, deterministic Rust generation, `SessionDescriptor`, `SessionAuthenticator`, minimal `HealthService`, authenticated `MarketStateService.GetOrderBookSnapshot`, and a loopback server handle with graceful shutdown
 
 **Implementation notes:**
 

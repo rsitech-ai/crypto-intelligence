@@ -1,4 +1,4 @@
-use local_api::proto::market_v1::{GetSnapshotRequest, GetSnapshotResponse};
+use local_api::proto::market_v1::{GetOrderBookSnapshotRequest, GetOrderBookSnapshotResponse};
 use tonic::{
     IntoRequest, Response, Status,
     client::Grpc,
@@ -22,10 +22,10 @@ impl MarketTestClient {
         }
     }
 
-    pub async fn get_snapshot(
+    pub async fn get_order_book_snapshot(
         &mut self,
-        request: impl IntoRequest<GetSnapshotRequest>,
-    ) -> Result<Response<GetSnapshotResponse>, Status> {
+        request: impl IntoRequest<GetOrderBookSnapshotRequest>,
+    ) -> Result<Response<GetOrderBookSnapshotResponse>, Status> {
         self.inner
             .ready()
             .await
@@ -33,7 +33,9 @@ impl MarketTestClient {
         self.inner
             .unary(
                 request.into_request(),
-                PathAndQuery::from_static("/cmti.market.v1.MarketService/GetSnapshot"),
+                PathAndQuery::from_static(
+                    "/cmti.market.v1.MarketStateService/GetOrderBookSnapshot",
+                ),
                 tonic_prost::ProstCodec::default(),
             )
             .await

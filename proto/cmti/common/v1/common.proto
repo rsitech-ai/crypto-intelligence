@@ -1,0 +1,143 @@
+syntax = "proto3";
+
+package cmti.common.v1;
+
+// Public protocol version negotiated by the local daemon and native client.
+message ProtocolVersion {
+  uint32 major = 1;
+  uint32 minor = 2;
+}
+
+// Signed Unix epoch timestamp with nanosecond precision.
+message UnixNanos {
+  sint64 value = 1;
+}
+
+// Namespace controlling chain and contract identity requirements.
+enum AssetNamespace {
+  ASSET_NAMESPACE_UNSPECIFIED = 0;
+  ASSET_NAMESPACE_NATIVE = 1;
+  ASSET_NAMESPACE_EVM = 2;
+  ASSET_NAMESPACE_SOLANA = 3;
+  ASSET_NAMESPACE_FIAT = 4;
+  ASSET_NAMESPACE_SYNTHETIC = 5;
+}
+
+// Generation-aware asset identity; symbols alone are never identifiers.
+message AssetId {
+  AssetNamespace namespace = 1;
+  string chain_id = 2;
+  string contract_or_mint = 3;
+  string canonical_symbol = 4;
+  uint32 generation = 5;
+}
+
+// Bounded source-quality summary represented in parts per million.
+message DataQualitySummary {
+  uint32 quality_score_ppm = 1;
+  uint64 quality_flags = 2;
+  repeated string degradation_reasons = 3;
+}
+
+enum AvailabilityState {
+  AVAILABILITY_STATE_UNSPECIFIED = 0;
+  AVAILABILITY_STATE_AVAILABLE = 1;
+  AVAILABILITY_STATE_DEGRADED = 2;
+  AVAILABILITY_STATE_EXPERIMENTAL = 3;
+  AVAILABILITY_STATE_OUT_OF_DISTRIBUTION = 4;
+  AVAILABILITY_STATE_INSUFFICIENT_DATA = 5;
+  AVAILABILITY_STATE_SOURCE_UNHEALTHY = 6;
+  AVAILABILITY_STATE_MODEL_INCOMPATIBLE = 7;
+}
+
+// Whether a stream frame is a complete snapshot or an incremental update.
+enum StreamFrameKind {
+  STREAM_FRAME_KIND_UNSPECIFIED = 0;
+  STREAM_FRAME_KIND_SNAPSHOT = 1;
+  STREAM_FRAME_KIND_DELTA = 2;
+  STREAM_FRAME_KIND_SNAPSHOT_REFERENCE = 3;
+  STREAM_FRAME_KIND_TERMINAL = 4;
+}
+
+// Delivery policy is explicit so clients can distinguish lossy from audit streams.
+enum StreamDeliveryPolicy {
+  STREAM_DELIVERY_POLICY_UNSPECIFIED = 0;
+  STREAM_DELIVERY_POLICY_COALESCE_SUPERSEDED = 1;
+  STREAM_DELIVERY_POLICY_LOSSLESS_BOUNDED = 2;
+}
+
+enum StreamTerminalStatus {
+  STREAM_TERMINAL_STATUS_UNSPECIFIED = 0;
+  STREAM_TERMINAL_STATUS_OPEN = 1;
+  STREAM_TERMINAL_STATUS_COMPLETED = 2;
+  STREAM_TERMINAL_STATUS_CANCELLED = 3;
+  STREAM_TERMINAL_STATUS_FAILED = 4;
+}
+
+// Stable application error codes carried in structured gRPC status details.
+enum ErrorCode {
+  ERROR_CODE_UNSPECIFIED = 0;
+  ERROR_CODE_INVALID_ARGUMENT = 1;
+  ERROR_CODE_UNAUTHENTICATED = 2;
+  ERROR_CODE_PERMISSION_DENIED = 3;
+  ERROR_CODE_NOT_FOUND = 4;
+  ERROR_CODE_INCOMPATIBLE_VERSION = 5;
+  ERROR_CODE_SOURCE_UNHEALTHY = 6;
+  ERROR_CODE_MODEL_UNAVAILABLE = 7;
+  ERROR_CODE_MODEL_INCOMPATIBLE = 8;
+  ERROR_CODE_INSUFFICIENT_DATA = 9;
+  ERROR_CODE_OUT_OF_DISTRIBUTION = 10;
+  ERROR_CODE_CAPACITY_EXCEEDED = 11;
+  ERROR_CODE_STORAGE_PRESSURE = 12;
+  ERROR_CODE_REPLAY_NOT_AVAILABLE = 13;
+  ERROR_CODE_INTERNAL_INVARIANT_VIOLATION = 14;
+}
+
+// Machine-readable error detail; reason is stable and contains no secrets.
+message ErrorDetail {
+  ErrorCode code = 1;
+  string reason = 2;
+  bool retryable = 3;
+}
+
+// Metadata required on every server-streaming response.
+message StreamMetadata {
+  string stream_id = 1;
+  uint64 stream_sequence = 2;
+  StreamFrameKind snapshot_or_delta = 3;
+  UnixNanos as_of_time = 4;
+  string resume_token = 5;
+  uint32 schema_version = 6;
+  uint64 dropped_since_previous = 7;
+  uint64 coalesced_since_previous = 8;
+  StreamDeliveryPolicy delivery_policy = 9;
+  StreamTerminalStatus terminal_status = 10;
+  ErrorDetail terminal_error = 11;
+}
+
+message NegotiateSessionRequest {
+  uint32 api_major = 1;
+  uint32 api_minor = 2;
+  string app_build_id = 3;
+  bytes schema_bundle_hash = 4;
+  repeated string feature_capabilities = 5;
+  repeated string model_runtime_capabilities = 6;
+  bytes client_nonce = 7;
+}
+
+message NegotiateSessionResponse {
+  uint32 api_major = 1;
+  uint32 api_minor = 2;
+  string daemon_build_id = 3;
+  bytes schema_bundle_hash = 4;
+  repeated string feature_capabilities = 5;
+  repeated string model_runtime_capabilities = 6;
+  ProtocolVersion minimum_compatible_version = 7;
+  bytes server_nonce = 8;
+  string session_id = 9;
+  UnixNanos expires_at = 10;
+}
+
+service SessionService {
+  rpc NegotiateSession(NegotiateSessionRequest) returns (NegotiateSessionResponse);
+}

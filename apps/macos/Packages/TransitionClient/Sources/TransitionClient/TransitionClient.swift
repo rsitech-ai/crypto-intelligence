@@ -58,7 +58,7 @@ public actor TransitionClient {
     using credentials: SessionCredentials,
     timeout: Duration
   ) async throws -> MarketSnapshot {
-    try await transport.getSnapshot(
+    try await transport.getOrderBookSnapshot(
       using: credentials,
       timeout: timeout
     )

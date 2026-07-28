@@ -1,0 +1,214 @@
+syntax = "proto3";
+
+package cmti.risk.v1;
+
+import "cmti/common/v1/common.proto";
+
+enum TransitionEventKind {
+  TRANSITION_EVENT_KIND_UNSPECIFIED = 0;
+  TRANSITION_EVENT_KIND_DOWNSIDE = 1;
+  TRANSITION_EVENT_KIND_UPSIDE_SQUEEZE = 2;
+  TRANSITION_EVENT_KIND_VOLATILITY_EXPLOSION = 3;
+  TRANSITION_EVENT_KIND_LIQUIDITY_VACUUM = 4;
+  TRANSITION_EVENT_KIND_LIQUIDATION_CASCADE = 5;
+  TRANSITION_EVENT_KIND_BASIS_DISLOCATION = 6;
+  TRANSITION_EVENT_KIND_STABLECOIN_DISLOCATION = 7;
+  TRANSITION_EVENT_KIND_CONTAGION = 8;
+}
+
+enum ForecastStatus {
+  FORECAST_STATUS_UNSPECIFIED = 0;
+  FORECAST_STATUS_ACTIVE = 1;
+  FORECAST_STATUS_ABSTAINED = 2;
+  FORECAST_STATUS_EXPERIMENTAL = 3;
+  FORECAST_STATUS_SUPPRESSED = 4;
+}
+
+message ProbabilityPoint {
+  uint64 horizon_seconds = 1;
+  uint32 cumulative_incidence_ppm = 2;
+  uint32 lower_bound_ppm = 3;
+  uint32 upper_bound_ppm = 4;
+  uint32 baseline_ppm = 5;
+}
+
+message ForecastSnapshot {
+  string forecast_id = 1;
+  cmti.common.v1.AssetId asset = 2;
+  TransitionEventKind event_kind = 3;
+  ForecastStatus status = 4;
+  repeated ProbabilityPoint curve = 5;
+  cmti.common.v1.DataQualitySummary quality = 6;
+  string evidence_bundle_id = 7;
+  string model_package_id = 8;
+}
+
+message EvidenceBundle {
+  string evidence_bundle_id = 1;
+  repeated string evidence_item_ids = 2;
+  bytes canonical_blake3 = 3;
+}
+
+message ScenarioDistribution {
+  string scenario_id = 1;
+  repeated uint32 quantiles_ppm = 2;
+  repeated string values = 3;
+}
+
+message CuspState {
+  string state_id = 1;
+  string alpha = 2;
+  string beta = 3;
+  string fold_distance = 4;
+  cmti.common.v1.AvailabilityState availability = 5;
+}
+
+message AlertRule {
+  string rule_id = 1;
+  string expression = 2;
+  bool enabled = 3;
+  uint64 revision = 4;
+}
+
+message AlertEvent {
+  string alert_event_id = 1;
+  string rule_id = 2;
+  cmti.common.v1.UnixNanos triggered_at = 3;
+  string forecast_id = 4;
+}
+
+message RiskServiceSubscribeForecastsRequest {
+  repeated cmti.common.v1.AssetId assets = 1;
+  repeated TransitionEventKind event_kinds = 2;
+  string resume_token = 3;
+}
+
+message RiskServiceSubscribeForecastsResponse {
+  cmti.common.v1.StreamMetadata stream = 1;
+  ForecastSnapshot forecast = 2;
+}
+
+message RiskServiceGetForecastSnapshotRequest {
+  string forecast_id = 1;
+}
+
+message RiskServiceGetForecastSnapshotResponse {
+  ForecastSnapshot forecast = 1;
+}
+
+message RiskServiceGetCuspStateRequest {
+  cmti.common.v1.AssetId asset = 1;
+}
+
+message RiskServiceGetCuspStateResponse {
+  CuspState cusp_state = 1;
+}
+
+message RiskServiceGetScenarioDistributionRequest {
+  string forecast_id = 1;
+}
+
+message RiskServiceGetScenarioDistributionResponse {
+  ScenarioDistribution scenario = 1;
+}
+
+message RiskServiceGetEvidenceBundleRequest {
+  string evidence_bundle_id = 1;
+}
+
+message RiskServiceGetEvidenceBundleResponse {
+  EvidenceBundle evidence = 1;
+}
+
+message ForecastServiceSubscribeForecastsRequest {
+  repeated cmti.common.v1.AssetId assets = 1;
+  repeated TransitionEventKind event_kinds = 2;
+  string resume_token = 3;
+}
+
+message ForecastServiceSubscribeForecastsResponse {
+  cmti.common.v1.StreamMetadata stream = 1;
+  ForecastSnapshot forecast = 2;
+}
+
+message GetForecastRequest {
+  string forecast_id = 1;
+}
+
+message GetForecastResponse {
+  ForecastSnapshot forecast = 1;
+}
+
+message GetEvidenceRequest {
+  string evidence_bundle_id = 1;
+}
+
+message GetEvidenceResponse {
+  EvidenceBundle evidence = 1;
+}
+
+message GetScenarioRequest {
+  string forecast_id = 1;
+}
+
+message GetScenarioResponse {
+  ScenarioDistribution scenario = 1;
+}
+
+message CuspServiceGetCuspStateRequest {
+  cmti.common.v1.AssetId asset = 1;
+}
+
+message CuspServiceGetCuspStateResponse {
+  CuspState cusp_state = 1;
+}
+
+message ListRulesRequest {}
+
+message ListRulesResponse {
+  repeated AlertRule rules = 1;
+}
+
+message UpsertRuleRequest {
+  AlertRule rule = 1;
+  uint64 expected_revision = 2;
+}
+
+message UpsertRuleResponse {
+  AlertRule rule = 1;
+}
+
+message SubscribeAlertEventsRequest {
+  repeated string rule_ids = 1;
+  string resume_token = 2;
+}
+
+message SubscribeAlertEventsResponse {
+  cmti.common.v1.StreamMetadata stream = 1;
+  AlertEvent alert_event = 2;
+}
+
+service RiskService {
+  rpc SubscribeForecasts(RiskServiceSubscribeForecastsRequest) returns (stream RiskServiceSubscribeForecastsResponse);
+  rpc GetForecastSnapshot(RiskServiceGetForecastSnapshotRequest) returns (RiskServiceGetForecastSnapshotResponse);
+  rpc GetCuspState(RiskServiceGetCuspStateRequest) returns (RiskServiceGetCuspStateResponse);
+  rpc GetScenarioDistribution(RiskServiceGetScenarioDistributionRequest) returns (RiskServiceGetScenarioDistributionResponse);
+  rpc GetEvidenceBundle(RiskServiceGetEvidenceBundleRequest) returns (RiskServiceGetEvidenceBundleResponse);
+}
+
+service ForecastService {
+  rpc SubscribeForecasts(ForecastServiceSubscribeForecastsRequest) returns (stream ForecastServiceSubscribeForecastsResponse);
+  rpc GetForecast(GetForecastRequest) returns (GetForecastResponse);
+  rpc GetEvidence(GetEvidenceRequest) returns (GetEvidenceResponse);
+  rpc GetScenario(GetScenarioRequest) returns (GetScenarioResponse);
+}
+
+service CuspService {
+  rpc GetCuspState(CuspServiceGetCuspStateRequest) returns (CuspServiceGetCuspStateResponse);
+}
+
+service AlertService {
+  rpc ListRules(ListRulesRequest) returns (ListRulesResponse);
+  rpc UpsertRule(UpsertRuleRequest) returns (UpsertRuleResponse);
+  rpc SubscribeAlertEvents(SubscribeAlertEventsRequest) returns (stream SubscribeAlertEventsResponse);
+}
