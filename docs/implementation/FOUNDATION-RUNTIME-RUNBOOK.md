@@ -47,15 +47,18 @@ The behavioral no-execution test inventories the production dependency
 closure, active Cargo features, protobuf RPCs, daemon CLI options,
 configuration fields, positively owned network capabilities, and production
 Rust identifiers. The only approved production network capability is the
-exact loopback `TcpListener::bind(bind)` in `crates/local-api`, backed by the
-exact loopback-only default and runtime guard. UDP sends, DNS resolution,
+exact loopback `TcpListener::bind(crate::server::LOOPBACK_BIND)` in
+`crates/local-api`, backed by the exact loopback-only default and runtime
+guard. Production source indirection is rejected rather than allowing modules
+to escape inventory. UDP sends, DNS resolution,
 client connects, raw sockets/endpoints, network command tools, and unsafe
 network FFI fail the gate for explicit review. The inventory reads the locked
 resolved Cargo graph: the approved Rustix package is pinned to its exact
 non-network `alloc,default,fs,process,std` feature set, so direct, transitive,
 or aliased `rustix::net` activation fails closed. Tonic `Endpoint` and
 `Channel` client-type ownership is also rejected independent of the selected
-connect or balancing method spelling.
+connect or balancing method spelling. The production protobuf build is
+server-only and rejects generated `_client`/`Client<` output.
 
 ## Prerequisites
 

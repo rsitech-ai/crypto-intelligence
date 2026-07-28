@@ -42,16 +42,19 @@ const APPROVED_FOUNDATION_DEPENDENCIES: &[&str] = &[
 ];
 const APPROVED_FOUNDATION_NETWORK_CAPABILITIES: &[&str] = &[
     "configs/default.toml bind_address=\"127.0.0.1:0\"",
-    "crates/local-api/src/server.rs TcpListener::bind(bind)",
+    "crates/local-api/src/server.rs TcpListener::bind(crate::server::LOOPBACK_BIND)",
 ];
 const APPROVED_FOUNDATION_DEPENDENCY_CAPABILITIES: &[&str] =
     &["rustix@1.1.4:features=alloc,default,fs,process,std"];
+const APPROVED_LOCAL_API_BUILD_SCRIPT_BLAKE3: &str =
+    "896708918b854ad28bed13883905060b9c368f6ef0174e740e0f72000935083a";
 
 #[derive(Debug, Eq, PartialEq)]
 struct SurfaceInventory {
     cargo_features: Vec<String>,
     direct_dependencies: Vec<String>,
     dependency_capabilities: Vec<String>,
+    generated_binding_capabilities: Vec<String>,
     protobuf_methods: Vec<String>,
     cli_options: Vec<String>,
     configuration_fields: Vec<String>,
@@ -88,6 +91,7 @@ impl SurfaceInventory {
         let mut cargo_features = BTreeSet::new();
         let mut direct_dependencies = BTreeSet::new();
         let mut active_sources = Vec::new();
+        let mut production_build_scripts = Vec::new();
         for package in packages {
             let id = package["id"].as_str().ok_or("package omitted id")?;
             if !production_members.contains(id) {
@@ -122,6 +126,24 @@ impl SurfaceInventory {
             );
             let package_root = manifest.parent().ok_or("manifest omitted parent")?;
             collect_rust_sources(&package_root.join("src"), &mut active_sources)?;
+            for target in package["targets"]
+                .as_array()
+                .ok_or("package targets were not an array")?
+            {
+                let kinds = target["kind"]
+                    .as_array()
+                    .ok_or("target kind was not an array")?;
+                if kinds
+                    .iter()
+                    .any(|kind| kind.as_str() == Some("custom-build"))
+                {
+                    production_build_scripts.push(PathBuf::from(
+                        target["src_path"]
+                            .as_str()
+                            .ok_or("custom-build target omitted src_path")?,
+                    ));
+                }
+            }
         }
 
         let help_output = Command::new("cargo")
@@ -147,6 +169,8 @@ impl SurfaceInventory {
         let protobuf_methods = active_protobuf_methods(root)?;
         let configuration_fields = configuration_fields(root)?;
         let network_capabilities = network_capabilities(root, &active_sources)?;
+        let generated_binding_capabilities =
+            generated_binding_capabilities(root, &production_build_scripts)?;
         let runtime_declarations = active_sources
             .iter()
             .map(|source| execution_declarations_in_source(root, source))
@@ -159,6 +183,7 @@ impl SurfaceInventory {
             cargo_features: cargo_features.into_iter().collect(),
             direct_dependencies: direct_dependencies.into_iter().collect(),
             dependency_capabilities,
+            generated_binding_capabilities,
             protobuf_methods,
             cli_options,
             configuration_fields,
@@ -195,6 +220,11 @@ impl SurfaceInventory {
                     "dependency capability outside ownership policy: {capability}"
                 ));
             }
+        }
+        for capability in &self.generated_binding_capabilities {
+            violations.push(format!(
+                "generated binding capability outside ownership policy: {capability}"
+            ));
         }
         for method in &self.protobuf_methods {
             if has_execution_term(method) {
@@ -367,6 +397,37 @@ fn collect_rust_sources(directory: &Path, output: &mut Vec<PathBuf>) -> Result<(
         }
     }
     Ok(())
+}
+
+fn generated_binding_capabilities(
+    root: &Path,
+    build_scripts: &[PathBuf],
+) -> Result<Vec<String>, Box<dyn Error>> {
+    let mut capabilities = BTreeSet::new();
+    let expected = root.join("crates/local-api/build.rs");
+    if build_scripts != [expected.clone()] {
+        capabilities.insert(format!(
+            "production custom-build target inventory differs: {build_scripts:?}"
+        ));
+    }
+    for build_script in build_scripts {
+        let relative = build_script
+            .strip_prefix(root)
+            .unwrap_or(build_script)
+            .to_string_lossy();
+        if build_script != &expected {
+            capabilities.insert(format!(
+                "{relative} unapproved production custom-build target"
+            ));
+            continue;
+        }
+        let bytes = fs::read(build_script)?;
+        let digest = blake3::hash(&bytes).to_hex().to_string();
+        if digest != APPROVED_LOCAL_API_BUILD_SCRIPT_BLAKE3 {
+            capabilities.insert(format!("{relative} build policy digest {digest}"));
+        }
+    }
+    Ok(capabilities.into_iter().collect())
 }
 
 fn long_options(help: &str) -> Vec<String> {
@@ -592,14 +653,21 @@ fn network_capability_declarations(
         .iter()
         .filter(|identifier| **identifier == "TcpListener")
         .count();
+    let loopback_bind_identifier_count = file_identifiers
+        .iter()
+        .filter(|identifier| **identifier == "LOOPBACK_BIND")
+        .count();
     let owns_approved_tcp_listener = relative == "crates/local-api/src/server.rs"
         && tcp_listener_identifier_count == 2
+        && loopback_bind_identifier_count == 3
         && file_code.matches("TcpListener::bind(").count() == 1
         && file_code.contains(
             "constLOOPBACK_BIND:SocketAddr=SocketAddr::new(std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST),0);",
         )
-        && file_code.contains("ifbind!=LOOPBACK_BIND{")
-        && file_code.contains("letlistener=TcpListener::bind(bind)");
+        && file_code.contains("ifbind!=crate::server::LOOPBACK_BIND{")
+        && file_code.contains(
+            "letlistener=TcpListener::bind(crate::server::LOOPBACK_BIND)",
+        );
     let aliases_rustix_crate = file_identifiers
         .windows(3)
         .any(|tokens| tokens == ["use", "rustix", "as"])
@@ -611,6 +679,12 @@ fn network_capability_declarations(
     }
     if aliases_rustix_crate {
         capabilities.insert(format!("{relative} rustix crate alias"));
+    }
+    if file_code.contains("#[path=")
+        || (file_code.contains("#[cfg_attr(") && file_code.contains("path="))
+        || file_code.contains("include!(")
+    {
+        capabilities.insert(format!("{relative} production source indirection"));
     }
     if file_identifiers
         .iter()
@@ -632,8 +706,10 @@ fn network_capability_declarations(
         let location = format!("{relative}:{}", number + 1);
         if code.contains("TcpListener::bind(") {
             if owns_approved_tcp_listener {
-                capabilities
-                    .insert("crates/local-api/src/server.rs TcpListener::bind(bind)".to_owned());
+                capabilities.insert(
+                    "crates/local-api/src/server.rs TcpListener::bind(crate::server::LOOPBACK_BIND)"
+                        .to_owned(),
+                );
             } else {
                 capabilities.insert(format!("{location} TCP listener bind"));
             }
@@ -655,6 +731,12 @@ fn network_capability_declarations(
         }
         if identifiers.contains("Command") {
             capabilities.insert(format!("{location} process command ownership"));
+        }
+        if identifiers
+            .iter()
+            .any(|identifier| identifier.ends_with("Client") || identifier.ends_with("_client"))
+        {
+            capabilities.insert(format!("{location} generated client ownership"));
         }
         if identifiers.contains("Endpoint")
             || identifiers.contains("Channel")
@@ -1157,6 +1239,7 @@ fn detector_rejects_every_execution_authority_class() {
         cargo_features: vec!["live_trading".into()],
         direct_dependencies: vec!["exchange-order-sdk".into()],
         dependency_capabilities: vec!["rustix@1.1.4:features=default,net,std".into()],
+        generated_binding_capabilities: vec!["local-api client generation enabled".into()],
         protobuf_methods: vec!["TradingService.PlaceOrder".into()],
         cli_options: vec!["--api-key".into()],
         configuration_fields: vec!["withdrawal_address".into()],
@@ -1172,6 +1255,7 @@ fn detector_rejects_every_execution_authority_class() {
             "cargo feature: live_trading",
             "dependency outside the foundation allowlist: exchange-order-sdk",
             "dependency capability outside ownership policy: rustix@1.1.4:features=default,net,std",
+            "generated binding capability outside ownership policy: local-api client generation enabled",
             "protobuf method: TradingService.PlaceOrder",
             "CLI option: --api-key",
             "configuration field: withdrawal_address",
@@ -1430,8 +1514,15 @@ fn every_network_capability_family_is_detected_by_mutation() {
                 "pub fn mutate(endpoint: Remote) { let _ = endpoint.connect_lazy(); let _: Option<Pool> = None; }\n",
             ),
         ),
+        (
+            "generated-tonic-client-alias",
+            concat!(
+                "use local_api::proto::market_v1::market_service_client::MarketServiceClient as RemoteClient;\n",
+                "pub async fn mutate(uri: String) { let _ = RemoteClient::connect::<String>(uri).await; }\n",
+            ),
+        ),
     ];
-    assert_eq!(fixtures.len(), 23, "network mutation inventory drifted");
+    assert_eq!(fixtures.len(), 24, "network mutation inventory drifted");
     let directory = tempfile::tempdir().expect("network mutation root must exist");
     let mut missed = Vec::new();
     for (name, text) in fixtures {
@@ -1462,8 +1553,8 @@ fn approved_listener_owner_rejects_a_second_aliased_listener() {
         "const LOOPBACK_BIND: SocketAddr =\n",
         "    SocketAddr::new(std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST), 0);\n",
         "pub async fn mutate(bind: SocketAddr, remote: SocketAddr) {\n",
-        "    if bind != LOOPBACK_BIND { return; }\n",
-        "    let listener = TcpListener::bind(bind).await;\n",
+        "    if bind != crate::server::LOOPBACK_BIND { return; }\n",
+        "    let listener = TcpListener::bind(crate::server::LOOPBACK_BIND).await;\n",
         "    let extra = AdditionalListener::bind(remote).await;\n",
         "    let _ = (listener, extra);\n",
         "}\n",
@@ -1474,9 +1565,121 @@ fn approved_listener_owner_rejects_a_second_aliased_listener() {
 
     assert!(
         capabilities.iter().any(|capability| {
-            capability != "crates/local-api/src/server.rs TcpListener::bind(bind)"
+            capability
+                != "crates/local-api/src/server.rs TcpListener::bind(crate::server::LOOPBACK_BIND)"
         }),
         "a second aliased listener escaped the approved owner"
+    );
+}
+
+#[test]
+fn approved_listener_owner_rejects_post_guard_bind_shadowing() {
+    let directory = tempfile::tempdir().expect("listener shadow root must exist");
+    let source = directory.path().join("crates/local-api/src/server.rs");
+    fs::create_dir_all(source.parent().expect("listener source must have parent"))
+        .expect("listener shadow directory must write");
+    let text = concat!(
+        "use std::net::SocketAddr;\n",
+        "use tokio::net::TcpListener;\n",
+        "const LOOPBACK_BIND: SocketAddr =\n",
+        "    SocketAddr::new(std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST), 0);\n",
+        "pub async fn mutate(bind: SocketAddr) {\n",
+        "    if bind != LOOPBACK_BIND { return; }\n",
+        "    let bind = if std::env::var_os(\"REMOTE_BIND\").is_some() {\n",
+        "        \"0.0.0.0:9000\".parse().unwrap()\n",
+        "    } else { bind };\n",
+        "    let listener = TcpListener::bind(bind).await;\n",
+        "    let _ = listener;\n",
+        "}\n",
+    );
+    fs::write(&source, text).expect("listener shadow mutation must write");
+    let capabilities =
+        network_capability_declarations(directory.path(), &source, &production_rust_source(text));
+
+    assert!(
+        capabilities.iter().any(|capability| {
+            capability
+                != "crates/local-api/src/server.rs TcpListener::bind(crate::server::LOOPBACK_BIND)"
+        }),
+        "post-guard bind shadowing escaped the approved owner"
+    );
+}
+
+#[test]
+fn production_source_indirection_is_not_outside_capability_ownership() {
+    let directory = tempfile::tempdir().expect("source indirection root must exist");
+    let source = directory.path().join("crates/local-api/src/lib.rs");
+    fs::create_dir_all(source.parent().expect("source must have parent"))
+        .expect("source indirection directory must write");
+    let text = "#[path = \"../network_impl.rs\"] mod network_impl;\n";
+    fs::write(&source, text).expect("source indirection mutation must write");
+    fs::write(
+        directory.path().join("crates/local-api/network_impl.rs"),
+        "pub async fn connect(endpoint: tonic::transport::Endpoint) { let _ = endpoint.connect_lazy(); }\n",
+    )
+    .expect("escaped network module must write");
+    let capabilities =
+        network_capability_declarations(directory.path(), &source, &production_rust_source(text));
+
+    assert!(
+        !capabilities.is_empty(),
+        "out-of-src production module escaped capability ownership"
+    );
+}
+
+#[test]
+fn production_generated_grpc_clients_are_disabled() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(Path::parent)
+        .expect("system-tests must be nested under the workspace");
+    let build_script = fs::read_to_string(root.join("crates/local-api/build.rs"))
+        .expect("local-api build script must be readable");
+    let code = rust_code_without_literals_and_comments(&build_script)
+        .split_whitespace()
+        .collect::<String>();
+
+    assert!(
+        code.matches("tonic_prost_build::configure()").count() == 1
+            && code.matches(".compile_with_config(").count() == 1
+            && code.matches(".build_client(").count() == 1
+            && code.matches(".build_client(false)").count() == 1
+            && code.matches(".build_client(true)").count() == 0
+            && code.matches(".build_server(").count() == 1
+            && code.matches(".build_server(true)").count() == 1,
+        "cryptoriskd production bindings must not generate gRPC clients"
+    );
+}
+
+#[test]
+fn production_custom_build_output_policy_rejects_appended_client_generation() {
+    let workspace = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(Path::parent)
+        .expect("system-tests must be nested under the workspace");
+    let directory = tempfile::tempdir().expect("custom-build mutation root must exist");
+    let build_script = directory.path().join("crates/local-api/build.rs");
+    fs::create_dir_all(
+        build_script
+            .parent()
+            .expect("build script must have parent"),
+    )
+    .expect("custom-build mutation directory must write");
+    let mut mutated = fs::read_to_string(workspace.join("crates/local-api/build.rs"))
+        .expect("approved local-api build script must read");
+    mutated.push_str(
+        "\nfn append_client_surface(output: &std::path::Path) {\n\
+         std::fs::write(output.join(\"cmti.market.v1.rs\"), \"pub mod market_service_client {}\").unwrap();\n\
+         }\n",
+    );
+    fs::write(&build_script, mutated).expect("custom-build mutation must write");
+
+    let capabilities =
+        generated_binding_capabilities(directory.path(), std::slice::from_ref(&build_script))
+            .expect("custom-build mutation must be inspectable");
+    assert!(
+        !capabilities.is_empty(),
+        "post-generation client output mutation escaped ownership"
     );
 }
 
@@ -1500,6 +1703,11 @@ fn active_runtime_exposes_market_observation_but_no_execution_authority() {
     assert_eq!(
         inventory.dependency_capabilities,
         ["rustix@1.1.4:features=alloc,default,fs,process,std"]
+    );
+    assert!(
+        inventory.generated_binding_capabilities.is_empty(),
+        "production generated bindings escaped ownership: {:#?}",
+        inventory.generated_binding_capabilities
     );
     assert!(
         inventory.execution_authority_violations().is_empty(),

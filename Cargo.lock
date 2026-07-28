@@ -1370,6 +1370,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tonic",
+ "tonic-prost",
  "zeroize",
 ]
 

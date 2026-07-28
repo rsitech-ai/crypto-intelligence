@@ -2,15 +2,17 @@ use std::{env, fs, path::PathBuf, time::Duration};
 
 use local_api::{
     auth::{SessionAuthenticator, SessionSecret, insert_authentication_metadata},
-    proto::market_v1::{
-        GetSnapshotRequest, GetSnapshotResponse, SnapshotHealth,
-        market_service_client::MarketServiceClient,
-    },
+    proto::market_v1::{GetSnapshotRequest, GetSnapshotResponse, SnapshotHealth},
     session::{SessionDescriptor, TOKEN_LIFETIME_SECONDS},
 };
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
-use tonic::{Code, Request, transport::Endpoint};
+use tonic::{
+    Code, Request, Response, Status,
+    client::Grpc,
+    codegen::http::uri::PathAndQuery,
+    transport::{Channel, Endpoint},
+};
 use zeroize::Zeroizing;
 
 const RPC_TIMEOUT: Duration = Duration::from_secs(5);
@@ -78,18 +80,21 @@ async fn run() -> Result<(), ProbeError> {
         .await
         .map_err(|_| ProbeError::Timeout)?
         .map_err(|_| ProbeError::Connect)?;
-    let mut market = MarketServiceClient::new(channel);
+    let mut market = Grpc::new(channel);
 
     match arguments.mode {
         Mode::Healthy => {
             let token = SessionAuthenticator::new(secret).token(&descriptor);
             let response = tokio::time::timeout(
                 RPC_TIMEOUT,
-                market.get_snapshot(insert_authentication_metadata(
-                    Request::new(GetSnapshotRequest {}),
-                    &descriptor,
-                    &token,
-                )),
+                get_snapshot(
+                    &mut market,
+                    insert_authentication_metadata(
+                        Request::new(GetSnapshotRequest {}),
+                        &descriptor,
+                        &token,
+                    ),
+                ),
             )
             .await
             .map_err(|_| ProbeError::Timeout)?
@@ -123,7 +128,7 @@ async fn run() -> Result<(), ProbeError> {
             drop(secret);
             let response = tokio::time::timeout(
                 RPC_TIMEOUT,
-                market.get_snapshot(Request::new(GetSnapshotRequest {})),
+                get_snapshot(&mut market, Request::new(GetSnapshotRequest {})),
             )
             .await
             .map_err(|_| ProbeError::Timeout)?;
@@ -138,6 +143,23 @@ async fn run() -> Result<(), ProbeError> {
         }
     }
     Ok(())
+}
+
+async fn get_snapshot(
+    client: &mut Grpc<Channel>,
+    request: Request<GetSnapshotRequest>,
+) -> Result<Response<GetSnapshotResponse>, Status> {
+    client
+        .ready()
+        .await
+        .map_err(|_| Status::unavailable("local transport unavailable"))?;
+    client
+        .unary(
+            request,
+            PathAndQuery::from_static("/cmti.market.v1.MarketService/GetSnapshot"),
+            tonic_prost::ProstCodec::default(),
+        )
+        .await
 }
 
 fn parse_arguments(arguments: impl Iterator<Item = String>) -> Result<Arguments, ProbeError> {
