@@ -12,10 +12,8 @@ domain = { path = "../domain" }
 fixed-decimal = { path = "../fixed-decimal" }
 hex.workspace = true
 serde.workspace = true
-thiserror.workspace = true
-
-[dev-dependencies]
 serde_json.workspace = true
+thiserror.workspace = true
 
 [lints]
 workspace = true

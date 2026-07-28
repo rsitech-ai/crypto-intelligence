@@ -42,12 +42,13 @@ impl fmt::Display for VenueId {
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[repr(u8)]
 pub enum AssetNamespace {
-    Native,
-    Evm,
-    Solana,
-    Fiat,
-    Synthetic,
+    Native = 0,
+    Evm = 1,
+    Solana = 2,
+    Fiat = 3,
+    Synthetic = 4,
 }
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]

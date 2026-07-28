@@ -123,7 +123,7 @@ impl<W: WalSink> IngestionEngine<W> {
             UncheckedEventPayload::BookDelta(delta) => {
                 self.order_book.apply_delta(delta, now_monotonic_ns)
             }
-            UncheckedEventPayload::Trade(_) => Err(BookError::Invalid),
+            _ => Err(BookError::Invalid),
         };
         if let Err(source) = apply_result {
             self.reject()?;

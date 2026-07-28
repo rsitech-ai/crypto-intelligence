@@ -6,13 +6,14 @@ const MAX_SOURCE_LENGTH: usize = 96;
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[repr(u8)]
 pub enum SourceKind {
-    Exchange,
-    Chain,
-    Macro,
-    News,
-    Derived,
-    System,
+    Exchange = 0,
+    Chain = 1,
+    Macro = 2,
+    News = 3,
+    Derived = 4,
+    System = 5,
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize)]

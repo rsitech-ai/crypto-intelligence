@@ -73,33 +73,37 @@ impl fmt::Display for InstrumentId {
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[repr(u8)]
 pub enum ProductType {
-    Spot,
-    Perpetual,
-    Future,
-    Option,
+    Spot = 0,
+    Perpetual = 1,
+    Future = 2,
+    Option = 3,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[repr(u8)]
 pub enum ContractKind {
-    None,
-    Linear,
-    Inverse,
+    None = 0,
+    Linear = 1,
+    Inverse = 2,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[repr(u8)]
 pub enum ContractValueUnit {
-    Base,
-    Quote,
+    Base = 0,
+    Quote = 1,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[repr(u8)]
 pub enum OptionSide {
-    Call,
-    Put,
+    Call = 0,
+    Put = 1,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
