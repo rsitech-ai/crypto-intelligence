@@ -62,7 +62,7 @@ struct SurfaceInventory {
 impl SurfaceInventory {
     fn discover(root: &Path) -> Result<Self, Box<dyn Error>> {
         let metadata_output = Command::new("cargo")
-            .args(["metadata", "--locked", "--format-version", "1"])
+            .args(cargo_metadata_args())
             .current_dir(root)
             .output()?;
         if !metadata_output.status.success() {
@@ -227,6 +227,16 @@ impl SurfaceInventory {
         }
         violations
     }
+}
+
+fn cargo_metadata_args() -> [&'static str; 5] {
+    [
+        "metadata",
+        "--locked",
+        "--format-version",
+        "1",
+        "--all-features",
+    ]
 }
 
 fn production_package_closure<'a>(
@@ -1202,6 +1212,21 @@ fn resolved_rustix_network_feature_is_an_unapproved_capability() {
         ["rustix@1.1.4:features=alloc,default,net,std"]
     );
     assert!(!APPROVED_FOUNDATION_DEPENDENCY_CAPABILITIES.contains(&capabilities[0].as_str()));
+}
+
+#[test]
+fn resolved_dependency_graph_expands_every_workspace_feature() {
+    assert_eq!(
+        cargo_metadata_args(),
+        [
+            "metadata",
+            "--locked",
+            "--format-version",
+            "1",
+            "--all-features",
+        ],
+        "dependency capability inspection must match the all-features gate"
+    );
 }
 
 #[test]
