@@ -44,11 +44,14 @@ const APPROVED_FOUNDATION_NETWORK_CAPABILITIES: &[&str] = &[
     "configs/default.toml bind_address=\"127.0.0.1:0\"",
     "crates/local-api/src/server.rs TcpListener::bind(bind)",
 ];
+const APPROVED_FOUNDATION_DEPENDENCY_CAPABILITIES: &[&str] =
+    &["rustix@1.1.4:features=alloc,default,fs,process,std"];
 
 #[derive(Debug, Eq, PartialEq)]
 struct SurfaceInventory {
     cargo_features: Vec<String>,
     direct_dependencies: Vec<String>,
+    dependency_capabilities: Vec<String>,
     protobuf_methods: Vec<String>,
     cli_options: Vec<String>,
     configuration_fields: Vec<String>,
@@ -59,7 +62,7 @@ struct SurfaceInventory {
 impl SurfaceInventory {
     fn discover(root: &Path) -> Result<Self, Box<dyn Error>> {
         let metadata_output = Command::new("cargo")
-            .args(["metadata", "--locked", "--format-version", "1", "--no-deps"])
+            .args(["metadata", "--locked", "--format-version", "1"])
             .current_dir(root)
             .output()?;
         if !metadata_output.status.success() {
@@ -80,6 +83,8 @@ impl SurfaceInventory {
             .as_array()
             .ok_or("cargo metadata omitted packages")?;
         let production_members = production_package_closure(packages, &workspace_members)?;
+        let dependency_capabilities =
+            resolved_dependency_capabilities(&metadata, &production_members)?;
         let mut cargo_features = BTreeSet::new();
         let mut direct_dependencies = BTreeSet::new();
         let mut active_sources = Vec::new();
@@ -153,6 +158,7 @@ impl SurfaceInventory {
         Ok(Self {
             cargo_features: cargo_features.into_iter().collect(),
             direct_dependencies: direct_dependencies.into_iter().collect(),
+            dependency_capabilities,
             protobuf_methods,
             cli_options,
             configuration_fields,
@@ -176,6 +182,17 @@ impl SurfaceInventory {
             if !approved.contains(dependency.as_str()) {
                 violations.push(format!(
                     "dependency outside the foundation allowlist: {dependency}"
+                ));
+            }
+        }
+        let approved_dependency_capabilities = APPROVED_FOUNDATION_DEPENDENCY_CAPABILITIES
+            .iter()
+            .copied()
+            .collect::<BTreeSet<_>>();
+        for capability in &self.dependency_capabilities {
+            if !approved_dependency_capabilities.contains(capability.as_str()) {
+                violations.push(format!(
+                    "dependency capability outside ownership policy: {capability}"
                 ));
             }
         }
@@ -252,6 +269,79 @@ fn production_package_closure<'a>(
         }
     }
     Ok(closure)
+}
+
+fn resolved_dependency_capabilities(
+    metadata: &Value,
+    production_members: &BTreeSet<&str>,
+) -> Result<Vec<String>, Box<dyn Error>> {
+    let packages = metadata["packages"]
+        .as_array()
+        .ok_or("cargo metadata omitted packages")?;
+    let package_by_id = packages
+        .iter()
+        .map(|package| Ok((package["id"].as_str().ok_or("package omitted id")?, package)))
+        .collect::<Result<BTreeMap<_, _>, Box<dyn Error>>>()?;
+    let nodes = metadata["resolve"]["nodes"]
+        .as_array()
+        .ok_or("cargo metadata omitted resolved nodes")?;
+    let node_by_id = nodes
+        .iter()
+        .map(|node| Ok((node["id"].as_str().ok_or("resolved node omitted id")?, node)))
+        .collect::<Result<BTreeMap<_, _>, Box<dyn Error>>>()?;
+
+    let mut pending = production_members.iter().copied().collect::<Vec<_>>();
+    let mut resolved_closure = BTreeSet::new();
+    while let Some(id) = pending.pop() {
+        if !resolved_closure.insert(id) {
+            continue;
+        }
+        let node = node_by_id
+            .get(id)
+            .ok_or("production package omitted resolved node")?;
+        for dependency in node["dependencies"]
+            .as_array()
+            .ok_or("resolved node dependencies were not an array")?
+        {
+            pending.push(
+                dependency
+                    .as_str()
+                    .ok_or("resolved dependency was not a package id")?,
+            );
+        }
+    }
+
+    let mut capabilities = BTreeSet::new();
+    for id in resolved_closure {
+        let package = package_by_id
+            .get(id)
+            .ok_or("resolved package omitted metadata")?;
+        if package["name"].as_str() != Some("rustix") {
+            continue;
+        }
+        let node = node_by_id
+            .get(id)
+            .ok_or("resolved rustix package omitted node")?;
+        let mut features = node["features"]
+            .as_array()
+            .ok_or("resolved rustix features were not an array")?
+            .iter()
+            .map(|feature| {
+                feature
+                    .as_str()
+                    .ok_or("resolved rustix feature was not a string")
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        features.sort_unstable();
+        capabilities.insert(format!(
+            "rustix@{}:features={}",
+            package["version"]
+                .as_str()
+                .ok_or("rustix package omitted version")?,
+            features.join(",")
+        ));
+    }
+    Ok(capabilities.into_iter().collect())
 }
 
 fn collect_rust_sources(directory: &Path, output: &mut Vec<PathBuf>) -> Result<(), Box<dyn Error>> {
@@ -483,30 +573,82 @@ fn network_capability_declarations(
     let uncommented = rust_source_without_comments(production_text);
     let skeleton = rust_code_without_literals_and_comments(production_text);
     let file_code = skeleton.split_whitespace().collect::<String>();
+    let file_identifiers = skeleton
+        .split(|character: char| !character.is_ascii_alphanumeric() && character != '_')
+        .filter(|identifier| !identifier.is_empty())
+        .collect::<Vec<_>>();
     let has_udp_socket = file_code.contains("UdpSocket");
+    let tcp_listener_identifier_count = file_identifiers
+        .iter()
+        .filter(|identifier| **identifier == "TcpListener")
+        .count();
+    let owns_approved_tcp_listener = relative == "crates/local-api/src/server.rs"
+        && tcp_listener_identifier_count == 2
+        && file_code.matches("TcpListener::bind(").count() == 1
+        && file_code.contains(
+            "constLOOPBACK_BIND:SocketAddr=SocketAddr::new(std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST),0);",
+        )
+        && file_code.contains("ifbind!=LOOPBACK_BIND{")
+        && file_code.contains("letlistener=TcpListener::bind(bind)");
+    let aliases_rustix_crate = file_identifiers
+        .windows(3)
+        .any(|tokens| tokens == ["use", "rustix", "as"])
+        || file_identifiers
+            .windows(4)
+            .any(|tokens| tokens == ["extern", "crate", "rustix", "as"]);
+    if file_code.contains("rustix::net") {
+        capabilities.insert(format!("{relative} rustix net module ownership"));
+    }
+    if aliases_rustix_crate {
+        capabilities.insert(format!("{relative} rustix crate alias"));
+    }
+    if file_identifiers
+        .iter()
+        .enumerate()
+        .any(|(index, identifier)| {
+            *identifier == "extern" && file_identifiers.get(index + 1) != Some(&"crate")
+        })
+    {
+        capabilities.insert(format!("{relative} foreign interface ownership"));
+    }
     for (number, (line, literal_line)) in skeleton.lines().zip(uncommented.lines()).enumerate() {
         let code = rust_code_without_literals_and_comments(line)
             .split_whitespace()
             .collect::<String>();
+        let identifiers = line
+            .split(|character: char| !character.is_ascii_alphanumeric() && character != '_')
+            .filter(|identifier| !identifier.is_empty())
+            .collect::<BTreeSet<_>>();
         let location = format!("{relative}:{}", number + 1);
         if code.contains("TcpListener::bind(") {
-            if relative == "crates/local-api/src/server.rs"
-                && code.contains("letlistener=TcpListener::bind(bind)")
-                && file_code.contains(
-                    "constLOOPBACK_BIND:SocketAddr=SocketAddr::new(std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST),0);",
-                )
-                && file_code.contains("ifbind!=LOOPBACK_BIND{")
-            {
+            if owns_approved_tcp_listener {
                 capabilities
                     .insert("crates/local-api/src/server.rs TcpListener::bind(bind)".to_owned());
             } else {
                 capabilities.insert(format!("{location} TCP listener bind"));
             }
         }
-        if code.contains("UdpSocket") || code.contains("UdpSocket::bind(") {
-            capabilities.insert(format!("{location} UDP socket"));
+        if identifiers.contains("TcpListener") && !owns_approved_tcp_listener {
+            capabilities.insert(format!("{location} TCP listener type"));
         }
-        if code.contains("TcpStream")
+        for network_type in [
+            "TcpStream",
+            "TcpSocket",
+            "UdpSocket",
+            "UnixStream",
+            "UnixDatagram",
+            "UnixListener",
+        ] {
+            if identifiers.contains(network_type) {
+                capabilities.insert(format!("{location} network type {network_type}"));
+            }
+        }
+        if identifiers.contains("Command") {
+            capabilities.insert(format!("{location} process command ownership"));
+        }
+        if identifiers.contains("Endpoint")
+            || identifiers.contains("Channel")
+            || code.contains("TcpStream")
             || code.contains("::connect(")
             || code.contains(".connect(")
             || code.contains("::connect_timeout(")
@@ -546,19 +688,6 @@ fn network_capability_declarations(
                 capabilities.insert(format!("{location} raw endpoint {endpoint}"));
             }
         }
-    }
-    if file_code.contains("extern")
-        && [
-            "fnconnect(",
-            "fnsocket(",
-            "fnsend(",
-            "fnsendto(",
-            "fngetaddrinfo(",
-        ]
-        .iter()
-        .any(|function| file_code.contains(function))
-    {
-        capabilities.insert(format!("{relative} unsafe network FFI"));
     }
     capabilities
 }
@@ -1017,6 +1146,7 @@ fn detector_rejects_every_execution_authority_class() {
     let inventory = SurfaceInventory {
         cargo_features: vec!["live_trading".into()],
         direct_dependencies: vec!["exchange-order-sdk".into()],
+        dependency_capabilities: vec!["rustix@1.1.4:features=default,net,std".into()],
         protobuf_methods: vec!["TradingService.PlaceOrder".into()],
         cli_options: vec!["--api-key".into()],
         configuration_fields: vec!["withdrawal_address".into()],
@@ -1031,6 +1161,7 @@ fn detector_rejects_every_execution_authority_class() {
         [
             "cargo feature: live_trading",
             "dependency outside the foundation allowlist: exchange-order-sdk",
+            "dependency capability outside ownership policy: rustix@1.1.4:features=default,net,std",
             "protobuf method: TradingService.PlaceOrder",
             "CLI option: --api-key",
             "configuration field: withdrawal_address",
@@ -1038,6 +1169,39 @@ fn detector_rejects_every_execution_authority_class() {
             "runtime declaration: src/runtime.rs:8 place_order",
         ]
     );
+}
+
+#[test]
+fn resolved_rustix_network_feature_is_an_unapproved_capability() {
+    let metadata = serde_json::json!({
+        "packages": [
+            {"id": "cryptoriskd 0.1.0", "name": "cryptoriskd", "version": "0.1.0"},
+            {"id": "rustix 1.1.4", "name": "rustix", "version": "1.1.4"},
+        ],
+        "resolve": {
+            "nodes": [
+                {
+                    "id": "cryptoriskd 0.1.0",
+                    "dependencies": ["rustix 1.1.4"],
+                    "features": [],
+                },
+                {
+                    "id": "rustix 1.1.4",
+                    "dependencies": [],
+                    "features": ["std", "net", "default", "alloc"],
+                },
+            ]
+        }
+    });
+    let production = BTreeSet::from(["cryptoriskd 0.1.0"]);
+    let capabilities = resolved_dependency_capabilities(&metadata, &production)
+        .expect("resolved dependency feature mutation must be inspectable");
+
+    assert_eq!(
+        capabilities,
+        ["rustix@1.1.4:features=alloc,default,net,std"]
+    );
+    assert!(!APPROVED_FOUNDATION_DEPENDENCY_CAPABILITIES.contains(&capabilities[0].as_str()));
 }
 
 #[test]
@@ -1123,12 +1287,33 @@ fn every_network_capability_family_is_detected_by_mutation() {
             "pub fn mutate(address: &std::net::SocketAddr) { std::net::TcpStream::connect_timeout(address, std::time::Duration::from_secs(1)); }\n",
         ),
         (
+            "std-network-type-alias",
+            concat!(
+                "use std::net::TcpStream as Stream;\n",
+                "pub fn mutate(address: &std::net::SocketAddr) { Stream::connect_timeout(address, std::time::Duration::from_secs(1)); }\n",
+            ),
+        ),
+        (
+            "tokio-network-import-aliases",
+            concat!(
+                "use tokio::net::{UdpSocket as Datagram, lookup_host as resolve};\n",
+                "pub async fn mutate(socket: Datagram) { let _ = resolve(\"exchange.invalid:443\").await; let _ = socket.send(b\"x\").await; }\n",
+            ),
+        ),
+        (
             "socket-syscall",
             "pub unsafe fn mutate() { libc::socket(libc::AF_INET, libc::SOCK_STREAM, 0); }\n",
         ),
         (
             "network-command",
             "pub fn mutate() { std::process::Command::new(\"curl\").arg(\"https://exchange.invalid\"); }\n",
+        ),
+        (
+            "network-command-type-alias",
+            concat!(
+                "use std::process::Command as Runner;\n",
+                "pub fn mutate(program: &str) { Runner::new(program); }\n",
+            ),
         ),
         (
             "raw-endpoint",
@@ -1138,7 +1323,90 @@ fn every_network_capability_family_is_detected_by_mutation() {
             "unsafe-network-ffi",
             "unsafe extern \"C\" { fn connect(fd: i32, address: *const u8, length: u32) -> i32; }\n",
         ),
+        (
+            "unsafe-network-ffi-link-name",
+            concat!(
+                "unsafe extern \"C\" {\n",
+                "    #[link_name = \"connect\"]\n",
+                "    fn dial(fd: i32, address: *const u8, length: u32) -> i32;\n",
+                "}\n",
+            ),
+        ),
+        (
+            "extern-crate-plus-unsafe-network-ffi",
+            concat!(
+                "extern crate rustix;\n",
+                "unsafe extern \"C\" {\n",
+                "    #[link_name = \"connect\"]\n",
+                "    fn dial(fd: i32, address: *const u8, length: u32) -> i32;\n",
+                "}\n",
+            ),
+        ),
+        (
+            "std-unix-socket-aliases",
+            concat!(
+                "use std::os::unix::net::{UnixStream as Stream, UnixDatagram as Datagram};\n",
+                "pub fn mutate(stream: Stream, datagram: Datagram) { let _ = (stream, datagram); }\n",
+            ),
+        ),
+        (
+            "tokio-unix-socket-alias",
+            concat!(
+                "use tokio::net::UnixStream as Stream;\n",
+                "pub fn mutate(stream: Stream) { let _ = stream; }\n",
+            ),
+        ),
+        (
+            "rustix-direct-import",
+            concat!(
+                "use rustix::net::{socket_with, connect, send};\n",
+                "pub fn mutate() { let _ = (socket_with, connect, send); }\n",
+            ),
+        ),
+        (
+            "rustix-function-aliases",
+            concat!(
+                "use rustix::net::{socket_with as open_socket, connect as dial, send as transmit};\n",
+                "pub fn mutate() { let _ = (open_socket, dial, transmit); }\n",
+            ),
+        ),
+        (
+            "rustix-crate-alias",
+            concat!(
+                "use rustix as system;\n",
+                "use system::net::{socket_with as open_socket, connect as dial, send as transmit};\n",
+                "pub fn mutate() { let _ = (open_socket, dial, transmit); }\n",
+            ),
+        ),
+        (
+            "rustix-extern-crate-alias",
+            concat!(
+                "extern crate rustix as system;\n",
+                "use system::net::{socket_with as open_socket, connect as dial, send as transmit};\n",
+                "pub fn mutate() { let _ = (open_socket, dial, transmit); }\n",
+            ),
+        ),
+        (
+            "tonic-connect-lazy",
+            "pub fn mutate(endpoint: tonic::transport::Endpoint) { let _ = endpoint.connect_lazy(); }\n",
+        ),
+        (
+            "tonic-connect-with-connector-lazy",
+            "pub fn mutate(endpoint: tonic::transport::Endpoint) { let _ = endpoint.connect_with_connector_lazy(Connector); }\n",
+        ),
+        (
+            "tonic-balance-list",
+            "pub fn mutate() { let _ = tonic::transport::Channel::balance_list(Vec::new().into_iter()); }\n",
+        ),
+        (
+            "tonic-client-type-aliases",
+            concat!(
+                "use tonic::transport::{Endpoint as Remote, Channel as Pool};\n",
+                "pub fn mutate(endpoint: Remote) { let _ = endpoint.connect_lazy(); let _: Option<Pool> = None; }\n",
+            ),
+        ),
     ];
+    assert_eq!(fixtures.len(), 23, "network mutation inventory drifted");
     let directory = tempfile::tempdir().expect("network mutation root must exist");
     let mut missed = Vec::new();
     for (name, text) in fixtures {
@@ -1153,6 +1421,37 @@ fn every_network_capability_family_is_detected_by_mutation() {
         missed,
         Vec::<&str>::new(),
         "network capability families escaped detection"
+    );
+}
+
+#[test]
+fn approved_listener_owner_rejects_a_second_aliased_listener() {
+    let directory = tempfile::tempdir().expect("listener ownership root must exist");
+    let source = directory.path().join("crates/local-api/src/server.rs");
+    fs::create_dir_all(source.parent().expect("listener source must have parent"))
+        .expect("listener ownership directory must write");
+    let text = concat!(
+        "use std::net::SocketAddr;\n",
+        "use tokio::net::TcpListener;\n",
+        "use tokio::net::TcpListener as AdditionalListener;\n",
+        "const LOOPBACK_BIND: SocketAddr =\n",
+        "    SocketAddr::new(std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST), 0);\n",
+        "pub async fn mutate(bind: SocketAddr, remote: SocketAddr) {\n",
+        "    if bind != LOOPBACK_BIND { return; }\n",
+        "    let listener = TcpListener::bind(bind).await;\n",
+        "    let extra = AdditionalListener::bind(remote).await;\n",
+        "    let _ = (listener, extra);\n",
+        "}\n",
+    );
+    fs::write(&source, text).expect("listener ownership mutation must write");
+    let capabilities =
+        network_capability_declarations(directory.path(), &source, &production_rust_source(text));
+
+    assert!(
+        capabilities.iter().any(|capability| {
+            capability != "crates/local-api/src/server.rs TcpListener::bind(bind)"
+        }),
+        "a second aliased listener escaped the approved owner"
     );
 }
 
@@ -1172,6 +1471,10 @@ fn active_runtime_exposes_market_observation_but_no_execution_authority() {
     assert_eq!(
         inventory.cli_options,
         ["--approved-root", "--config", "--help"]
+    );
+    assert_eq!(
+        inventory.dependency_capabilities,
+        ["rustix@1.1.4:features=alloc,default,fs,process,std"]
     );
     assert!(
         inventory.execution_authority_violations().is_empty(),
