@@ -234,6 +234,41 @@ pub(crate) fn recover_with_from(
     segment_metadata: Option<&SegmentMetadata>,
     mut visitor: impl FnMut(RecoveredRecord<'_>),
 ) -> Result<RecoverySummary, RecoveryError> {
+    scan_with_from(
+        file,
+        record_start_offset,
+        expected_format,
+        segment_metadata,
+        true,
+        &mut visitor,
+    )
+}
+
+pub(crate) fn verify_with_from(
+    file: &mut File,
+    record_start_offset: u64,
+    expected_format: Option<WalFormat>,
+    segment_metadata: Option<&SegmentMetadata>,
+    mut visitor: impl FnMut(RecoveredRecord<'_>),
+) -> Result<RecoverySummary, RecoveryError> {
+    scan_with_from(
+        file,
+        record_start_offset,
+        expected_format,
+        segment_metadata,
+        false,
+        &mut visitor,
+    )
+}
+
+fn scan_with_from(
+    file: &mut File,
+    record_start_offset: u64,
+    expected_format: Option<WalFormat>,
+    segment_metadata: Option<&SegmentMetadata>,
+    allow_tail_repair: bool,
+    mut visitor: impl FnMut(RecoveredRecord<'_>),
+) -> Result<RecoverySummary, RecoveryError> {
     let actual_length = file.metadata()?.len();
     let maximum_length = MAX_RECOVERABLE_SEGMENT_LENGTH
         .checked_add(record_start_offset)
@@ -266,7 +301,14 @@ pub(crate) fn recover_with_from(
         if remaining < prefix_length {
             let tail = read_tail(file, offset, remaining)?;
             if valid_common_prefix(&tail, segment_format) {
-                return repair_tail(file, segment_format, record_count, offset, actual_length);
+                return handle_incomplete_tail(
+                    file,
+                    allow_tail_repair,
+                    segment_format,
+                    record_count,
+                    offset,
+                    actual_length,
+                );
             }
             return Err(corruption(offset, CorruptionKind::InvalidPartialTail));
         }
@@ -303,7 +345,14 @@ pub(crate) fn recover_with_from(
         if remaining < header_length as u64 {
             let tail = read_tail(file, offset, remaining)?;
             if is_repairable_partial_header(&tail, format) {
-                return repair_tail(file, segment_format, record_count, offset, actual_length);
+                return handle_incomplete_tail(
+                    file,
+                    allow_tail_repair,
+                    segment_format,
+                    record_count,
+                    offset,
+                    actual_length,
+                );
             }
             return Err(corruption(offset, CorruptionKind::InvalidPartialTail));
         }
@@ -335,7 +384,14 @@ pub(crate) fn recover_with_from(
             if format == WalFormat::V2
                 && !contains_later_valid_frame(file, offset + 1, actual_length)?
             {
-                return repair_tail(file, segment_format, record_count, offset, actual_length);
+                return handle_incomplete_tail(
+                    file,
+                    allow_tail_repair,
+                    segment_format,
+                    record_count,
+                    offset,
+                    actual_length,
+                );
             }
             return Err(corruption(offset, CorruptionKind::IncompleteLegacyFrame));
         }
@@ -382,6 +438,23 @@ pub(crate) fn recover_with_from(
         last_valid_offset: offset,
         truncated_bytes: 0,
     })
+}
+
+fn handle_incomplete_tail(
+    file: &mut File,
+    allow_tail_repair: bool,
+    format: Option<WalFormat>,
+    record_count: u64,
+    last_valid_offset: u64,
+    actual_length: u64,
+) -> Result<RecoverySummary, RecoveryError> {
+    if !allow_tail_repair {
+        return Err(corruption(
+            last_valid_offset,
+            CorruptionKind::InvalidPartialTail,
+        ));
+    }
+    repair_tail(file, format, record_count, last_valid_offset, actual_length)
 }
 
 fn validate_sequence(

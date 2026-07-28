@@ -3,6 +3,7 @@
 pub mod frame;
 pub mod prologue;
 pub mod recovery;
+pub mod seal;
 pub mod segment;
 
 pub use recovery::{

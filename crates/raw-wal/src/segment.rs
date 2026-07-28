@@ -125,6 +125,10 @@ impl Segment {
 
     pub fn open_v2(path: &Path) -> Result<Self, SegmentError> {
         let file = OpenOptions::new().read(true).write(true).open(path)?;
+        Self::open_v2_file(file)
+    }
+
+    pub(crate) fn open_v2_file(file: File) -> Result<Self, SegmentError> {
         let mut segment = Self::from_file(file)?;
         if !segment.has_prologue_magic()? {
             return Err(SegmentError::PrologueRequired);
@@ -269,6 +273,38 @@ impl Segment {
                 Err(error)
             }
         }
+    }
+
+    pub(crate) fn sync_all(&mut self) -> Result<(), io::Error> {
+        match self.file.sync_all() {
+            Ok(()) => Ok(()),
+            Err(error) => {
+                self.poisoned = true;
+                Err(error)
+            }
+        }
+    }
+
+    pub(crate) fn verify_without_repair(
+        &mut self,
+        visitor: impl FnMut(RecoveredRecord<'_>),
+    ) -> Result<RecoverySummary, RecoveryError> {
+        self.ensure_prologue_for_recovery()?;
+        let metadata = self
+            .segment_metadata
+            .as_ref()
+            .ok_or_else(|| RecoveryError::Io(io::Error::other(SegmentError::PrologueRequired)))?;
+        recovery::verify_with_from(
+            &mut self.file,
+            self.record_start_offset,
+            Some(WalFormat::V2),
+            Some(metadata),
+            visitor,
+        )
+    }
+
+    pub(crate) fn file_mut(&mut self) -> &mut File {
+        &mut self.file
     }
 
     fn append_encoded_range(&mut self, encoded: &[u8]) -> Result<(u64, u64), SegmentError> {
