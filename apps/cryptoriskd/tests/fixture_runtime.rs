@@ -1,7 +1,7 @@
 use std::{
     fs::{self, File, OpenOptions},
-    io::{self, Write},
-    os::unix::fs::PermissionsExt,
+    io,
+    os::unix::fs::{MetadataExt, PermissionsExt},
     path::Path,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -31,7 +31,8 @@ use runtime::{
     ingestion_channel_with_capacity, start_fixture_runtime_with_limits,
 };
 use startup::{
-    StartupError, issue_session_descriptor, open_rotating_log, open_wal_file, parse_session_secret,
+    StartupError, issue_session_descriptor, open_rotating_log, open_wal_directory,
+    parse_session_secret,
 };
 
 const FIXTURE: &str = include_str!("../../../fixtures/binance/btcusdt-book-v1.jsonl");
@@ -136,17 +137,13 @@ async fn restart_recovers_exact_fixture_without_appending_duplicates() {
         .shutdown()
         .await
         .expect("first fixture runtime must stop");
-    let wal_path = directory.path().join("market.wal");
-    let first_length = fs::metadata(&wal_path).expect("first WAL must exist").len();
+    let first_wal_state = segmented_wal_state(directory.path());
 
     let second_descriptor = descriptor();
     let second = start(directory.path(), second_descriptor.clone())
         .await
         .expect("recovered fixture runtime must start");
-    let second_length = fs::metadata(&wal_path)
-        .expect("recovered WAL must exist")
-        .len();
-    assert_eq!(second_length, first_length);
+    assert_eq!(segmented_wal_state(directory.path()), first_wal_state);
 
     let authenticator = SessionAuthenticator::new(secret());
     let token = authenticator.token(&second_descriptor);
@@ -168,6 +165,130 @@ async fn restart_recovers_exact_fixture_without_appending_duplicates() {
         .shutdown()
         .await
         .expect("recovered runtime must stop");
+}
+
+#[tokio::test]
+async fn fresh_runtime_persists_a_validated_segmented_v2_chain() {
+    let directory = tempfile::tempdir().expect("temporary runtime root must exist");
+    let running = start(directory.path(), descriptor())
+        .await
+        .expect("fixture runtime must start");
+    running.shutdown().await.expect("runtime must stop");
+    let ready_log = fs::read_to_string(directory.path().join("logs/cmti.jsonl"))
+        .expect("runtime log must read")
+        .lines()
+        .map(|line| serde_json::from_str::<serde_json::Value>(line).expect("log must be JSON"))
+        .find(|record| record["event"] == "fixture_runtime_ready")
+        .expect("ready event must exist");
+    assert_eq!(
+        ready_log["pending_wal_compression_jobs"], 0,
+        "fresh unrotated runtime must have no pending compression handoffs"
+    );
+
+    let wal_directory = directory.path().join("market-wal");
+    assert!(wal_directory.is_dir(), "segmented WAL directory must exist");
+    assert!(
+        !directory.path().join("market.wal").exists(),
+        "fresh v2 runtime must not create the legacy single-file WAL"
+    );
+    let mut recovered = raw_wal::manager::SegmentedWalWriter::recover(
+        &wal_directory,
+        raw_wal::manager::RotationPolicy::default(),
+        1,
+    )
+    .expect("segmented chain must recover");
+    let mut payloads = Vec::new();
+    recovered
+        .visit_records(|record| payloads.push(record.payload().to_vec()))
+        .expect("validated records must replay");
+    assert_eq!(
+        payloads,
+        FIXTURE
+            .lines()
+            .map(str::as_bytes)
+            .map(<[u8]>::to_vec)
+            .collect::<Vec<_>>()
+    );
+}
+
+#[tokio::test]
+async fn recovery_rejects_a_payload_prefix_with_unexpected_capture_metadata() {
+    let directory = tempfile::tempdir().expect("temporary runtime root must exist");
+    let wal_directory = directory.path().join("market-wal");
+    fs::create_dir(&wal_directory).expect("segmented WAL directory must exist");
+    fs::set_permissions(&wal_directory, fs::Permissions::from_mode(0o700))
+        .expect("segmented WAL mode must be private");
+    let metadata = raw_wal::prologue::SegmentMetadata::new(
+        [0x31; 16],
+        1,
+        "fixture-json-v1",
+        "foundation-fixture",
+        "cryptoriskd-test",
+        vec![
+            raw_wal::prologue::StreamDescriptor::new(7, "binance", "spot-btcusdt")
+                .expect("stream descriptor must be valid"),
+        ],
+    )
+    .expect("segment metadata must be valid");
+    let mut writer = raw_wal::manager::SegmentedWalWriter::create(
+        &wal_directory,
+        metadata,
+        raw_wal::manager::RotationPolicy::default(),
+        0,
+    )
+    .expect("segmented writer must create");
+    writer
+        .append(
+            raw_wal::frame::RecordMetadata {
+                flags: 0,
+                stream_id: 7,
+                connection_epoch: 1,
+                record_sequence: 9,
+                receive_wall_time_ns: 1,
+                receive_monotonic_time_ns: 1,
+            },
+            FIXTURE
+                .lines()
+                .next()
+                .expect("fixture must have a record")
+                .as_bytes(),
+            1,
+            1,
+        )
+        .expect("unexpected but structurally valid record must persist");
+    drop(writer);
+
+    let error = match start(directory.path(), descriptor()).await {
+        Ok(_) => panic!("unexpected capture metadata must not become ready"),
+        Err(error) => error,
+    };
+
+    assert!(matches!(error, RuntimeError::RecoveryMismatch));
+}
+
+#[tokio::test]
+async fn runtime_rotates_across_segments_and_retains_safe_compression_handoffs() {
+    let directory = tempfile::tempdir().expect("temporary runtime root must exist");
+    let policy = raw_wal::manager::RotationPolicy::new(1, 300_000_000_000)
+        .expect("small rotation policy must be valid");
+    let first = start_with_fixture_and_policy(directory.path(), descriptor(), FIXTURE, policy)
+        .await
+        .expect("rotating runtime must start");
+    first.shutdown().await.expect("rotating runtime must stop");
+    assert_eq!(ready_pending_jobs(directory.path()), 2);
+    assert_eq!(segmented_wal_payloads(directory.path()).len(), 3);
+    let first_state = segmented_wal_state(directory.path());
+
+    let restarted = start_with_fixture_and_policy(directory.path(), descriptor(), FIXTURE, policy)
+        .await
+        .expect("rotated chain must restart");
+    restarted
+        .shutdown()
+        .await
+        .expect("restarted rotating runtime must stop");
+
+    assert_eq!(ready_pending_jobs(directory.path()), 2);
+    assert_eq!(segmented_wal_state(directory.path()), first_state);
 }
 
 #[tokio::test]
@@ -201,14 +322,7 @@ async fn blank_fixture_records_are_persisted_before_the_runtime_rejects_them() {
             "{case} blank must reach the parser after persistence"
         );
 
-        let mut segment = raw_wal::segment::Segment::open(&directory.path().join("market.wal"))
-            .expect("persisted WAL must reopen");
-        let recovery = segment.recover().expect("persisted prefix must recover");
-        let recovered_payloads = recovery
-            .records()
-            .iter()
-            .map(raw_wal::recovery::RecoveredRecordOwned::payload)
-            .collect::<Vec<_>>();
+        let recovered_payloads = segmented_wal_payloads(directory.path());
         assert_eq!(
             recovered_payloads, expected_prefix,
             "{case} blank must remain in the WAL"
@@ -229,11 +343,6 @@ async fn cancellation_is_observed_before_wal_recovery_and_syncs_partial_state() 
     *last ^= 0x80;
     original.extend_from_slice(&torn);
     fs::write(&wal_path, &original).expect("recoverable WAL tail must write");
-    let wal = OpenOptions::new()
-        .read(true)
-        .write(true)
-        .open(&wal_path)
-        .expect("WAL must open");
     let log_path = directory.path().join("logs/cmti.jsonl");
     let log = OpenOptions::new()
         .create(true)
@@ -248,7 +357,9 @@ async fn cancellation_is_observed_before_wal_recovery_and_syncs_partial_state() 
     let error = match start_fixture_runtime_with_limits(
         RuntimeOptions {
             fixture: File::open(fixture_path).expect("fixture must open"),
-            wal,
+            wal_directory: File::open(directory.path()).expect("WAL directory must open"),
+            wal_path: directory.path().to_owned(),
+            wal_policy: raw_wal::manager::RotationPolicy::default(),
             log: LocalJsonLog::from_file(log),
             secret: secret(),
             descriptor: descriptor(),
@@ -287,7 +398,7 @@ fn existing_wal_and_log_reject_hardlinks_and_special_files() {
     fs::hard_link(&wal_path, hardlink_root.path().join("wal-alias"))
         .expect("WAL hardlink must create");
     assert!(
-        open_wal_file(&effective.paths.data_root).is_err(),
+        open_wal_directory(&effective.paths.data_root).is_err(),
         "hardlinked WAL must fail closed"
     );
 
@@ -310,8 +421,32 @@ fn existing_wal_and_log_reject_hardlinks_and_special_files() {
         .expect("mkfifo test helper must run");
     assert!(fifo_status.success(), "test FIFO must create");
     assert!(
-        open_wal_file(&effective.paths.data_root).is_err(),
+        open_wal_directory(&effective.paths.data_root).is_err(),
         "special WAL file must fail closed"
+    );
+}
+
+#[test]
+fn segmented_wal_startup_rejects_an_existing_legacy_file_without_mutating_it() {
+    let root = runtime_root();
+    let effective = effective_config(root.path());
+    let legacy_path = root.path().join("data/market.wal");
+    let legacy_bytes = b"legacy-wal-must-not-be-ignored";
+    fs::write(&legacy_path, legacy_bytes).expect("legacy WAL fixture must write");
+    fs::set_permissions(&legacy_path, fs::Permissions::from_mode(0o600))
+        .expect("legacy WAL mode must be private");
+
+    let error = open_wal_directory(&effective.paths.data_root)
+        .expect_err("legacy WAL must block segmented startup");
+
+    assert!(matches!(error, StartupError::LegacyWalPresent));
+    assert_eq!(
+        fs::read(&legacy_path).expect("legacy WAL must remain readable"),
+        legacy_bytes
+    );
+    assert!(
+        !root.path().join("data/market-wal").exists(),
+        "blocked upgrade must not create a parallel segmented chain"
     );
 }
 
@@ -324,7 +459,7 @@ fn state_files_reject_unsafe_modes_and_created_wal_retains_its_exact_inode() {
     fs::set_permissions(&wal_path, fs::Permissions::from_mode(0o644))
         .expect("unsafe WAL permissions must set");
     assert!(
-        open_wal_file(&effective.paths.data_root).is_err(),
+        open_wal_directory(&effective.paths.data_root).is_err(),
         "group/world-readable WAL must fail closed"
     );
     let log_path = unsafe_root.path().join("logs/cmti.jsonl");
@@ -338,24 +473,26 @@ fn state_files_reject_unsafe_modes_and_created_wal_retains_its_exact_inode() {
 
     let replacement_root = runtime_root();
     let effective = effective_config(replacement_root.path());
-    let mut wal = open_wal_file(&effective.paths.data_root).expect("new WAL must open securely");
-    let wal_path = replacement_root.path().join("data/market.wal");
-    let retained_path = replacement_root.path().join("data/retained.wal");
+    let wal = open_wal_directory(&effective.paths.data_root).expect("new WAL must open securely");
+    let wal_path = replacement_root.path().join("data/market-wal");
+    let retained_path = replacement_root.path().join("data/retained-wal");
     fs::rename(&wal_path, &retained_path).expect("test replacement must move pathname");
-    fs::write(&wal_path, b"replacement").expect("replacement pathname must write");
-    fs::set_permissions(&wal_path, fs::Permissions::from_mode(0o600))
+    fs::create_dir(&wal_path).expect("replacement pathname must create");
+    fs::set_permissions(&wal_path, fs::Permissions::from_mode(0o700))
         .expect("replacement permissions must set");
-    wal.write_all(b"retained")
-        .expect("retained exact WAL fd must remain writable");
-    wal.sync_data().expect("retained exact WAL fd must sync");
+    let retained_stat = rustix::fs::fstat(wal.as_fd()).expect("retained WAL fd must stat");
 
     assert_eq!(
-        fs::read(&retained_path).expect("retained inode must read"),
-        b"retained"
+        fs::metadata(&retained_path)
+            .expect("retained inode metadata must read")
+            .ino(),
+        retained_stat.st_ino
     );
-    assert_eq!(
-        fs::read(&wal_path).expect("replacement inode must read"),
-        b"replacement"
+    assert_ne!(
+        fs::metadata(&wal_path)
+            .expect("replacement inode metadata must read")
+            .ino(),
+        retained_stat.st_ino
     );
 }
 
@@ -458,6 +595,21 @@ async fn healthy_shutdown_completes_within_five_seconds_and_syncs_logs() {
     for forbidden in ["panic", "\"level\":\"error\"", "\"level\":\"warn\""] {
         assert!(!log.contains(forbidden));
     }
+}
+
+#[tokio::test]
+async fn daemon_idle_rotation_poll_is_explicit_and_preserves_a_healthy_runtime() {
+    let directory = tempfile::tempdir().expect("temporary runtime root must exist");
+    let mut running = start(directory.path(), descriptor())
+        .await
+        .expect("fixture runtime must start");
+
+    running
+        .poll_wal_rotation()
+        .expect("idle WAL rotation poll must succeed");
+    running.shutdown().await.expect("runtime must stop cleanly");
+
+    assert_eq!(segmented_wal_payloads(directory.path()).len(), 3);
 }
 
 #[tokio::test]
@@ -571,17 +723,48 @@ async fn start_with_fixture_and_limits(
     fixture_contents: &str,
     limits: RuntimeLimits,
 ) -> Result<runtime::RunningDaemon, RuntimeError> {
+    start_with_fixture_limits_and_policy(
+        root,
+        descriptor,
+        fixture_contents,
+        limits,
+        raw_wal::manager::RotationPolicy::default(),
+    )
+    .await
+}
+
+async fn start_with_fixture_and_policy(
+    root: &Path,
+    descriptor: SessionDescriptor,
+    fixture_contents: &str,
+    wal_policy: raw_wal::manager::RotationPolicy,
+) -> Result<runtime::RunningDaemon, RuntimeError> {
+    start_with_fixture_limits_and_policy(
+        root,
+        descriptor,
+        fixture_contents,
+        runtime_limits(),
+        wal_policy,
+    )
+    .await
+}
+
+async fn start_with_fixture_limits_and_policy(
+    root: &Path,
+    descriptor: SessionDescriptor,
+    fixture_contents: &str,
+    limits: RuntimeLimits,
+    wal_policy: raw_wal::manager::RotationPolicy,
+) -> Result<runtime::RunningDaemon, RuntimeError> {
     fs::create_dir_all(root.join("logs")).expect("log root must exist");
     let fixture_path = root.join("fixture.jsonl");
     fs::write(&fixture_path, fixture_contents).expect("fixture copy must write");
     let fixture = File::open(fixture_path).expect("fixture copy must open");
-    let wal = OpenOptions::new()
-        .create(true)
-        .read(true)
-        .write(true)
-        .truncate(false)
-        .open(root.join("market.wal"))
-        .expect("WAL must open");
+    let wal_path = root.join("market-wal");
+    fs::create_dir_all(&wal_path).expect("WAL directory must exist");
+    fs::set_permissions(&wal_path, fs::Permissions::from_mode(0o700))
+        .expect("WAL directory mode must be private");
+    let wal_directory = File::open(&wal_path).expect("WAL directory must open");
     let log = OpenOptions::new()
         .create(true)
         .append(true)
@@ -590,7 +773,9 @@ async fn start_with_fixture_and_limits(
     start_fixture_runtime_with_limits(
         RuntimeOptions {
             fixture,
-            wal,
+            wal_directory,
+            wal_path,
+            wal_policy,
             log: LocalJsonLog::from_file(log),
             secret: secret(),
             descriptor,
@@ -625,6 +810,47 @@ fn runtime_root() -> tempfile::TempDir {
         .expect("model registry must exist");
     fs::write(root.path().join("fixture.jsonl"), FIXTURE).expect("fixture must exist");
     root
+}
+
+fn segmented_wal_payloads(root: &Path) -> Vec<Vec<u8>> {
+    let mut writer = raw_wal::manager::SegmentedWalWriter::recover(
+        &root.join("market-wal"),
+        raw_wal::manager::RotationPolicy::default(),
+        1,
+    )
+    .expect("segmented WAL must recover");
+    let mut payloads = Vec::new();
+    writer
+        .visit_records(|record| payloads.push(record.payload().to_vec()))
+        .expect("segmented WAL records must validate");
+    payloads
+}
+
+fn segmented_wal_state(root: &Path) -> Vec<(String, Vec<u8>)> {
+    let mut entries = fs::read_dir(root.join("market-wal"))
+        .expect("segmented WAL directory must read")
+        .map(|entry| {
+            let entry = entry.expect("segmented WAL entry must read");
+            let name = entry
+                .file_name()
+                .into_string()
+                .expect("segmented WAL names must be UTF-8");
+            let bytes = fs::read(entry.path()).expect("segmented WAL artifact must read");
+            (name, bytes)
+        })
+        .collect::<Vec<_>>();
+    entries.sort_unstable_by(|left, right| left.0.cmp(&right.0));
+    entries
+}
+
+fn ready_pending_jobs(root: &Path) -> u64 {
+    fs::read_to_string(root.join("logs/cmti.jsonl"))
+        .expect("runtime log must read")
+        .lines()
+        .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+        .rfind(|record| record["event"] == "fixture_runtime_ready")
+        .and_then(|record| record["pending_wal_compression_jobs"].as_u64())
+        .expect("latest ready event must report pending compression jobs")
 }
 
 fn effective_config(root: &Path) -> config::EffectiveConfig {

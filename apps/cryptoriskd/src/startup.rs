@@ -13,7 +13,7 @@ use local_api::{
 use observability::{LocalJsonLog, LogRotationPolicy, ObservabilityError};
 use rand::{RngCore, rngs::OsRng};
 use rustix::{
-    fs::{FileType, FlockOperation, Mode, OFlags, fcntl_getfl, fcntl_setfl},
+    fs::{AtFlags, FileType, Mode, OFlags, fcntl_getfl, fcntl_setfl},
     io::{FdFlags, fcntl_getfd},
 };
 use thiserror::Error;
@@ -23,6 +23,7 @@ const SESSION_SECRET_LENGTH: usize = 32;
 const PROTOCOL_MAJOR: u32 = 1;
 const PROTOCOL_MINOR: u32 = 0;
 const WAL_FILE_NAME: &str = "market.wal";
+const WAL_DIRECTORY_NAME: &str = "market-wal";
 const LOG_FILE_NAME: &str = "cmti.jsonl";
 const PREVIOUS_LOG_FILE_NAME: &str = "cmti.jsonl.1";
 const MAXIMUM_LOG_SEGMENT_BYTES: u64 = 8 * 1024 * 1024;
@@ -141,17 +142,17 @@ pub fn issue_session_descriptor() -> Result<SessionDescriptor, StartupError> {
     .map_err(StartupError::Session)
 }
 
-pub fn open_wal_file(data_root: &ValidatedDirectory) -> Result<File, StartupError> {
-    let file = open_or_create_state_file(
-        data_root,
-        WAL_FILE_NAME,
-        OFlags::RDWR | OFlags::CLOEXEC | OFlags::NOFOLLOW,
-    )
-    .map_err(StartupError::WalIo)?;
-    rustix::fs::flock(&file, FlockOperation::NonBlockingLockExclusive)
-        .map_err(io::Error::from)
-        .map_err(StartupError::WalIo)?;
-    Ok(file)
+pub fn open_wal_directory(
+    data_root: &ValidatedDirectory,
+) -> Result<ValidatedDirectory, StartupError> {
+    match rustix::fs::statat(data_root.as_fd(), WAL_FILE_NAME, AtFlags::SYMLINK_NOFOLLOW) {
+        Ok(_) => return Err(StartupError::LegacyWalPresent),
+        Err(rustix::io::Errno::NOENT) => {}
+        Err(error) => return Err(StartupError::WalIo(error.into())),
+    }
+    data_root
+        .open_or_create_child_directory(WAL_DIRECTORY_NAME)
+        .map_err(StartupError::WalIo)
 }
 
 pub fn open_rotating_log(log_root: &ValidatedDirectory) -> Result<LocalJsonLog, StartupError> {
@@ -239,6 +240,10 @@ pub enum StartupError {
     Session(#[source] SessionError),
     #[error("market WAL open failed")]
     WalIo(#[from] io::Error),
+    #[error(
+        "legacy market.wal is present; migrate or archive it explicitly before starting segmented WAL v2"
+    )]
+    LegacyWalPresent,
     #[error("local JSON log open failed")]
     LogIo(#[source] io::Error),
     #[error("local JSON log policy failed")]

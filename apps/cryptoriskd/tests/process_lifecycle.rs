@@ -58,7 +58,13 @@ async fn real_daemon_authenticates_closes_secret_fd_locks_and_restarts_same_wal(
         competing_output.stdout.lines().next().is_none(),
         "locked daemon must not announce readiness"
     );
-    assert!(competing_output.stderr.contains("market WAL open failed"));
+    assert!(
+        competing_output
+            .stderr
+            .contains("segmented WAL manager already has a live owner"),
+        "competing stderr was {}",
+        competing_output.stderr
+    );
     assert_no_secret_material(&competing_output);
 
     let first_status = first.signal_and_wait("-TERM", EXIT_TIMEOUT);
@@ -75,20 +81,13 @@ async fn real_daemon_authenticates_closes_secret_fd_locks_and_restarts_same_wal(
     );
     assert_no_secret_material(&first_output);
     assert_private_structured_logs(root.path());
-    let wal_path = root.path().join("data/market.wal");
-    let first_wal_length = fs::metadata(&wal_path).expect("first WAL must exist").len();
+    let first_wal_state = segmented_wal_state(root.path());
 
     let mut restarted = DaemonProcess::spawn(root.path(), &secret_path, SecretOpenMode::ReadOnly);
     let restarted_readiness = restarted.readiness();
     assert_authenticated_snapshot(&restarted_readiness).await;
     assert_fd_table_has_no_secret(&restarted, &secret_path);
-    assert_eq!(
-        fs::metadata(&wal_path)
-            .expect("restarted WAL must exist")
-            .len(),
-        first_wal_length,
-        "restart must recover without duplicate append"
-    );
+    assert_eq!(segmented_wal_state(root.path()), first_wal_state);
 
     let restarted_status = restarted.signal_and_wait("-INT", EXIT_TIMEOUT);
     assert!(restarted_status.success(), "Ctrl-C shutdown must be clean");
@@ -285,8 +284,8 @@ fn assert_fd_table_has_no_secret(daemon: &DaemonProcess, secret_path: &Path) {
         "inherited secret descriptor must be closed after one read"
     );
     assert!(
-        table.contains("market.wal"),
-        "retained WAL fd must be visible"
+        table.contains("market-wal") && table.contains(".active.wal"),
+        "retained segmented WAL directory and active segment fds must be visible"
     );
     assert!(
         table.contains("cmti.jsonl"),
@@ -413,6 +412,23 @@ fn runtime_root() -> tempfile::TempDir {
     root
 }
 
+fn segmented_wal_state(root: &Path) -> Vec<(String, Vec<u8>)> {
+    let mut entries = fs::read_dir(root.join("data/market-wal"))
+        .expect("segmented WAL directory must read")
+        .map(|entry| {
+            let entry = entry.expect("segmented WAL entry must read");
+            let name = entry
+                .file_name()
+                .into_string()
+                .expect("segmented WAL names must be UTF-8");
+            let bytes = fs::read(entry.path()).expect("segmented WAL artifact must read");
+            (name, bytes)
+        })
+        .collect::<Vec<_>>();
+    entries.sort_unstable_by(|left, right| left.0.cmp(&right.0));
+    entries
+}
+
 #[derive(Clone, Copy)]
 enum SecretOpenMode {
     ReadOnly,
@@ -504,12 +520,22 @@ impl DaemonProcess {
         self.child.id()
     }
 
-    fn readiness(&self) -> Readiness {
+    fn readiness(&mut self) -> Readiness {
         let line = self
             .readiness_receiver
             .recv_timeout(EXIT_TIMEOUT)
             .expect("daemon readiness must arrive within five seconds");
-        serde_json::from_str(&line).expect("readiness must be one JSON line")
+        match serde_json::from_str(&line) {
+            Ok(readiness) => readiness,
+            Err(source) => {
+                let status = self.wait_for_exit(EXIT_TIMEOUT);
+                let output = self.capture();
+                panic!(
+                    "readiness must be one JSON line: {source}; status={status:?}; stderr={}",
+                    output.stderr
+                );
+            }
+        }
     }
 
     fn signal_and_wait(&mut self, signal: &str, timeout: Duration) -> ExitStatus {

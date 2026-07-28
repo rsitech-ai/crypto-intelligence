@@ -382,7 +382,8 @@
     "WalFormat": {
       "type": "string",
       "enum": [
-        "v1"
+        "v1",
+        "v2"
       ]
     }
   }

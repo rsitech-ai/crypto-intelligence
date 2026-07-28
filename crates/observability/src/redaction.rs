@@ -133,7 +133,10 @@ impl Redactor {
     fn event_field(self, field: FieldName, key: &str, value: &Value) -> Value {
         let numeric = matches!(
             field,
-            FieldName::Sequence | FieldName::QueueDepth | FieldName::DurationMicros
+            FieldName::Sequence
+                | FieldName::QueueDepth
+                | FieldName::DurationMicros
+                | FieldName::PendingWalCompressionJobs
         );
         match (numeric, value) {
             (true, Value::Number(value)) if value.is_i64() || value.is_u64() => {

@@ -2,7 +2,8 @@ use std::{
     fs::File,
     io::{self, Read},
     net::SocketAddr,
-    time::Instant,
+    path::PathBuf,
+    time::{Instant, SystemTime, UNIX_EPOCH},
 };
 
 use connector_binance::{ParseError, parse_fixture_line};
@@ -21,9 +22,12 @@ use observability::{
     init_local_tracing,
 };
 use orderbook::{BookError, OrderBook};
+use rand::{RngCore, rngs::OsRng};
 use raw_wal::{
-    RecoveryError,
-    segment::{Segment, SegmentError},
+    frame::RecordMetadata,
+    manager::{ManagerError, RotationPolicy, SegmentedWalWriter},
+    prologue::{PrologueError, SegmentMetadata, StreamDescriptor},
+    seal::CompressionJob,
 };
 use serde::Serialize;
 use thiserror::Error;
@@ -39,7 +43,9 @@ const EXPECTED_BEST_ASK: &str = "60000.2";
 
 pub struct RuntimeOptions {
     pub fixture: File,
-    pub wal: File,
+    pub wal_directory: File,
+    pub wal_path: PathBuf,
+    pub wal_policy: RotationPolicy,
     pub log: LocalJsonLog,
     pub secret: SessionSecret,
     pub descriptor: SessionDescriptor,
@@ -231,19 +237,62 @@ impl<W: WalSink> IngestionEngine<W> {
 }
 
 struct SegmentSink {
-    segment: Segment,
+    writer: SegmentedWalWriter,
+    clock: Instant,
+    next_sequence: u64,
+    pending_compression_jobs: Vec<CompressionJob>,
 }
 
 impl WalSink for SegmentSink {
     fn append_and_sync(&mut self, payload: &[u8]) -> io::Result<()> {
-        self.segment
-            .append_synced(payload)
-            .map(|_| ())
-            .map_err(segment_io_error)
+        let following_sequence = self
+            .next_sequence
+            .checked_add(1)
+            .ok_or_else(|| io::Error::other("WAL record sequence overflow"))?;
+        let receive_monotonic_time_ns = u64::try_from(self.clock.elapsed().as_nanos())
+            .map_err(|_| io::Error::other("monotonic timestamp overflow"))?;
+        let receive_wall_time_ns = current_wall_time_ns()?;
+        let metadata = RecordMetadata {
+            flags: 0,
+            stream_id: 7,
+            connection_epoch: 1,
+            record_sequence: self.next_sequence,
+            receive_wall_time_ns,
+            receive_monotonic_time_ns,
+        };
+        let outcome = self
+            .writer
+            .append(
+                metadata,
+                payload,
+                receive_monotonic_time_ns,
+                receive_wall_time_ns,
+            )
+            .map_err(manager_io_error)?;
+        if let Some(job) = outcome.compression_job() {
+            self.pending_compression_jobs.push(job.clone());
+        }
+        self.next_sequence = following_sequence;
+        Ok(())
     }
 
     fn sync(&mut self) -> io::Result<()> {
-        self.segment.sync()
+        self.writer.sync().map_err(manager_io_error)
+    }
+}
+
+impl SegmentSink {
+    fn poll_rotation(&mut self) -> io::Result<()> {
+        let now_monotonic_ns = u64::try_from(self.clock.elapsed().as_nanos())
+            .map_err(|_| io::Error::other("monotonic timestamp overflow"))?;
+        let job = self
+            .writer
+            .poll_rotation(now_monotonic_ns, current_wall_time_ns()?)
+            .map_err(manager_io_error)?;
+        if let Some(job) = job {
+            self.pending_compression_jobs.push(job);
+        }
+        Ok(())
     }
 }
 
@@ -265,6 +314,10 @@ impl RunningDaemon {
         captured_at_unix_nanos: i64,
     ) -> Result<DiagnosticsSnapshot, ObservabilityError> {
         self.observability.snapshot(captured_at_unix_nanos)
+    }
+
+    pub fn poll_wal_rotation(&mut self) -> Result<(), RuntimeError> {
+        self.wal.poll_rotation().map_err(RuntimeError::Persistence)
     }
 
     pub async fn shutdown(mut self) -> Result<(), RuntimeError> {
@@ -319,7 +372,9 @@ pub async fn start_fixture_runtime_with_limits(
 ) -> Result<RunningDaemon, RuntimeError> {
     let RuntimeOptions {
         fixture,
-        wal,
+        wal_directory,
+        wal_path,
+        wal_policy,
         log,
         secret,
         descriptor,
@@ -327,32 +382,72 @@ pub async fn start_fixture_runtime_with_limits(
     } = options;
     let tracing = init_local_tracing(log, limits.log_level);
     let fixture_records = read_fixture_records(fixture)?;
-    let mut segment = Segment::from_file(wal).map_err(segment_io_error)?;
     if is_cancelled(&cancellation) {
-        cancel_startup(SegmentSink { segment }, tracing)?;
+        cancel_before_wal_startup(tracing)?;
         return Err(RuntimeError::Cancelled);
     }
-    let recovery = segment.recover()?;
+    let clock = Instant::now();
+    let initial_metadata = initial_segment_metadata()?;
+    let mut writer = SegmentedWalWriter::open_or_create_in(
+        wal_directory,
+        &wal_path,
+        initial_metadata,
+        wal_policy,
+        0,
+    )?;
     if is_cancelled(&cancellation) {
-        cancel_startup(SegmentSink { segment }, tracing)?;
+        cancel_startup(
+            SegmentSink {
+                writer,
+                clock,
+                next_sequence: 1,
+                pending_compression_jobs: Vec::new(),
+            },
+            tracing,
+        )?;
         return Err(RuntimeError::Cancelled);
     }
-    if recovery.records().len() > fixture_records.len()
-        || !recovery
-            .records()
-            .iter()
-            .zip(&fixture_records)
-            .all(|(recovered, expected)| recovered.payload() == expected)
-    {
+    let mut recovered_count = 0_usize;
+    let mut recovery_mismatch = false;
+    writer.visit_records(|record| {
+        let payload_matches = fixture_records
+            .get(recovered_count)
+            .is_some_and(|expected| record.payload() == expected);
+        let expected_sequence = u64::try_from(recovered_count)
+            .ok()
+            .and_then(|count| count.checked_add(1));
+        let metadata_matches = record.metadata().is_some_and(|metadata| {
+            metadata.flags == 0
+                && metadata.stream_id == 7
+                && metadata.connection_epoch == 1
+                && Some(metadata.record_sequence) == expected_sequence
+        });
+        recovery_mismatch |= !payload_matches || !metadata_matches;
+        recovered_count = recovered_count.saturating_add(1);
+    })?;
+    if recovery_mismatch || recovered_count > fixture_records.len() {
         return Err(RuntimeError::RecoveryMismatch);
     }
 
     let observability = ObservabilityHandle::default();
     let metrics = observability.metrics().clone();
     initialize_runtime_metrics(&metrics)?;
-    let mut engine = IngestionEngine::new(SegmentSink { segment }, metrics.clone());
-    for record in recovery.records() {
-        engine.process_persisted(record.payload())?;
+    let next_sequence = u64::try_from(recovered_count)
+        .ok()
+        .and_then(|count| count.checked_add(1))
+        .ok_or(RuntimeError::RecordSequenceOverflow)?;
+    let pending_compression_jobs = writer.take_recovered_compression_jobs()?;
+    let mut engine = IngestionEngine::new(
+        SegmentSink {
+            writer,
+            clock,
+            next_sequence,
+            pending_compression_jobs,
+        },
+        metrics.clone(),
+    );
+    for record in fixture_records.iter().take(recovered_count) {
+        engine.process_persisted(record)?;
     }
     if is_cancelled(&cancellation) {
         cancel_startup(engine.into_wal(), tracing)?;
@@ -361,7 +456,7 @@ pub async fn start_fixture_runtime_with_limits(
 
     let remaining = fixture_records
         .into_iter()
-        .skip(recovery.records().len())
+        .skip(recovered_count)
         .collect::<Vec<_>>();
     let (sender, mut receiver) = ingestion_channel_with_capacity(limits.ingestion_queue_capacity);
     let producer = spawn_fixture_producer(sender, remaining, cancellation.clone(), metrics.clone());
@@ -424,13 +519,16 @@ pub async fn start_fixture_runtime_with_limits(
     )
     .await?;
     let readiness = Readiness::new(server.local_addr(), &descriptor);
+    let pending_wal_compression_jobs = u64::try_from(wal.pending_compression_jobs.len())
+        .expect("pending job count fits the supported 64-bit platform");
     tracing.with_default(|| {
         tracing::info!(
             event = "fixture_runtime_ready",
             component = "runtime",
             source_id = "binance-fixture",
             instrument_id = "BTCUSDT",
-            sequence = EXPECTED_FINAL_SEQUENCE
+            sequence = EXPECTED_FINAL_SEQUENCE,
+            pending_wal_compression_jobs = pending_wal_compression_jobs
         );
     });
     tracing.sync()?;
@@ -497,6 +595,40 @@ fn cancel_startup(mut wal: SegmentSink, tracing: LocalTracing) -> Result<(), Run
     });
     tracing.shutdown()?;
     Ok(())
+}
+
+fn cancel_before_wal_startup(tracing: LocalTracing) -> Result<(), RuntimeError> {
+    tracing.with_default(|| {
+        tracing::info!(event = "fixture_runtime_cancelled", component = "runtime");
+    });
+    tracing.shutdown()?;
+    Ok(())
+}
+
+fn initial_segment_metadata() -> Result<SegmentMetadata, RuntimeError> {
+    let mut segment_id = [0_u8; 16];
+    OsRng
+        .try_fill_bytes(&mut segment_id)
+        .map_err(|_| RuntimeError::Random)?;
+    if segment_id == [0_u8; 16] {
+        return Err(RuntimeError::Random);
+    }
+    SegmentMetadata::new(
+        segment_id,
+        current_wall_time_ns()?,
+        "fixture-json-v1",
+        "foundation-fixture",
+        concat!("cryptoriskd-", env!("CARGO_PKG_VERSION")),
+        vec![StreamDescriptor::new(7, "binance", "spot-btcusdt")?],
+    )
+    .map_err(RuntimeError::Prologue)
+}
+
+fn current_wall_time_ns() -> io::Result<i64> {
+    let elapsed = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|_| io::Error::other("system clock precedes the Unix epoch"))?;
+    i64::try_from(elapsed.as_nanos()).map_err(|_| io::Error::other("wall timestamp overflow"))
 }
 
 fn read_fixture_records(mut fixture: File) -> Result<Vec<Vec<u8>>, RuntimeError> {
@@ -632,7 +764,7 @@ fn initialize_runtime_metrics(metrics: &Metrics) -> Result<(), ObservabilityErro
     metrics.gauge(queue_depth_key(), 0)
 }
 
-fn segment_io_error(error: SegmentError) -> io::Error {
+fn manager_io_error(error: ManagerError) -> io::Error {
     io::Error::other(error)
 }
 
@@ -648,8 +780,14 @@ pub enum RuntimeError {
     Parse(#[source] ParseError),
     #[error("authoritative order book update failed")]
     Book(#[source] BookError),
-    #[error("market WAL recovery failed")]
-    Recovery(#[from] RecoveryError),
+    #[error("segmented market WAL failed: {0}")]
+    Wal(#[from] ManagerError),
+    #[error("segmented market WAL metadata is invalid")]
+    Prologue(#[from] PrologueError),
+    #[error("operating system randomness is unavailable")]
+    Random,
+    #[error("WAL record sequence overflow")]
+    RecordSequenceOverflow,
     #[error("recovered WAL does not match the frozen fixture prefix")]
     RecoveryMismatch,
     #[error("fixture I/O failed: {0}")]

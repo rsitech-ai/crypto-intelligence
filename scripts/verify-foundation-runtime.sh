@@ -421,6 +421,35 @@ raise SystemExit(1 if violations else 0)
 PY
 }
 
+segmented_wal_tree_state() {
+  python3 - "$1" <<'PY'
+import hashlib
+import os
+import pathlib
+import sys
+
+root = pathlib.Path(sys.argv[1])
+if not root.is_dir():
+    raise SystemExit(f"segmented WAL directory is missing: {root}")
+digest = hashlib.sha256()
+total = 0
+entries = sorted(os.scandir(root), key=lambda entry: entry.name)
+if not entries:
+    raise SystemExit(f"segmented WAL directory is empty: {root}")
+for entry in entries:
+    if not entry.is_file(follow_symlinks=False):
+        raise SystemExit(f"segmented WAL artifact is not a regular file: {entry.path}")
+    name = entry.name.encode("utf-8")
+    data = pathlib.Path(entry.path).read_bytes()
+    total += len(data)
+    digest.update(len(name).to_bytes(8, "big"))
+    digest.update(name)
+    digest.update(len(data).to_bytes(8, "big"))
+    digest.update(data)
+print(f"{total}\t{digest.hexdigest()}")
+PY
+}
+
 runtime_records="${temporary_root}/runtime-records.jsonl"
 first_digest=""
 first_wal_size=""
@@ -524,8 +553,8 @@ for run_number in 1 2; do
   active_pid=""
   rm -f -- "${secret_file}"
 
-  wal_size="$(stat -f '%z' "${runtime_root}/data/market.wal")"
-  wal_hash="$(shasum -a 256 "${runtime_root}/data/market.wal" | awk '{print $1}')"
+  IFS=$'\t' read -r wal_size wal_hash \
+    < <(segmented_wal_tree_state "${runtime_root}/data/market-wal")
   if [[ "${run_number}" -eq 1 ]]; then
     first_wal_size="${wal_size}"
     first_wal_hash="${wal_hash}"
@@ -861,14 +890,14 @@ print(json.dumps({
 PY
 
     if [[ "${forced_owned_processes_gone}" -eq 1 ]]; then
-      forced_wal_size="$(stat -f '%z' "${supervisor_loss_root}/data/market.wal")"
-      forced_wal_hash="$(shasum -a 256 "${supervisor_loss_root}/data/market.wal" | awk '{print $1}')"
+      IFS=$'\t' read -r forced_wal_size forced_wal_hash \
+        < <(segmented_wal_tree_state "${supervisor_loss_root}/data/market-wal")
     fi
     if [[ "${forced_owned_processes_gone}" -eq 1 ]] \
       && launch_app_runtime "${supervisor_loss_run_id}" app-relaunch 1
     then
-      relaunched_wal_size="$(stat -f '%z' "${supervisor_loss_root}/data/market.wal")"
-      relaunched_wal_hash="$(shasum -a 256 "${supervisor_loss_root}/data/market.wal" | awk '{print $1}')"
+      IFS=$'\t' read -r relaunched_wal_size relaunched_wal_hash \
+        < <(segmented_wal_tree_state "${supervisor_loss_root}/data/market-wal")
       python3 - "${forced_wal_size}" "${forced_wal_hash}" \
         "${relaunched_wal_size}" "${relaunched_wal_hash}" \
         > "${temporary_root}/app-wal-recovery.json" <<'PY'

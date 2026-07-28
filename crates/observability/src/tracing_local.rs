@@ -257,9 +257,12 @@ impl JsonVisitor {
 
     fn record_value(&mut self, field: &Field, value: Value) {
         match FieldName::parse(field.name()) {
-            Some(FieldName::Sequence | FieldName::QueueDepth | FieldName::DurationMicros)
-                if value.is_i64() || value.is_u64() =>
-            {
+            Some(
+                FieldName::Sequence
+                | FieldName::QueueDepth
+                | FieldName::DurationMicros
+                | FieldName::PendingWalCompressionJobs,
+            ) if value.is_i64() || value.is_u64() => {
                 self.fields.insert(field.name().to_owned(), value);
             }
             Some(_) => {

@@ -14,17 +14,19 @@ use config::{
     RuntimeOverrides, TextLayer,
 };
 use observability::LocalLogLevel;
+use raw_wal::manager::RotationPolicy;
 use runtime::{RuntimeError, RuntimeLimits, RuntimeOptions, start_fixture_runtime_with_limits};
 use serde_json::json;
 #[cfg(debug_assertions)]
 use startup::wait_readiness_gate_from_fd;
 use startup::{
-    StartupError, issue_session_descriptor, open_wal_file, read_session_secret_from_fd_async,
+    StartupError, issue_session_descriptor, open_wal_directory, read_session_secret_from_fd_async,
 };
 use thiserror::Error;
 use tokio::{runtime::Runtime, sync::watch};
 
 const MAX_CONFIG_BYTES: usize = 1024 * 1024;
+const WAL_ROTATION_POLL_INTERVAL: Duration = Duration::from_secs(1);
 
 #[derive(Debug, Parser)]
 #[command(name = "cryptoriskd")]
@@ -177,12 +179,14 @@ async fn run(prepared: PreparedStartup) -> Result<(), AppError> {
     };
     let descriptor = issue_session_descriptor()?;
     let fixture = effective.paths.fixture_input.try_clone()?;
-    let wal = open_wal_file(&effective.paths.data_root)?;
+    let wal_directory = open_wal_directory(&effective.paths.data_root)?;
     let log = startup::open_rotating_log(&effective.paths.log_root)?;
-    let running = match start_fixture_runtime_with_limits(
+    let mut running = match start_fixture_runtime_with_limits(
         RuntimeOptions {
             fixture,
-            wal,
+            wal_directory: wal_directory.try_clone()?,
+            wal_path: wal_directory.path().to_owned(),
+            wal_policy: RotationPolicy::default(),
             log,
             secret,
             descriptor,
@@ -229,8 +233,27 @@ async fn run(prepared: PreparedStartup) -> Result<(), AppError> {
         stdout.flush()?;
     }
 
-    wait_for_cancellation(&mut cancellation).await;
+    wait_for_shutdown_or_wal_rotation(&mut running, &mut cancellation).await?;
     shutdown_running(running).await
+}
+
+async fn wait_for_shutdown_or_wal_rotation(
+    running: &mut runtime::RunningDaemon,
+    cancellation: &mut watch::Receiver<bool>,
+) -> Result<(), RuntimeError> {
+    let mut interval = tokio::time::interval(WAL_ROTATION_POLL_INTERVAL);
+    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    interval.tick().await;
+    loop {
+        tokio::select! {
+            biased;
+            changed = cancellation.changed() => {
+                let _ = changed;
+                return Ok(());
+            }
+            _ = interval.tick() => running.poll_wal_rotation()?,
+        }
+    }
 }
 
 fn supported_environment_overrides() -> Result<EnvironmentOverrides, ConfigError> {

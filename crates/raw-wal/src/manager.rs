@@ -20,7 +20,7 @@ use crate::{
         CompressionJob, ManifestError, SealedSegmentManifest, SealingError, SegmentPredecessor,
         compression_job_for_verified_segment, manifest_path_for,
         read_pending_manifest_for_recovery_at, seal_owned_v2_segment_at, seal_v2_segment_at,
-        sealed_path_for, verify_sealed_v2_segment_at,
+        sealed_path_for, verify_sealed_v2_segment_at, visit_verified_sealed_v2_segment_at,
     },
     segment::{Segment, SegmentError},
 };
@@ -227,6 +227,7 @@ pub struct SegmentedWalWriter {
     active_record_count: u64,
     last_sequences: BTreeMap<(u32, u64), u64>,
     predecessor: Option<SegmentPredecessor>,
+    sealed_names: Vec<PathBuf>,
     recovered_compression_jobs: Vec<CompressionJob>,
 }
 
@@ -238,6 +239,44 @@ impl SegmentedWalWriter {
         opened_monotonic_ns: u64,
     ) -> Result<Self, ManagerError> {
         let directory_lock = acquire_directory_lock(directory)?;
+        Self::create_locked(
+            directory_lock,
+            directory,
+            metadata,
+            policy,
+            opened_monotonic_ns,
+        )
+    }
+
+    pub fn open_or_create_in(
+        directory: File,
+        display_path: &Path,
+        initial_metadata: SegmentMetadata,
+        policy: RotationPolicy,
+        now_monotonic_ns: u64,
+    ) -> Result<Self, ManagerError> {
+        let directory_lock = lock_directory_file(directory)?;
+        ensure_directory_path_identity(display_path, &directory_lock)?;
+        if directory_entry_names(&directory_lock)?.is_empty() {
+            Self::create_locked(
+                directory_lock,
+                display_path,
+                initial_metadata,
+                policy,
+                now_monotonic_ns,
+            )
+        } else {
+            Self::recover_locked(directory_lock, display_path, policy, now_monotonic_ns)
+        }
+    }
+
+    fn create_locked(
+        directory_lock: File,
+        directory: &Path,
+        metadata: SegmentMetadata,
+        policy: RotationPolicy,
+        opened_monotonic_ns: u64,
+    ) -> Result<Self, ManagerError> {
         ensure_directory_path_identity(directory, &directory_lock)?;
         ensure_new_directory(&directory_lock)?;
         let active_name = active_name(1, metadata.segment_id());
@@ -260,6 +299,7 @@ impl SegmentedWalWriter {
             active_record_count: 0,
             last_sequences: BTreeMap::new(),
             predecessor: None,
+            sealed_names: Vec::new(),
             recovered_compression_jobs: Vec::new(),
         })
     }
@@ -270,6 +310,15 @@ impl SegmentedWalWriter {
         now_monotonic_ns: u64,
     ) -> Result<Self, ManagerError> {
         let directory_lock = acquire_directory_lock(directory)?;
+        Self::recover_locked(directory_lock, directory, policy, now_monotonic_ns)
+    }
+
+    fn recover_locked(
+        directory_lock: File,
+        directory: &Path,
+        policy: RotationPolicy,
+        now_monotonic_ns: u64,
+    ) -> Result<Self, ManagerError> {
         ensure_directory_path_identity(directory, &directory_lock)?;
         let mut inventory = inventory(&directory_lock)?;
         let temporary_paths = std::mem::take(&mut inventory.temporary);
@@ -445,6 +494,10 @@ impl SegmentedWalWriter {
             return Err(InventoryError::CrossSegmentSequenceRegression.into());
         }
         let predecessor = manifests.last().map(SealedSegmentManifest::as_predecessor);
+        let sealed_names = manifests
+            .iter()
+            .map(|manifest| PathBuf::from(manifest.segment_file()))
+            .collect();
         cleanup_temporary_files(&directory_lock, &temporary_paths)?;
         let active_path = directory.join(&active_name);
         if ensure_directory_path_identity(directory, &directory_lock).is_err() {
@@ -464,6 +517,7 @@ impl SegmentedWalWriter {
             active_record_count: summary.record_count(),
             last_sequences,
             predecessor,
+            sealed_names,
             recovered_compression_jobs,
         })
     }
@@ -579,6 +633,27 @@ impl SegmentedWalWriter {
         Ok(std::mem::take(&mut self.recovered_compression_jobs))
     }
 
+    pub fn sync(&mut self) -> Result<(), ManagerError> {
+        self.ensure_directory_identity()?;
+        self.active.as_mut().ok_or(ManagerError::Inactive)?.sync()?;
+        Ok(())
+    }
+
+    pub fn visit_records(
+        &mut self,
+        mut visitor: impl FnMut(RecoveredRecord<'_>),
+    ) -> Result<(), ManagerError> {
+        self.ensure_directory_identity()?;
+        for sealed_name in &self.sealed_names {
+            visit_verified_sealed_v2_segment_at(&self.directory_lock, sealed_name, &mut visitor)?;
+        }
+        self.active
+            .as_mut()
+            .ok_or(ManagerError::Inactive)?
+            .verify_without_repair(visitor)?;
+        Ok(())
+    }
+
     fn validate_global_sequence(&self, metadata: RecordMetadata) -> Result<(), ManagerError> {
         let key = (metadata.stream_id, metadata.connection_epoch);
         if let Some(previous) = self.last_sequences.get(&key).copied()
@@ -662,6 +737,8 @@ impl SegmentedWalWriter {
         };
 
         self.predecessor = Some(sealed.manifest().as_predecessor());
+        self.sealed_names
+            .push(PathBuf::from(sealed.manifest().segment_file()));
         self.active = Some(next_segment);
         self.active_name = next_name;
         self.active_path = next_path;
@@ -943,7 +1020,10 @@ fn acquire_directory_lock(directory: &Path) -> Result<File, ManagerError> {
         Mode::empty(),
     )
     .map_err(map_open_error)?;
-    let file = File::from(owned);
+    lock_directory_file(File::from(owned))
+}
+
+fn lock_directory_file(file: File) -> Result<File, ManagerError> {
     validate_managed_directory(&file)?;
     match rustix::fs::flock(&file, FlockOperation::NonBlockingLockExclusive) {
         Ok(()) => {}

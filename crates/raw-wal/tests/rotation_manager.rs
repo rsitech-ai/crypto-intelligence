@@ -1,5 +1,5 @@
 use std::{
-    fs::{self, OpenOptions},
+    fs::{self, File, OpenOptions},
     io::Write,
     os::unix::fs::{PermissionsExt, symlink},
     sync::{Arc, Barrier},
@@ -114,6 +114,105 @@ fn byte_rotation_happens_before_append_and_returns_cross_segment_position_and_jo
     assert!(first_manifest.predecessor().is_none());
     assert_eq!(writer.active_ordinal(), 2);
     assert_eq!(writer.active_record_count(), 1);
+}
+
+#[test]
+fn capability_open_or_create_recovers_existing_chain_instead_of_reinitializing() {
+    let directory = tempfile::tempdir().expect("temporary directory must exist");
+    let policy = RotationPolicy::default();
+    let mut writer = SegmentedWalWriter::open_or_create_in(
+        File::open(directory.path()).expect("directory capability must open"),
+        directory.path(),
+        metadata(),
+        policy,
+        10,
+    )
+    .expect("empty capability directory must create a chain");
+    writer
+        .append(record(1), b"one", 11, CREATED_WALL_NS + 1)
+        .expect("first append must succeed");
+    let first_length = writer.active_length();
+    drop(writer);
+
+    let replacement_initial_metadata = SegmentMetadata::new(
+        [0x41; 16],
+        CREATED_WALL_NS + 1_000,
+        "replacement-schema",
+        "replacement-installation",
+        "replacement-build",
+        vec![
+            StreamDescriptor::new(7, "binance", "spot-btcusdt").expect("descriptor must be valid"),
+        ],
+    )
+    .expect("replacement metadata must be valid");
+    let recovered = SegmentedWalWriter::open_or_create_in(
+        File::open(directory.path()).expect("directory capability must reopen"),
+        directory.path(),
+        replacement_initial_metadata,
+        policy,
+        20,
+    )
+    .expect("existing capability directory must recover");
+
+    assert_eq!(recovered.active_ordinal(), 1);
+    assert_eq!(recovered.active_record_count(), 1);
+    assert_eq!(recovered.active_length(), first_length);
+}
+
+#[test]
+fn validated_replay_visits_sealed_then_active_records_in_chain_order() {
+    let directory = tempfile::tempdir().expect("temporary directory must exist");
+    let policy = RotationPolicy::new(segment_limit_for_one(b"one"), 300_000_000_000)
+        .expect("policy must be valid");
+    {
+        let mut writer = SegmentedWalWriter::create(directory.path(), metadata(), policy, 10)
+            .expect("writer must create");
+        for (sequence, payload) in [(1, b"one".as_slice()), (2, b"two"), (3, b"tri")] {
+            writer
+                .append(
+                    record(sequence),
+                    payload,
+                    10 + sequence,
+                    CREATED_WALL_NS + sequence as i64,
+                )
+                .expect("append must succeed");
+        }
+    }
+
+    let mut recovered =
+        SegmentedWalWriter::recover(directory.path(), policy, 20).expect("chain must recover");
+    let mut payloads = Vec::new();
+    recovered
+        .visit_records(|record| payloads.push(record.payload().to_vec()))
+        .expect("validated records must replay");
+
+    assert_eq!(
+        payloads,
+        [b"one".to_vec(), b"two".to_vec(), b"tri".to_vec()]
+    );
+}
+
+#[test]
+fn manager_sync_is_explicit_and_keeps_records_recoverable() {
+    let directory = tempfile::tempdir().expect("temporary directory must exist");
+    let policy = RotationPolicy::default();
+    {
+        let mut writer = SegmentedWalWriter::create(directory.path(), metadata(), policy, 10)
+            .expect("writer must create");
+        writer
+            .append(record(1), b"durable", 11, CREATED_WALL_NS + 1)
+            .expect("append must succeed");
+        writer.sync().expect("explicit sync must succeed");
+    }
+
+    let mut recovered =
+        SegmentedWalWriter::recover(directory.path(), policy, 20).expect("chain must recover");
+    let mut payloads = Vec::new();
+    recovered
+        .visit_records(|record| payloads.push(record.payload().to_vec()))
+        .expect("validated records must replay");
+
+    assert_eq!(payloads, [b"durable".to_vec()]);
 }
 
 #[test]
