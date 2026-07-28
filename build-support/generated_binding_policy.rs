@@ -18,8 +18,8 @@ pub fn grpc_client_module(source: &str) -> Option<&str> {
         }
         let identifier = &source[start..index];
         if identifier.ends_with("_client") {
-            let brace = skip_trivia(bytes, index);
-            if bytes.get(brace) == Some(&b'{') {
+            let body = skip_trivia(bytes, index);
+            if matches!(bytes.get(body), Some(b'{') | Some(b';')) {
                 return Some(identifier);
             }
         }
@@ -106,6 +106,16 @@ mod tests {
             "r#\"/*\"#; pub mod market_service_client {}\n",
             "b\"/*\"; pub mod market_service_client {}\n",
             "br#\"/*\"#; pub mod market_service_client {}\n",
+        ] {
+            assert_eq!(grpc_client_module(generated), Some("market_service_client"));
+        }
+    }
+
+    #[test]
+    fn external_client_modules_are_rejected() {
+        for generated in [
+            "pub mod market_service_client;\n",
+            "#[path = \"/private/tmp/generated-client.rs\"] pub mod market_service_client;\n",
         ] {
             assert_eq!(grpc_client_module(generated), Some("market_service_client"));
         }
