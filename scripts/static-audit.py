@@ -78,8 +78,13 @@ def authority():
  if "f32" in parser or "f64" in parser:fail("authoritative decimal parser uses float")
  for x in["checked_add","checked_sub","checked_mul","checked_div_exact","to_f64_lossy_for_analysis","i128::MIN"]:
   if x not in fixed:fail(f"fixed decimal missing {x}")
- book=read("crates/orderbook/src/lib.rs")
- for x in["BTreeMap<Price,Quantity>","SequenceGap" if "SequenceGap" in book else "Gap","ChecksumFailed","Stale"]:
+ book="\n".join(read(p) for p in[
+  "crates/orderbook/src/lib.rs",
+  "crates/orderbook/src/book.rs",
+  "crates/orderbook/src/checksum.rs",
+  "crates/orderbook/src/state.rs",
+ ])
+ for x in["BTreeMap<Price, LevelValue>","GapDetected","ChecksumMismatch","StaleInstrumentGeneration"]:
   if x not in book:fail(f"orderbook missing {x}")
  data=read("crates/dataset/src/lib.rs").replace(" ","")
  for x in["f.as_known_at_ns>origin_ns","f.event_time_end_ns>origin_ns","embargo_ns"]:

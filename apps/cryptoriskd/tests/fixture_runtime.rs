@@ -15,6 +15,7 @@ use observability::{
     Component, LocalJsonLog, LocalLogLevel, MetricKey, MetricName, MetricSnapshotValue, Metrics,
     Outcome, Venue,
 };
+use orderbook::BookError;
 use tokio::sync::mpsc::error::TrySendError;
 use tonic::{Code, Request};
 use zeroize::Zeroizing;
@@ -640,6 +641,32 @@ fn malformed_json_and_sequence_gap_preserve_last_healthy_snapshot() {
             .expect("sequence gap counter must read"),
         1
     );
+}
+
+#[test]
+fn fresh_stream_snapshot_recovers_health_after_a_gap() {
+    let metrics = Metrics::default();
+    let mut engine = IngestionEngine::new(MemoryWal::default(), metrics);
+    for line in FIXTURE.lines() {
+        engine.process_new(line.as_bytes()).unwrap();
+    }
+    let gap = br#"{"kind":"delta","source":"binance-fixture","symbol":"BTCUSDT","generation":1,"event_unix_nanos":1700000000300000000,"first_sequence":104,"last_sequence":104,"bids":[["60000.1","9"]],"asks":[]}"#;
+    assert!(matches!(
+        engine.process_new(gap),
+        Err(RuntimeError::Book(BookError::SequenceGap))
+    ));
+    assert_eq!(engine.source_health(), RuntimeHealth::Degraded);
+
+    let recovery = br#"{"kind":"snapshot","source":"binance-fixture","symbol":"BTCUSDT","generation":1,"event_unix_nanos":1700000000400000000,"sequence":200,"bids":[["60000.1","7"]],"asks":[["60000.2","6"]]}"#;
+    engine
+        .process_new(recovery)
+        .expect("fresh stream snapshot restores authoritative state");
+
+    assert_eq!(engine.source_health(), RuntimeHealth::Healthy);
+    let published = engine.published().expect("recovered snapshot publishes");
+    assert_eq!(published.sequence(), 200);
+    assert_eq!(published.best_bid().to_string(), "60000.1");
+    assert_eq!(published.best_ask().to_string(), "60000.2");
 }
 
 #[test]

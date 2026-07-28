@@ -8,8 +8,8 @@ use std::{
 
 use connector_binance::{ParseError, parse_fixture_line};
 use domain::{AssetId, AssetNamespace, InstrumentId, SourceId, UnixNanos};
-use event_envelope::UncheckedEventPayload;
-use fixed_decimal::Price;
+use event_envelope::SnapshotKind;
+use fixed_decimal::{FixedDecimal, Price, Quantity};
 use local_api::{
     auth::SessionSecret,
     proto::market_v1::SnapshotHealth,
@@ -21,7 +21,10 @@ use observability::{
     MetricName, Metrics, ObservabilityError, ObservabilityHandle, Outcome, Venue,
     init_local_tracing,
 };
-use orderbook::{BookError, OrderBook};
+use orderbook::{
+    ApplyResult, BookConfig, BookError, BookSession, ChecksumPolicy, OrderBookEngine,
+    SequencePolicy, SnapshotStrategy,
+};
 use rand::{RngCore, rngs::OsRng};
 use raw_wal::{
     frame::RecordMetadata,
@@ -95,6 +98,20 @@ pub struct PublishedSnapshot {
     freshness_millis: u64,
 }
 
+impl PublishedSnapshot {
+    pub const fn sequence(&self) -> u64 {
+        self.sequence
+    }
+
+    pub const fn best_bid(&self) -> Price {
+        self.best_bid
+    }
+
+    pub const fn best_ask(&self) -> Price {
+        self.best_ask
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RuntimeHealth {
     Initializing,
@@ -110,7 +127,7 @@ pub trait WalSink {
 pub struct IngestionEngine<W> {
     wal: W,
     metrics: Metrics,
-    order_book: OrderBook,
+    order_book: OrderBookEngine,
     published: Option<PublishedSnapshot>,
     source_health: RuntimeHealth,
 }
@@ -120,7 +137,33 @@ impl<W: WalSink> IngestionEngine<W> {
         Self {
             wal,
             metrics,
-            order_book: OrderBook::new(10_000),
+            order_book: OrderBookEngine::new(BookConfig {
+                instrument: InstrumentId::new(
+                    domain::VenueId::new("binance")
+                        .expect("the fixture venue identity must be valid"),
+                    "BTCUSDT",
+                    1,
+                )
+                .expect("the fixture instrument identity must be valid"),
+                price_tick: Price::new(
+                    FixedDecimal::parse_canonical("0.1")
+                        .expect("the fixture price tick must be canonical"),
+                )
+                .expect("the fixture price tick must be positive"),
+                quantity_step: Quantity::new(
+                    FixedDecimal::parse_canonical("0.1")
+                        .expect("the fixture quantity step must be canonical"),
+                )
+                .expect("the fixture quantity step must be positive"),
+                max_levels_per_side: 10_000,
+                max_buffered_deltas: 10_000,
+                max_buffered_level_updates: 100_000,
+                sequence_policy: SequencePolicy::RangeContainsNext,
+                checksum_policy: ChecksumPolicy::Disabled,
+                max_l3_orders: None,
+                max_l3_levels_per_side: None,
+            })
+            .expect("the static fixture order-book configuration must be valid"),
             published: None,
             source_health: RuntimeHealth::Initializing,
         }
@@ -161,35 +204,57 @@ impl<W: WalSink> IngestionEngine<W> {
             .exchange_timestamp
             .ok_or(RuntimeError::MissingTimestamp)?;
         let receive_timestamp = metadata.receive_wall_timestamp;
-        let now_monotonic_ns = metadata.receive_monotonic_ns;
-
-        let apply_result = match event.payload().as_unchecked() {
-            UncheckedEventPayload::BookSnapshot(snapshot) => {
-                self.order_book.apply_snapshot(snapshot, now_monotonic_ns)
-            }
-            UncheckedEventPayload::BookDelta(delta) => {
-                self.order_book.apply_delta(delta, now_monotonic_ns)
-            }
-            _ => Err(BookError::Invalid),
+        let session = BookSession {
+            connection_epoch: metadata.connection_epoch,
+            subscription_epoch: metadata.subscription_epoch,
+            instrument_generation: instrument.generation(),
         };
-        if let Err(source) = apply_result {
-            match source {
-                BookError::Gap => self.metrics.increment(sequence_gaps_key(), 1)?,
-                BookError::Checksum => self.metrics.increment(checksum_failures_key(), 1)?,
-                _ => {}
+        if self.order_book.current_session() != Some(session) {
+            if metadata.snapshot_kind != SnapshotKind::Snapshot {
+                self.reject()?;
+                return Err(RuntimeError::Book(BookError::SnapshotRequired));
             }
-            self.reject()?;
-            return Err(RuntimeError::Book(source));
+            self.order_book
+                .start_session(session, SnapshotStrategy::StreamSnapshot)
+                .map_err(RuntimeError::Book)?;
         }
 
-        if self.source_health != RuntimeHealth::Degraded {
-            let best_bid = self
-                .order_book
+        let apply_result = match self.order_book.apply_event(&event) {
+            Ok(result) => result,
+            Err(source) => {
+                self.reject()?;
+                return Err(RuntimeError::Book(source));
+            }
+        };
+        match apply_result {
+            ApplyResult::Applied | ApplyResult::Duplicate => {}
+            ApplyResult::GapDetected => {
+                self.metrics.increment(sequence_gaps_key(), 1)?;
+                self.reject()?;
+                return Err(RuntimeError::Book(BookError::SequenceGap));
+            }
+            ApplyResult::ChecksumMismatch => {
+                self.metrics.increment(checksum_failures_key(), 1)?;
+                self.reject()?;
+                return Err(RuntimeError::Book(BookError::ChecksumMismatch));
+            }
+            ApplyResult::SnapshotRequired => {
+                self.reject()?;
+                return Err(RuntimeError::Book(BookError::SnapshotRequired));
+            }
+        }
+
+        if self.source_health != RuntimeHealth::Degraded
+            || metadata.snapshot_kind == SnapshotKind::Snapshot
+        {
+            let view = self.order_book.snapshot().map_err(RuntimeError::Book)?;
+            let best_bid = view
                 .best_bid()
+                .map(|level| level.price)
                 .ok_or(RuntimeError::MissingBestPrices)?;
-            let best_ask = self
-                .order_book
+            let best_ask = view
                 .best_ask()
+                .map(|level| level.price)
                 .ok_or(RuntimeError::MissingBestPrices)?;
             let freshness_millis = receive_timestamp
                 .value()
@@ -199,7 +264,7 @@ impl<W: WalSink> IngestionEngine<W> {
             self.published = Some(PublishedSnapshot {
                 source,
                 instrument,
-                sequence: self.order_book.sequence(),
+                sequence: view.last_source_sequence(),
                 best_bid,
                 best_ask,
                 event_timestamp,
@@ -540,14 +605,17 @@ pub async fn start_fixture_runtime_with_limits(
         .cloned()
         .ok_or(RuntimeError::MissingSnapshot)?;
     validate_final_snapshot(&published, engine.source_health())?;
+    let sequence = published.sequence();
+    let best_bid = published.best_bid();
+    let best_ask = published.best_ask();
     let market_snapshot = MarketSnapshot::new(
         published.source,
         published.instrument,
         AssetId::new(AssetNamespace::Native, "bitcoin", "", "BTC", 1)
             .expect("the fixed BTC fixture identity must be valid"),
-        published.sequence,
-        published.best_bid,
-        published.best_ask,
+        sequence,
+        best_bid,
+        best_ask,
         SnapshotHealth::Healthy,
         published.event_timestamp,
         published.receive_timestamp,
@@ -704,8 +772,8 @@ fn validate_final_snapshot(
         || snapshot.source.generation() != 1
         || snapshot.instrument.generation() != 1
         || snapshot.sequence != EXPECTED_FINAL_SEQUENCE
-        || snapshot.best_bid.to_string() != EXPECTED_BEST_BID
-        || snapshot.best_ask.to_string() != EXPECTED_BEST_ASK
+        || snapshot.best_bid().to_string() != EXPECTED_BEST_BID
+        || snapshot.best_ask().to_string() != EXPECTED_BEST_ASK
         || health != RuntimeHealth::Healthy
     {
         Err(RuntimeError::UnexpectedFinalSnapshot)
