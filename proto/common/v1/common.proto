@@ -1,9 +1,0 @@
-syntax = "proto3";
-
-package cmti.common.v1;
-
-// Public protocol version negotiated by the local daemon and native client.
-message ProtocolVersion {
-  uint32 major = 1;
-  uint32 minor = 2;
-}

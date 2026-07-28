@@ -1,0 +1,49 @@
+syntax = "proto3";
+
+package cmti.settings.v1;
+
+import "cmti/common/v1/common.proto";
+
+message SettingsSnapshot {
+  uint32 schema_version = 1;
+  uint64 revision = 2;
+  bytes configuration_blake3 = 3;
+  bool restart_required = 4;
+}
+
+message GetSettingsRequest {}
+
+message GetSettingsResponse {
+  SettingsSnapshot settings = 1;
+}
+
+message UpdateSettingsRequest {
+  uint64 expected_revision = 1;
+  SettingsSnapshot settings = 2;
+}
+
+message UpdateSettingsResponse {
+  SettingsSnapshot settings = 1;
+}
+
+message CreateExportRequest {
+  string export_kind = 1;
+  cmti.common.v1.UnixNanos start_inclusive = 2;
+  cmti.common.v1.UnixNanos end_exclusive = 3;
+  string destination_bookmark_id = 4;
+}
+
+message CreateExportResponse {
+  string export_id = 1;
+  bytes manifest_blake3 = 2;
+  uint64 exported_records = 3;
+}
+
+service SettingsService {
+  rpc GetSettings(GetSettingsRequest) returns (GetSettingsResponse);
+  rpc UpdateSettings(UpdateSettingsRequest) returns (UpdateSettingsResponse);
+}
+
+service ExportService {
+  rpc CreateExport(CreateExportRequest) returns (CreateExportResponse);
+}

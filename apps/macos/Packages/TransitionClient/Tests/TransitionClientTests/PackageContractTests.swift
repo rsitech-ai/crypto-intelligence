@@ -142,6 +142,25 @@ struct PackageContractTests {
       #expect(!String(describing: error).contains("secret"))
     }
   }
+
+  @Test("Swift binding preserves an unknown optional field across a round trip")
+  func unknownOptionalFieldCompatibility() throws {
+    let futureWire: [UInt8] = [0x08, 0x01, 0x98, 0x06, 0x07]
+    let decoded = try Cmti_Health_V1_CheckResponse(serializedBytes: futureWire)
+
+    #expect(decoded.status == .serving)
+    #expect(!decoded.hasProtocol)
+    #expect(try decoded.serializedBytes() == futureWire)
+  }
+
+  @Test("Swift binding exposes a future enum number as unrecognized and preserves it")
+  func enumForwardCompatibility() throws {
+    let futureWire: [UInt8] = [0x08, 0x63]
+    let decoded = try Cmti_Health_V1_CheckResponse(serializedBytes: futureWire)
+
+    #expect(decoded.status == .UNRECOGNIZED(99))
+    #expect(try decoded.serializedBytes() == futureWire)
+  }
 }
 
 private func readinessJSON() -> [String: Any] {

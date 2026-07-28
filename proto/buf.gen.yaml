@@ -12,5 +12,5 @@ plugins:
       - xtask
       - --
       - protoc-gen-local-api
-    out: generated/local-api
+    out: crates/local-api/src/generated
     strategy: all

@@ -2,8 +2,11 @@
 
 use std::{io, net::SocketAddr, sync::Arc, time::Duration};
 
-use domain::{InstrumentId, SourceId, UnixNanos};
-use fixed_decimal::Price;
+use domain::{
+    AssetId as DomainAssetId, AssetNamespace as DomainAssetNamespace, InstrumentId, SourceId,
+    UnixNanos,
+};
+use fixed_decimal::{FixedDecimal, Price};
 use thiserror::Error;
 use tokio::{
     net::TcpListener,
@@ -19,14 +22,22 @@ use crate::{
         TOKEN_METADATA_KEY,
     },
     proto::{
-        common_v1::ProtocolVersion,
+        common_v1::{
+            AssetId as ProtoAssetId, AssetNamespace as ProtoAssetNamespace, ProtocolVersion,
+            StreamDeliveryPolicy, StreamFrameKind, StreamMetadata, StreamTerminalStatus,
+            UnixNanos as ProtoUnixNanos,
+        },
         health_v1::{
             CheckRequest, CheckResponse, ServingStatus,
             health_service_server::{HealthService as HealthServiceRpc, HealthServiceServer},
         },
         market_v1::{
-            GetSnapshotRequest, GetSnapshotResponse, SnapshotHealth,
-            market_service_server::{MarketService as MarketServiceRpc, MarketServiceServer},
+            GetOrderBookSnapshotRequest, GetOrderBookSnapshotResponse, SnapshotHealth,
+            SubscribeAssetStateRequest, SubscribeAssetStateResponse, SubscribeVenueStateRequest,
+            SubscribeVenueStateResponse,
+            market_state_service_server::{
+                MarketStateService as MarketStateServiceRpc, MarketStateServiceServer,
+            },
         },
     },
     session::SessionDescriptor,
@@ -60,6 +71,8 @@ pub enum SnapshotError {
     InvalidTimestamps,
     #[error("snapshot health must be specified")]
     UnspecifiedHealth,
+    #[error("snapshot midpoint cannot be represented exactly")]
+    MidpointUnrepresentable,
 }
 
 /// Immutable authoritative market state returned to local clients.
@@ -67,9 +80,11 @@ pub enum SnapshotError {
 pub struct MarketSnapshot {
     source: SourceId,
     instrument: InstrumentId,
+    asset: DomainAssetId,
     sequence: u64,
     best_bid: Price,
     best_ask: Price,
+    consolidated_price: Price,
     health: SnapshotHealth,
     event_timestamp: UnixNanos,
     receive_timestamp: UnixNanos,
@@ -81,6 +96,7 @@ impl MarketSnapshot {
     pub fn new(
         source: SourceId,
         instrument: InstrumentId,
+        asset: DomainAssetId,
         sequence: u64,
         best_bid: Price,
         best_ask: Price,
@@ -89,7 +105,9 @@ impl MarketSnapshot {
         receive_timestamp: UnixNanos,
         freshness_millis: u64,
     ) -> Result<Self, SnapshotError> {
-        if source.generation() != instrument.generation() {
+        if source.generation() != instrument.generation()
+            || source.generation() != asset.generation()
+        {
             return Err(SnapshotError::GenerationMismatch);
         }
         if sequence == 0 {
@@ -104,13 +122,23 @@ impl MarketSnapshot {
         if health == SnapshotHealth::Unspecified {
             return Err(SnapshotError::UnspecifiedHealth);
         }
+        let half = FixedDecimal::new(5, 1).expect("one half is always representable");
+        let consolidated_price = best_ask
+            .value()
+            .checked_sub(best_bid.value())
+            .and_then(|spread| spread.checked_mul(half))
+            .and_then(|half_spread| best_bid.value().checked_add(half_spread))
+            .and_then(Price::new)
+            .map_err(|_| SnapshotError::MidpointUnrepresentable)?;
 
         Ok(Self {
             source,
             instrument,
+            asset,
             sequence,
             best_bid,
             best_ask,
+            consolidated_price,
             health,
             event_timestamp,
             receive_timestamp,
@@ -118,8 +146,8 @@ impl MarketSnapshot {
         })
     }
 
-    fn response(&self) -> GetSnapshotResponse {
-        GetSnapshotResponse {
+    fn response(&self) -> GetOrderBookSnapshotResponse {
+        GetOrderBookSnapshotResponse {
             source: self.source.name().to_owned(),
             symbol: self.instrument.venue_symbol().to_owned(),
             generation: self.instrument.generation(),
@@ -131,6 +159,27 @@ impl MarketSnapshot {
             receive_unix_nanos: self.receive_timestamp.value(),
             freshness_millis: self.freshness_millis,
         }
+    }
+
+    fn proto_asset(&self) -> ProtoAssetId {
+        let namespace = match self.asset.namespace() {
+            DomainAssetNamespace::Native => ProtoAssetNamespace::Native,
+            DomainAssetNamespace::Evm => ProtoAssetNamespace::Evm,
+            DomainAssetNamespace::Solana => ProtoAssetNamespace::Solana,
+            DomainAssetNamespace::Fiat => ProtoAssetNamespace::Fiat,
+            DomainAssetNamespace::Synthetic => ProtoAssetNamespace::Synthetic,
+        };
+        ProtoAssetId {
+            namespace: namespace as i32,
+            chain_id: self.asset.chain_id().to_owned(),
+            contract_or_mint: self.asset.contract_or_mint().to_owned(),
+            canonical_symbol: self.asset.canonical_symbol().to_owned(),
+            generation: self.asset.generation(),
+        }
+    }
+
+    fn matches_asset(&self, requested: &ProtoAssetId) -> bool {
+        *requested == self.proto_asset()
     }
 }
 
@@ -166,14 +215,14 @@ impl HealthServiceRpc for HealthService {
 
 /// Authenticated authoritative snapshot implementation.
 #[derive(Clone)]
-struct MarketService {
+struct MarketStateService {
     expected_descriptor: SessionDescriptor,
     authenticator: Arc<SessionAuthenticator>,
     clock: Arc<dyn Clock>,
     snapshot: MarketSnapshot,
 }
 
-impl MarketService {
+impl MarketStateService {
     fn new(
         expected_descriptor: SessionDescriptor,
         authenticator: Arc<SessionAuthenticator>,
@@ -213,14 +262,130 @@ impl MarketService {
             .validate_at(&descriptor, &token, self.clock.unix_seconds())
             .map_err(|_| authentication_failed())
     }
+
+    fn stream_metadata(
+        &self,
+        stream_id: &str,
+        stream_sequence: u64,
+        frame: StreamFrameKind,
+        terminal_status: StreamTerminalStatus,
+    ) -> StreamMetadata {
+        StreamMetadata {
+            stream_id: stream_id.to_owned(),
+            stream_sequence,
+            snapshot_or_delta: frame as i32,
+            as_of_time: Some(ProtoUnixNanos {
+                value: self.clock.unix_seconds().saturating_mul(1_000_000_000),
+            }),
+            resume_token: stream_sequence.to_string(),
+            schema_version: 1,
+            dropped_since_previous: 0,
+            coalesced_since_previous: 0,
+            delivery_policy: StreamDeliveryPolicy::CoalesceSuperseded as i32,
+            terminal_status: terminal_status as i32,
+            terminal_error: None,
+        }
+    }
 }
 
 #[tonic::async_trait]
-impl MarketServiceRpc for MarketService {
-    async fn get_snapshot(
+impl MarketStateServiceRpc for MarketStateService {
+    type SubscribeAssetStateStream =
+        tokio_stream::Iter<std::vec::IntoIter<Result<SubscribeAssetStateResponse, Status>>>;
+
+    async fn subscribe_asset_state(
         &self,
-        request: Request<GetSnapshotRequest>,
-    ) -> Result<Response<GetSnapshotResponse>, Status> {
+        request: Request<SubscribeAssetStateRequest>,
+    ) -> Result<Response<Self::SubscribeAssetStateStream>, Status> {
+        self.authenticate(&request)?;
+        let requested = request.into_inner();
+        if requested.assets.len() != 1 {
+            return Err(Status::invalid_argument(
+                "exactly one asset is required by this runtime",
+            ));
+        }
+        if !self.snapshot.matches_asset(&requested.assets[0]) {
+            return Err(Status::not_found("requested asset is not available"));
+        }
+        let asset = self.snapshot.proto_asset();
+        let snapshot = SubscribeAssetStateResponse {
+            stream: Some(self.stream_metadata(
+                "market-asset-state",
+                1,
+                StreamFrameKind::Snapshot,
+                StreamTerminalStatus::Open,
+            )),
+            asset: Some(asset.clone()),
+            consolidated_price: self.snapshot.consolidated_price.to_string(),
+            health: self.snapshot.health as i32,
+        };
+        let terminal = SubscribeAssetStateResponse {
+            stream: Some(self.stream_metadata(
+                "market-asset-state",
+                2,
+                StreamFrameKind::Terminal,
+                StreamTerminalStatus::Completed,
+            )),
+            asset: Some(asset),
+            consolidated_price: self.snapshot.consolidated_price.to_string(),
+            health: self.snapshot.health as i32,
+        };
+        Ok(Response::new(tokio_stream::iter(vec![
+            Ok(snapshot),
+            Ok(terminal),
+        ])))
+    }
+
+    type SubscribeVenueStateStream =
+        tokio_stream::Iter<std::vec::IntoIter<Result<SubscribeVenueStateResponse, Status>>>;
+
+    async fn subscribe_venue_state(
+        &self,
+        request: Request<SubscribeVenueStateRequest>,
+    ) -> Result<Response<Self::SubscribeVenueStateStream>, Status> {
+        self.authenticate(&request)?;
+        let requested = request.into_inner();
+        if requested.venue_ids.len() != 1 {
+            return Err(Status::invalid_argument(
+                "exactly one venue is required by this runtime",
+            ));
+        }
+        let venue_id = self.snapshot.instrument.venue().as_str().to_owned();
+        if requested.venue_ids[0] != venue_id {
+            return Err(Status::not_found("requested venue is not available"));
+        }
+        let snapshot = SubscribeVenueStateResponse {
+            stream: Some(self.stream_metadata(
+                "market-venue-state",
+                1,
+                StreamFrameKind::Snapshot,
+                StreamTerminalStatus::Open,
+            )),
+            venue_id: venue_id.clone(),
+            health: self.snapshot.health as i32,
+            source_latency_millis: self.snapshot.freshness_millis,
+        };
+        let terminal = SubscribeVenueStateResponse {
+            stream: Some(self.stream_metadata(
+                "market-venue-state",
+                2,
+                StreamFrameKind::Terminal,
+                StreamTerminalStatus::Completed,
+            )),
+            venue_id,
+            health: self.snapshot.health as i32,
+            source_latency_millis: self.snapshot.freshness_millis,
+        };
+        Ok(Response::new(tokio_stream::iter(vec![
+            Ok(snapshot),
+            Ok(terminal),
+        ])))
+    }
+
+    async fn get_order_book_snapshot(
+        &self,
+        request: Request<GetOrderBookSnapshotRequest>,
+    ) -> Result<Response<GetOrderBookSnapshotResponse>, Status> {
         self.authenticate(&request)?;
         Ok(Response::new(self.snapshot.response()))
     }
@@ -292,13 +457,13 @@ impl LoopbackServer {
             .map_err(|source| ServerError::Bind { source })?;
         let authenticator = Arc::new(SessionAuthenticator::new(secret));
         let health = HealthService::new(descriptor.protocol_major(), descriptor.protocol_minor());
-        let market = MarketService::new(descriptor, authenticator, clock, snapshot);
+        let market = MarketStateService::new(descriptor, authenticator, clock, snapshot);
         let incoming = TcpListenerStream::new(listener);
         let (shutdown, shutdown_signal) = oneshot::channel();
         let health = HealthServiceServer::new(health)
             .max_decoding_message_size(MAX_REQUEST_MESSAGE_BYTES)
             .max_encoding_message_size(MAX_RESPONSE_MESSAGE_BYTES);
-        let market = MarketServiceServer::new(market)
+        let market = MarketStateServiceServer::new(market)
             .max_decoding_message_size(MAX_REQUEST_MESSAGE_BYTES)
             .max_encoding_message_size(MAX_RESPONSE_MESSAGE_BYTES);
 
@@ -371,7 +536,7 @@ mod tests {
         time::Duration,
     };
 
-    use domain::{SourceKind, VenueId};
+    use domain::{AssetNamespace as DomainAssetNamespace, SourceKind, VenueId};
     use fixed_decimal::FixedDecimal;
     use tonic::{
         Code, Request, Response, Status,
@@ -384,7 +549,7 @@ mod tests {
     use super::*;
     use crate::{
         auth::{SessionAuthenticator, insert_authentication_metadata},
-        proto::market_v1::{GetSnapshotRequest, GetSnapshotResponse},
+        proto::market_v1::{GetOrderBookSnapshotRequest, GetOrderBookSnapshotResponse},
     };
 
     const ISSUED_AT: i64 = 1_700_000_000;
@@ -443,6 +608,8 @@ mod tests {
         MarketSnapshot::new(
             source,
             instrument,
+            DomainAssetId::new(DomainAssetNamespace::Native, "bitcoin", "", "BTC", 7)
+                .expect("asset must be valid"),
             9_001,
             bid,
             ask,
@@ -454,10 +621,10 @@ mod tests {
         .expect("snapshot must be valid")
     }
 
-    async fn get_snapshot(
+    async fn get_order_book_snapshot(
         client: &mut Grpc<Channel>,
-        request: Request<GetSnapshotRequest>,
-    ) -> Result<Response<GetSnapshotResponse>, Status> {
+        request: Request<GetOrderBookSnapshotRequest>,
+    ) -> Result<Response<GetOrderBookSnapshotResponse>, Status> {
         client
             .ready()
             .await
@@ -465,7 +632,9 @@ mod tests {
         client
             .unary(
                 request,
-                PathAndQuery::from_static("/cmti.market.v1.MarketService/GetSnapshot"),
+                PathAndQuery::from_static(
+                    "/cmti.market.v1.MarketStateService/GetOrderBookSnapshot",
+                ),
                 tonic_prost::ProstCodec::default(),
             )
             .await
@@ -502,10 +671,10 @@ mod tests {
         let first_descriptor = descriptor.clone();
         let first_token = token.clone();
         let first_request = tokio::spawn(async move {
-            get_snapshot(
+            get_order_book_snapshot(
                 &mut first_client,
                 insert_authentication_metadata(
-                    Request::new(GetSnapshotRequest {}),
+                    Request::new(GetOrderBookSnapshotRequest {}),
                     &first_descriptor,
                     &first_token,
                 ),
@@ -519,10 +688,10 @@ mod tests {
 
         let second_result = tokio::time::timeout(
             Duration::from_secs(1),
-            get_snapshot(
+            get_order_book_snapshot(
                 &mut second_client,
                 insert_authentication_metadata(
-                    Request::new(GetSnapshotRequest {}),
+                    Request::new(GetOrderBookSnapshotRequest {}),
                     &descriptor,
                     &token,
                 ),

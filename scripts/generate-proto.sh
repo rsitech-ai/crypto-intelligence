@@ -36,6 +36,16 @@ fi
 temporary_root="$(mktemp -d "${TMPDIR:-/tmp}/cmti-swift-proto.XXXXXX")"
 trap 'rm -rf -- "${temporary_root}"' EXIT
 
+proto_files=()
+while IFS= read -r proto_file; do
+  proto_files+=("${proto_file}")
+done < <(find "${workspace_root}/proto/cmti" -type f -name '*.proto' -print | LC_ALL=C sort)
+if [[ "${#proto_files[@]}" -ne 7 ]]; then
+  printf 'error: expected exactly 7 canonical protobuf inputs, found: %s\n' \
+    "${#proto_files[@]}" >&2
+  exit 1
+fi
+
 swift package \
   --package-path "${package_dir}" \
   --allow-writing-to-package-directory \
@@ -48,9 +58,7 @@ swift package \
   --import-path "${workspace_root}/proto" \
   --output-path "${temporary_root}" \
   -- \
-  "${workspace_root}/proto/common/v1/common.proto" \
-  "${workspace_root}/proto/health/v1/health.proto" \
-  "${workspace_root}/proto/market/v1/market.proto"
+  "${proto_files[@]}"
 
 if [[ "${1:-}" == "--check" ]]; then
   if ! diff -ruN -- "${generated_dir}" "${temporary_root}"; then

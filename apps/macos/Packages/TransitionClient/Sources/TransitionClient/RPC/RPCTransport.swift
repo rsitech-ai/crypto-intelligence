@@ -1,5 +1,5 @@
 public protocol RPCTransport: Sendable {
-  func getSnapshot(
+  func getOrderBookSnapshot(
     using credentials: SessionCredentials,
     timeout: Duration
   ) async throws -> MarketSnapshot

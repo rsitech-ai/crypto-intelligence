@@ -114,7 +114,7 @@ def governance():
  for x in["symlink","Component::Normal","sha256","stable_eligible","GateStatus"]:
   if x not in release:fail(f"release missing {x}")
 def protobuf():
- protos=sorted((ROOT/"proto").glob("*/*/*.proto"))
+ protos=sorted((ROOT/"proto/cmti").rglob("*.proto"))
  if len(protos)!=7:fail(f"expected 7 protobuf files, found {len(protos)}")
  for p in protos:
   t=p.read_text()

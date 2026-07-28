@@ -2,7 +2,7 @@ use std::{env, fs, path::PathBuf, time::Duration};
 
 use local_api::{
     auth::{SessionAuthenticator, SessionSecret, insert_authentication_metadata},
-    proto::market_v1::{GetSnapshotRequest, GetSnapshotResponse, SnapshotHealth},
+    proto::market_v1::{GetOrderBookSnapshotRequest, GetOrderBookSnapshotResponse, SnapshotHealth},
     session::{SessionDescriptor, TOKEN_LIFETIME_SECONDS},
 };
 use serde::{Deserialize, Serialize};
@@ -87,10 +87,10 @@ async fn run() -> Result<(), ProbeError> {
             let token = SessionAuthenticator::new(secret).token(&descriptor);
             let response = tokio::time::timeout(
                 RPC_TIMEOUT,
-                get_snapshot(
+                get_order_book_snapshot(
                     &mut market,
                     insert_authentication_metadata(
-                        Request::new(GetSnapshotRequest {}),
+                        Request::new(GetOrderBookSnapshotRequest {}),
                         &descriptor,
                         &token,
                     ),
@@ -128,7 +128,7 @@ async fn run() -> Result<(), ProbeError> {
             drop(secret);
             let response = tokio::time::timeout(
                 RPC_TIMEOUT,
-                get_snapshot(&mut market, Request::new(GetSnapshotRequest {})),
+                get_order_book_snapshot(&mut market, Request::new(GetOrderBookSnapshotRequest {})),
             )
             .await
             .map_err(|_| ProbeError::Timeout)?;
@@ -145,10 +145,10 @@ async fn run() -> Result<(), ProbeError> {
     Ok(())
 }
 
-async fn get_snapshot(
+async fn get_order_book_snapshot(
     client: &mut Grpc<Channel>,
-    request: Request<GetSnapshotRequest>,
-) -> Result<Response<GetSnapshotResponse>, Status> {
+    request: Request<GetOrderBookSnapshotRequest>,
+) -> Result<Response<GetOrderBookSnapshotResponse>, Status> {
     client
         .ready()
         .await
@@ -156,7 +156,7 @@ async fn get_snapshot(
     client
         .unary(
             request,
-            PathAndQuery::from_static("/cmti.market.v1.MarketService/GetSnapshot"),
+            PathAndQuery::from_static("/cmti.market.v1.MarketStateService/GetOrderBookSnapshot"),
             tonic_prost::ProstCodec::default(),
         )
         .await
@@ -238,7 +238,7 @@ fn descriptor(readiness: &Readiness) -> Result<SessionDescriptor, ProbeError> {
     Ok(descriptor)
 }
 
-fn validate_snapshot(snapshot: &GetSnapshotResponse) -> Result<(), ProbeError> {
+fn validate_snapshot(snapshot: &GetOrderBookSnapshotResponse) -> Result<(), ProbeError> {
     if snapshot.source != "binance-fixture"
         || snapshot.symbol != "BTCUSDT"
         || snapshot.generation != 1

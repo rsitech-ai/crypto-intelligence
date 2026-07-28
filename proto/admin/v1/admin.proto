@@ -1,8 +1,0 @@
-syntax = "proto3";
-package cmti.admin.v1;
-import "common/v1/common.proto";
-message ProtocolInfoRequest { uint32 client_protocol_version = 1; string client_version = 2; string client_instance = 3; bytes client_nonce = 4; }
-message ProtocolInfo { uint32 minimum_protocol_version = 1; uint32 maximum_protocol_version = 2; uint32 selected_protocol_version = 3; string daemon_version = 4; bytes server_nonce = 5; }
-message HealthRequest {}
-message HealthSnapshot { string overall = 1; cmti.common.v1.UnixNanos observed_at = 2; bytes configuration_blake3 = 3; }
-service AdminService { rpc GetProtocolInfo(ProtocolInfoRequest) returns (ProtocolInfo); rpc GetHealth(HealthRequest) returns (HealthSnapshot); }
