@@ -46,6 +46,8 @@ targets:
       - path: CuspObservatory/Features/Overview/MarketOverviewView.swift
       - path: CuspObservatory/Features/Health/DataHealthView.swift
       - path: CuspObservatory/Design/DesignTokens.swift
+      - path: ../../configs/default.toml
+        buildPhase: resources
       - path: ../../fixtures/binance/btcusdt-book-v1.jsonl
         buildPhase: resources
       - path: ../../target/debug/cryptoriskd

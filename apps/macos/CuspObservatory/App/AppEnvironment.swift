@@ -5,12 +5,18 @@ import Observation
 enum AppEnvironmentError: Error, Equatable {
   case invalidTestRunIdentifier
   case missingApplicationSupport
+  case missingConfiguration
   case missingDaemon
   case missingFixture
   case runtimePreparationFailed
 }
 
 struct AppEnvironment {
+  struct PreparedRuntime {
+    let configuration: URL
+    let daemonLog: URL
+  }
+
   let runtimeRoot: URL
   let daemonLog: URL
   let supervisor: DaemonSupervisor
@@ -24,6 +30,46 @@ struct AppEnvironment {
       processInfo: processInfo,
       fileManager: fileManager
     )
+    let prepared = try prepareRuntimeRoot(
+      runtimeRoot,
+      bundle: bundle,
+      fileManager: fileManager
+    )
+
+    guard let bundleExecutable = bundle.executableURL else {
+      throw AppEnvironmentError.missingDaemon
+    }
+    let daemon = try daemonURL(
+      bundleExecutableURL: bundleExecutable,
+      environment: processInfo.environment
+    )
+
+    let supervisor = DaemonSupervisor(
+      configuration: DaemonConfiguration(
+        executable: daemon,
+        approvedRoot: runtimeRoot,
+        configFile: prepared.configuration
+      ),
+      launcher: ProcessDaemonLauncher(),
+      transportFactory: GRPCTransportFactory(priceDisplayScale: 2),
+      startupTimeout: .seconds(5),
+      shutdownTimeout: .seconds(6),
+      nowUnixSeconds: {
+        Int64(Date().timeIntervalSince1970)
+      }
+    )
+    return AppEnvironment(
+      runtimeRoot: runtimeRoot,
+      daemonLog: prepared.daemonLog,
+      supervisor: supervisor
+    )
+  }
+
+  static func prepareRuntimeRoot(
+    _ runtimeRoot: URL,
+    bundle: Bundle,
+    fileManager: FileManager
+  ) throws -> PreparedRuntime {
     let dataRoot = runtimeRoot.appending(
       path: "data",
       directoryHint: .isDirectory
@@ -32,8 +78,22 @@ struct AppEnvironment {
       path: "logs",
       directoryHint: .isDirectory
     )
+    let fixtureRoot = runtimeRoot.appending(
+      path: "fixtures/binance",
+      directoryHint: .isDirectory
+    )
+    let modelRegistry = runtimeRoot.appending(
+      path: "models/public-test-artifacts",
+      directoryHint: .isDirectory
+    )
     do {
-      for directory in [runtimeRoot, dataRoot, logRoot] {
+      for directory in [
+        runtimeRoot,
+        dataRoot,
+        logRoot,
+        fixtureRoot,
+        modelRegistry,
+      ] {
         try ensureSecureDirectory(
           directory,
           fileManager: fileManager
@@ -55,12 +115,23 @@ struct AppEnvironment {
     else {
       throw AppEnvironmentError.missingFixture
     }
-    let runtimeFixture = runtimeRoot.appending(path: "fixture.jsonl")
+    guard
+      let bundledConfiguration = bundle.url(
+        forResource: "default",
+        withExtension: "toml"
+      )
+    else {
+      throw AppEnvironmentError.missingConfiguration
+    }
+    let runtimeFixture = fixtureRoot.appending(
+      path: "btcusdt-book-v1.jsonl"
+    )
     let configuration = runtimeRoot.appending(path: "config.toml")
     do {
       let fixtureData = try Data(contentsOf: fixture)
+      let configurationData = try Data(contentsOf: bundledConfiguration)
       try fixtureData.write(to: runtimeFixture, options: .atomic)
-      try Data(Self.runtimeConfiguration.utf8).write(
+      try configurationData.write(
         to: configuration,
         options: .atomic
       )
@@ -74,32 +145,9 @@ struct AppEnvironment {
       throw AppEnvironmentError.runtimePreparationFailed
     }
 
-    guard let bundleExecutable = bundle.executableURL else {
-      throw AppEnvironmentError.missingDaemon
-    }
-    let daemon = try daemonURL(
-      bundleExecutableURL: bundleExecutable,
-      environment: processInfo.environment
-    )
-
-    let supervisor = DaemonSupervisor(
-      configuration: DaemonConfiguration(
-        executable: daemon,
-        approvedRoot: runtimeRoot,
-        configFile: configuration
-      ),
-      launcher: ProcessDaemonLauncher(),
-      transportFactory: GRPCTransportFactory(priceDisplayScale: 2),
-      startupTimeout: .seconds(5),
-      shutdownTimeout: .seconds(6),
-      nowUnixSeconds: {
-        Int64(Date().timeIntervalSince1970)
-      }
-    )
-    return AppEnvironment(
-      runtimeRoot: runtimeRoot,
-      daemonLog: logRoot.appending(path: "cmti.jsonl"),
-      supervisor: supervisor
+    return PreparedRuntime(
+      configuration: configuration,
+      daemonLog: logRoot.appending(path: "cmti.jsonl")
     )
   }
 
@@ -216,22 +264,6 @@ struct AppEnvironment {
     }
   }
 
-  static let runtimeConfiguration = """
-    schema_version = 1
-    data_root = "data"
-    log_root = "logs"
-    fixture_input = "fixture.jsonl"
-    bind_address = "127.0.0.1:0"
-    session_secret_fd = 3
-    ingestion_queue_capacity = 1024
-    maximum_request_bytes = 8388608
-    maximum_concurrent_requests = 128
-    request_timeout_seconds = 30
-    shutdown_grace_seconds = 5
-    remote_export = false
-    remote_telemetry = false
-
-    """
 }
 
 @MainActor
