@@ -10,6 +10,7 @@ use raw_wal::{
     frame::{self, RecordMetadata},
     manager::{InventoryError, ManagerError, RotationPolicy, SegmentedWalWriter},
     prologue::{self, SegmentMetadata, StreamDescriptor},
+    recovery::TARGET_SEGMENT_LENGTH,
     seal::{
         manifest_path_for, pending_manifest_path_for, seal_v2_segment, seal_v2_segment_after,
         sealed_path_for, verify_sealed_v2_segment,
@@ -18,6 +19,20 @@ use raw_wal::{
 };
 
 const CREATED_WALL_NS: i64 = 1_721_234_567_000_000_000;
+
+#[test]
+fn rotation_policy_never_allows_an_active_segment_beyond_the_recovery_target() {
+    assert!(
+        RotationPolicy::new(TARGET_SEGMENT_LENGTH, 1)
+            .expect("the recovery target must remain an accepted rotation boundary")
+            .max_segment_bytes()
+            == TARGET_SEGMENT_LENGTH
+    );
+    assert!(matches!(
+        RotationPolicy::new(TARGET_SEGMENT_LENGTH + 1, 1),
+        Err(ManagerError::InvalidPolicy)
+    ));
+}
 
 fn metadata() -> SegmentMetadata {
     SegmentMetadata::new(
