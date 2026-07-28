@@ -58,7 +58,8 @@ non-network `alloc,default,fs,process,std` feature set, so direct, transitive,
 or aliased `rustix::net` activation fails closed. Tonic `Endpoint` and
 `Channel` client-type ownership is also rejected independent of the selected
 connect or balancing method spelling. The production protobuf build is
-server-only and rejects generated `_client`/`Client<` output.
+server-only and rejects structurally parsed public `*_client` module
+declarations while allowing ordinary fields such as `client_id`.
 
 ## Prerequisites
 
