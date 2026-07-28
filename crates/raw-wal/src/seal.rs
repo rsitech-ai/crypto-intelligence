@@ -5,9 +5,12 @@ use std::{
     ffi::OsString,
     fs::{self, File, OpenOptions},
     io::{self, Read, Seek, SeekFrom, Write},
-    os::unix::fs::OpenOptionsExt,
+    os::unix::fs::{MetadataExt, OpenOptionsExt},
     path::{Path, PathBuf},
-    sync::atomic::{AtomicU64, Ordering},
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    },
 };
 
 use rustix::fs::{AtFlags, CWD, FileType, FlockOperation, Mode, OFlags, RenameFlags};
@@ -314,26 +317,76 @@ impl SealedSegmentManifest {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct CompressionJob {
-    manifest_path: PathBuf,
-    source_path: PathBuf,
-    destination_path: PathBuf,
+    directory: Arc<File>,
+    directory_device: u64,
+    directory_inode: u64,
+    display_directory: PathBuf,
+    manifest_name: PathBuf,
+    manifest_identity: FileIdentity,
+    source_name: PathBuf,
+    source_identity: FileIdentity,
+    destination_name: PathBuf,
     expected_uncompressed_bytes: u64,
     expected_uncompressed_blake3: [u8; 32],
 }
 
 impl CompressionJob {
-    pub fn manifest_path(&self) -> &Path {
-        &self.manifest_path
+    pub fn manifest_name(&self) -> &Path {
+        &self.manifest_name
     }
 
-    pub fn source_path(&self) -> &Path {
-        &self.source_path
+    pub fn source_name(&self) -> &Path {
+        &self.source_name
     }
 
-    pub fn destination_path(&self) -> &Path {
-        &self.destination_path
+    pub fn destination_name(&self) -> &Path {
+        &self.destination_name
+    }
+
+    /// Returns a diagnostic path only; use [`Self::open_manifest`] for authority.
+    pub fn manifest_display_path(&self) -> PathBuf {
+        self.display_directory.join(&self.manifest_name)
+    }
+
+    /// Returns a diagnostic path only; use [`Self::open_source`] for authority.
+    pub fn source_display_path(&self) -> PathBuf {
+        self.display_directory.join(&self.source_name)
+    }
+
+    /// Returns a diagnostic path only; compression must use the directory capability.
+    pub fn destination_display_path(&self) -> PathBuf {
+        self.display_directory.join(&self.destination_name)
+    }
+
+    /// Duplicates the authoritative directory capability for an `openat`-style consumer.
+    pub fn try_clone_directory(&self) -> Result<File, SealingError> {
+        Ok(self.directory.try_clone()?)
+    }
+
+    /// Opens the exact manifest inode captured when this handoff was created.
+    pub fn open_manifest(&self) -> Result<File, SealingError> {
+        let file = open_nofollow_at(&self.directory, &self.manifest_name, OFlags::RDONLY)?;
+        let identity = validate_regular_single_link(&file)?;
+        if identity.st_dev != self.manifest_identity.st_dev
+            || identity.st_ino != self.manifest_identity.st_ino
+        {
+            return Err(SealingError::UnsafeFile);
+        }
+        Ok(file)
+    }
+
+    /// Opens the exact sealed-segment inode captured when this handoff was created.
+    pub fn open_source(&self) -> Result<File, SealingError> {
+        let file = open_nofollow_at(&self.directory, &self.source_name, OFlags::RDONLY)?;
+        let identity = validate_regular_single_link(&file)?;
+        if identity.st_dev != self.source_identity.st_dev
+            || identity.st_ino != self.source_identity.st_ino
+        {
+            return Err(SealingError::UnsafeFile);
+        }
+        Ok(file)
     }
 
     pub const fn expected_uncompressed_bytes(&self) -> u64 {
@@ -344,6 +397,25 @@ impl CompressionJob {
         &self.expected_uncompressed_blake3
     }
 }
+
+impl PartialEq for CompressionJob {
+    fn eq(&self, other: &Self) -> bool {
+        self.directory_device == other.directory_device
+            && self.directory_inode == other.directory_inode
+            && self.display_directory == other.display_directory
+            && self.manifest_name == other.manifest_name
+            && self.manifest_identity.st_dev == other.manifest_identity.st_dev
+            && self.manifest_identity.st_ino == other.manifest_identity.st_ino
+            && self.source_name == other.source_name
+            && self.source_identity.st_dev == other.source_identity.st_dev
+            && self.source_identity.st_ino == other.source_identity.st_ino
+            && self.destination_name == other.destination_name
+            && self.expected_uncompressed_bytes == other.expected_uncompressed_bytes
+            && self.expected_uncompressed_blake3 == other.expected_uncompressed_blake3
+    }
+}
+
+impl Eq for CompressionJob {}
 
 #[derive(Debug)]
 pub struct SealedSegment {
@@ -594,10 +666,12 @@ pub(crate) fn seal_v2_segment_at(
     let pending_exists = path_entry_exists_at(directory, &paths.pending)?;
     if !active_exists && sealed_exists && manifest_exists {
         let manifest = verify_sealed_v2_segment_at(directory, &paths.sealed)?;
-        return sealed_result(
+        return sealed_result_at(
+            directory,
+            display_directory,
             manifest,
-            display_directory.join(&paths.manifest),
-            display_directory.join(&paths.sealed),
+            paths.manifest,
+            paths.sealed,
         );
     }
     if !active_exists && sealed_exists && pending_exists && !manifest_exists {
@@ -872,10 +946,12 @@ fn finish_locked_seal_at(
     directory.sync_all()?;
     verify_name_identity_at(directory, &paths.sealed, active_identity)?;
     install_pending_manifest_at(directory, &paths.pending, &paths.manifest)?;
-    sealed_result(
+    sealed_result_at(
+        directory,
+        display_directory,
         manifest,
-        display_directory.join(&paths.manifest),
-        display_directory.join(&paths.sealed),
+        paths.manifest.clone(),
+        paths.sealed.clone(),
     )
 }
 
@@ -942,17 +1018,15 @@ fn visit_sealed_file_against_manifest(
     if actual_length != manifest.segment_length {
         return Err(ManifestError::InvalidField("segment_bytes").into());
     }
-    let (metadata, prologue_length) = read_prologue(&mut file)?;
+    let (metadata, prologue_length, encoded_prologue) = read_prologue(&mut file)?;
     if metadata != manifest.metadata || prologue_length != manifest.prologue_length {
         return Err(ManifestError::InvalidField("prologue").into());
     }
-    let actual_blake3 = hash_file(&mut file)?;
-    if actual_blake3 != manifest.segment_blake3 {
-        return Err(ManifestError::InvalidField("segment_blake3").into());
-    }
 
+    let mut segment_hasher = blake3::Hasher::new();
+    segment_hasher.update(&encoded_prologue);
     let mut stats = ScanStats::default();
-    let summary = recovery::verify_with_from(
+    let summary = recovery::verify_with_from_and_encoded(
         &mut file,
         prologue_length,
         Some(WalFormat::V2),
@@ -961,7 +1035,13 @@ fn visit_sealed_file_against_manifest(
             stats.observe(record);
             visitor(record);
         },
+        |encoded_frame| {
+            segment_hasher.update(encoded_frame);
+        },
     )?;
+    if segment_hasher.finalize().as_bytes() != &manifest.segment_blake3 {
+        return Err(ManifestError::InvalidField("segment_blake3").into());
+    }
     let (ranges, minimum, maximum) = stats.into_parts()?;
     if summary.record_count() != manifest.record_count
         || summary.last_valid_offset() != manifest.next_offset
@@ -1167,7 +1247,7 @@ fn hash_file(file: &mut File) -> Result<[u8; 32], io::Error> {
     Ok(*hasher.finalize().as_bytes())
 }
 
-fn read_prologue(file: &mut File) -> Result<(SegmentMetadata, u64), SealingError> {
+fn read_prologue(file: &mut File) -> Result<(SegmentMetadata, u64, Vec<u8>), SealingError> {
     let file_length = file.metadata()?.len();
     if file_length < 12 {
         return Err(PrologueError::Incomplete.into());
@@ -1186,6 +1266,7 @@ fn read_prologue(file: &mut File) -> Result<(SegmentMetadata, u64), SealingError
     Ok((
         decoded.into_metadata(),
         u64::try_from(header_length).map_err(|_| ManifestError::TooLarge)?,
+        encoded,
     ))
 }
 
@@ -1194,12 +1275,48 @@ fn sealed_result(
     manifest_path: PathBuf,
     sealed_path: PathBuf,
 ) -> Result<SealedSegment, SealingError> {
-    let destination_path =
-        sealed_path.with_file_name(format!("{}.zst", utf8_file_name(&sealed_path)?));
+    let display_directory = sealed_path.parent().ok_or(SealingError::InvalidPath)?;
+    let directory = File::open(display_directory)?;
+    sealed_result_at(
+        &directory,
+        display_directory,
+        manifest,
+        PathBuf::from(utf8_file_name(&manifest_path)?),
+        PathBuf::from(utf8_file_name(&sealed_path)?),
+    )
+}
+
+fn sealed_result_at(
+    directory: &File,
+    display_directory: &Path,
+    manifest: SealedSegmentManifest,
+    manifest_name: PathBuf,
+    source_name: PathBuf,
+) -> Result<SealedSegment, SealingError> {
+    let directory = directory.try_clone()?;
+    let directory_metadata = directory.metadata()?;
+    if !directory_metadata.is_dir() {
+        return Err(SealingError::InvalidPath);
+    }
+    let destination_name =
+        source_name.with_file_name(format!("{}.zst", utf8_file_name(&source_name)?));
+    let manifest_identity = validate_regular_single_link(&open_nofollow_at(
+        &directory,
+        &manifest_name,
+        OFlags::RDONLY,
+    )?)?;
+    let source_identity =
+        validate_regular_single_link(&open_nofollow_at(&directory, &source_name, OFlags::RDONLY)?)?;
     let compression_job = CompressionJob {
-        manifest_path,
-        source_path: sealed_path,
-        destination_path,
+        directory: Arc::new(directory),
+        directory_device: directory_metadata.dev(),
+        directory_inode: directory_metadata.ino(),
+        display_directory: display_directory.to_owned(),
+        manifest_name,
+        manifest_identity,
+        source_name,
+        source_identity,
+        destination_name,
         expected_uncompressed_bytes: manifest.segment_length,
         expected_uncompressed_blake3: manifest.segment_blake3,
     };
@@ -1209,13 +1326,20 @@ fn sealed_result(
     })
 }
 
-pub(crate) fn compression_job_for_verified_segment(
-    sealed_path: &Path,
+pub(crate) fn compression_job_for_verified_segment_at(
+    directory: &File,
+    display_directory: &Path,
+    sealed_name: &Path,
     manifest: &SealedSegmentManifest,
 ) -> Result<CompressionJob, SealingError> {
-    let manifest_path = manifest_path_for(sealed_path)?;
-    sealed_result(manifest.clone(), manifest_path, sealed_path.to_owned())
-        .map(|sealed| sealed.compression_job)
+    sealed_result_at(
+        directory,
+        display_directory,
+        manifest.clone(),
+        manifest_path_for(sealed_name)?,
+        sealed_name.to_owned(),
+    )
+    .map(|sealed| sealed.compression_job)
 }
 
 fn resume_pending_seal(
@@ -1246,10 +1370,12 @@ fn resume_pending_seal_at(
     let file = open_nofollow_at(directory, &paths.sealed, OFlags::RDONLY)?;
     verify_sealed_file_against_manifest(file, &manifest)?;
     install_pending_manifest_at(directory, &paths.pending, &paths.manifest)?;
-    sealed_result(
+    sealed_result_at(
+        directory,
+        display_directory,
         manifest,
-        display_directory.join(&paths.manifest),
-        display_directory.join(&paths.sealed),
+        paths.manifest.clone(),
+        paths.sealed.clone(),
     )
 }
 

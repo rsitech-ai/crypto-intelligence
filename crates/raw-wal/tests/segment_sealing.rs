@@ -117,10 +117,13 @@ fn clean_segment_seals_to_a_canonical_self_digested_manifest_and_verifies_read_o
     let manifest = sealed.manifest().clone();
     let sealed_path = sealed_path_for(&path).expect("sealed path must derive");
     let manifest_path = manifest_path_for(&sealed_path).expect("manifest path must derive");
-    assert_eq!(sealed.compression_job().source_path(), sealed_path);
-    assert_eq!(sealed.compression_job().manifest_path(), manifest_path);
+    assert_eq!(sealed.compression_job().source_display_path(), sealed_path);
     assert_eq!(
-        sealed.compression_job().destination_path(),
+        sealed.compression_job().manifest_display_path(),
+        manifest_path
+    );
+    assert_eq!(
+        sealed.compression_job().destination_display_path(),
         sealed_path.with_file_name(format!(
             "{}.zst",
             sealed_path
@@ -189,7 +192,7 @@ fn empty_segment_can_seal_at_its_creation_timestamp() {
     assert!(manifest.sequence_ranges().is_empty());
     assert_eq!(manifest.min_receive_wall_time_ns(), None);
     assert_eq!(manifest.max_receive_wall_time_ns(), None);
-    verify_sealed_v2_segment(sealed.compression_job().source_path())
+    verify_sealed_v2_segment(&sealed.compression_job().source_display_path())
         .expect("empty sealed segment must verify");
 }
 
@@ -514,8 +517,8 @@ fn pending_manifest_resumes_both_before_and_after_the_active_rename() {
     }
     let reference =
         seal_v2_segment(&reference_active, 1_721_234_568_000_000_000).expect("reference must seal");
-    let reference_manifest =
-        fs::read(reference.compression_job().manifest_path()).expect("manifest bytes must read");
+    let reference_manifest = fs::read(reference.compression_job().manifest_display_path())
+        .expect("manifest bytes must read");
 
     for rename_before_resume in [false, true] {
         let case_directory = directory.path().join(if rename_before_resume {
@@ -769,7 +772,7 @@ fn maximum_supported_stream_and_sequence_cardinality_seals_within_the_manifest_b
     assert!(encoded.len() <= MAX_MANIFEST_LENGTH);
     assert_eq!(sealed.manifest().streams().len(), MAX_STREAMS);
     assert_eq!(sealed.manifest().sequence_ranges().len(), MAX_STREAMS);
-    verify_sealed_v2_segment(sealed.compression_job().source_path())
+    verify_sealed_v2_segment(&sealed.compression_job().source_display_path())
         .expect("maximum sealed segment must verify");
 }
 
@@ -804,9 +807,7 @@ fn segmented_length_bound_accepts_the_last_byte_and_rejects_the_next_before_hash
     .expect("last accepted manifest must write");
     assert!(matches!(
         verify_sealed_v2_segment(&sealed),
-        Err(SealingError::Manifest(ManifestError::InvalidField(
-            "segment_blake3"
-        )))
+        Err(SealingError::Recovery(_))
     ));
 
     let oversized_length = maximum_length + 1;

@@ -241,6 +241,7 @@ pub(crate) fn recover_with_from(
         segment_metadata,
         true,
         &mut visitor,
+        |_| {},
     )
 }
 
@@ -258,6 +259,26 @@ pub(crate) fn verify_with_from(
         segment_metadata,
         false,
         &mut visitor,
+        |_| {},
+    )
+}
+
+pub(crate) fn verify_with_from_and_encoded(
+    file: &mut File,
+    record_start_offset: u64,
+    expected_format: Option<WalFormat>,
+    segment_metadata: Option<&SegmentMetadata>,
+    mut visitor: impl FnMut(RecoveredRecord<'_>),
+    mut encoded_visitor: impl FnMut(&[u8]),
+) -> Result<RecoverySummary, RecoveryError> {
+    scan_with_from(
+        file,
+        record_start_offset,
+        expected_format,
+        segment_metadata,
+        false,
+        &mut visitor,
+        &mut encoded_visitor,
     )
 }
 
@@ -268,6 +289,7 @@ fn scan_with_from(
     segment_metadata: Option<&SegmentMetadata>,
     allow_tail_repair: bool,
     mut visitor: impl FnMut(RecoveredRecord<'_>),
+    mut encoded_visitor: impl FnMut(&[u8]),
 ) -> Result<RecoverySummary, RecoveryError> {
     let actual_length = file.metadata()?.len();
     let maximum_length = MAX_RECOVERABLE_SEGMENT_LENGTH
@@ -428,6 +450,7 @@ fn scan_with_from(
             offset,
             next_offset,
         });
+        encoded_visitor(&frame_bytes);
         offset = next_offset;
     }
 
