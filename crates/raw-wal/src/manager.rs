@@ -484,7 +484,9 @@ impl SegmentedWalWriter {
                 predecessor,
                 transition.manifest.sealed_wall_time_ns(),
             )?;
-            let manifest = sealed.manifest().clone();
+            let sealed_name = Path::new(sealed.manifest().segment_file());
+            let manifest =
+                visit_verified_sealed_v2_segment_at(&directory_lock, sealed_name, &mut visitor)?;
             last_sequences = pending_sequences;
             manifests.push(manifest);
         }
