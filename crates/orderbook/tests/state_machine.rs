@@ -175,6 +175,30 @@ fn previous_final_policy_requires_the_connector_chain_after_alignment() {
 }
 
 #[test]
+fn previous_final_policy_accepts_a_native_futures_batch_range() {
+    let session = session(1, 1, 1);
+    let mut engine = OrderBookEngine::new(BookConfig {
+        sequence_policy: SequencePolicy::PreviousFinal,
+        ..book_config()
+    })
+    .unwrap();
+    engine
+        .start_session(session, SnapshotStrategy::StreamSnapshot)
+        .unwrap();
+    engine
+        .apply_snapshot(snapshot(149, &[("100", "2")], &[("101", "4")]), session, 1)
+        .unwrap();
+
+    assert_eq!(
+        engine
+            .apply_delta_with_previous(delta(157, 160, &[("100", "3")], &[]), session, 2, 149,)
+            .unwrap(),
+        ApplyResult::Applied
+    );
+    assert_eq!(engine.snapshot().unwrap().last_source_sequence(), 160);
+}
+
+#[test]
 fn stream_snapshot_reset_discards_pre_snapshot_deltas() {
     let session = session(1, 1, 1);
     let mut engine = engine();
