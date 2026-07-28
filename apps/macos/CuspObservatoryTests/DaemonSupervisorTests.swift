@@ -1345,7 +1345,7 @@ private actor SequencedTransportFactory: RPCTransportBuilding {
 }
 
 private struct FailingTransport: RPCTransport {
-  func getSnapshot(
+  func getOrderBookSnapshot(
     using credentials: SessionCredentials,
     timeout: Duration
   ) throws -> MarketSnapshot {
@@ -1356,7 +1356,7 @@ private struct FailingTransport: RPCTransport {
 private struct StaticTransport: RPCTransport {
   let snapshot: MarketSnapshot
 
-  func getSnapshot(
+  func getOrderBookSnapshot(
     using credentials: SessionCredentials,
     timeout: Duration
   ) async throws -> MarketSnapshot {
@@ -1377,7 +1377,7 @@ private struct DelayedTransportFactory: RPCTransportBuilding {
 private struct DelayedTransport: RPCTransport {
   let delay: Duration
 
-  func getSnapshot(
+  func getOrderBookSnapshot(
     using credentials: SessionCredentials,
     timeout: Duration
   ) async throws -> MarketSnapshot {
@@ -1400,7 +1400,7 @@ private actor BlockingTransport: RPCTransport {
   private var started = false
   private var released = false
 
-  func getSnapshot(
+  func getOrderBookSnapshot(
     using credentials: SessionCredentials,
     timeout: Duration
   ) async throws -> MarketSnapshot {

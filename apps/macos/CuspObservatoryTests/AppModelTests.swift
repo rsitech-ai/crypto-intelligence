@@ -426,7 +426,7 @@ private struct CoordinatorTransportFactory: RPCTransportBuilding {
 }
 
 private struct CoordinatorTransport: RPCTransport {
-  func getSnapshot(
+  func getOrderBookSnapshot(
     using credentials: SessionCredentials,
     timeout: Duration
   ) async throws -> MarketSnapshot {
