@@ -65,8 +65,10 @@ fn active_workspace_contains_only_implemented_packages() {
     assert_eq!(
         package_names,
         BTreeSet::from([
+            "capacity",
             "config",
             "connector-binance",
+            "crypto-evaluate",
             "cryptoriskd",
             "domain",
             "event-envelope",

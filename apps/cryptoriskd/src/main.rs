@@ -1,3 +1,4 @@
+mod capacity_startup;
 mod runtime;
 mod startup;
 
@@ -122,6 +123,10 @@ fn prepare(arguments: Arguments) -> Result<PreparedStartup, AppError> {
         &arguments.approved_root,
     )?;
     effective.config.validate_foundation_runtime()?;
+    capacity_startup::enforce_detected_foundation_capacity(
+        &effective.config,
+        &effective.paths.data_root,
+    )?;
     let shutdown_grace = Duration::from_secs(effective.config.shutdown_grace_seconds());
     let runtime_limits = RuntimeLimits::new(
         effective.config.ingestion_queue_capacity(),
@@ -295,6 +300,8 @@ fn is_cancelled(cancellation: &watch::Receiver<bool>) -> bool {
 enum AppError {
     #[error("configuration failed: {0}")]
     Config(#[from] ConfigError),
+    #[error("capacity admission failed: {0}")]
+    Capacity(#[from] capacity_startup::CapacityStartupError),
     #[error("startup failed: {0}")]
     Startup(#[from] StartupError),
     #[error("runtime failed: {0}")]
@@ -309,7 +316,14 @@ enum AppError {
 
 #[cfg(test)]
 mod tests {
-    use super::{build_async_runtime, local_log_level};
+    use std::{fs, os::unix::fs::PermissionsExt};
+
+    use super::{
+        build_async_runtime,
+        capacity_startup::{CapacityStartupError, enforce_foundation_capacity},
+        local_log_level,
+    };
+    use capacity::{CapacityEvidence, EvidenceLevel, HardwareProfile};
     use config::LogLevel;
     use observability::LocalLogLevel;
 
@@ -327,5 +341,79 @@ mod tests {
         assert_eq!(local_log_level(LogLevel::Info), LocalLogLevel::Info);
         assert_eq!(local_log_level(LogLevel::Debug), LocalLogLevel::Debug);
         assert_eq!(local_log_level(LogLevel::Trace), LocalLogLevel::Trace);
+    }
+
+    #[test]
+    fn foundation_capacity_is_enforced_before_runtime_startup() {
+        let root = tempfile::tempdir().expect("temporary capacity root");
+        for directory in ["data", "logs"] {
+            let path = root.path().join(directory);
+            fs::create_dir(&path).expect("private writable root");
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o700))
+                .expect("private writable mode");
+        }
+        fs::create_dir_all(root.path().join("models/public-test-artifacts"))
+            .expect("model registry");
+        fs::write(root.path().join("fixture.jsonl"), "{}\n").expect("fixture");
+        let defaults = include_str!("../../../configs/default.toml")
+            .replace("fixtures/binance/btcusdt-book-v1.jsonl", "fixture.jsonl");
+        let effective = config::load(
+            &defaults,
+            "capacity-test",
+            None,
+            config::Overrides::default(),
+            root.path(),
+        )
+        .expect("foundation config must load");
+        let hardware = HardwareProfile {
+            schema_version: 1,
+            apple_silicon: true,
+            logical_cpus: 8,
+            memory_bytes: 40 * 1024 * 1024 * 1024,
+            free_disk_bytes: 100 * 1024 * 1024 * 1024,
+            sustained_inbound_bytes_per_second: 10 * 1024 * 1024,
+            burst_inbound_bytes_per_second: 50 * 1024 * 1024,
+            sustained_disk_write_bytes_per_second: 50 * 1024 * 1024,
+            burst_disk_write_bytes_per_second: 100 * 1024 * 1024,
+            sustained_normalized_events_per_second: 50_000,
+            burst_normalized_events_per_second: 250_000,
+            evidence: CapacityEvidence {
+                schema_version: 1,
+                level: EvidenceLevel::ConservativeDefault,
+                capacity_uncertainty_ppm: 500_000,
+                sample_count: 0,
+                observed_at_unix_seconds: 0,
+                measurement_blake3: [0; 32],
+            },
+        };
+        enforce_foundation_capacity(&effective.config, hardware)
+            .expect("current bounded fixture must fit conservative resources");
+
+        let rejected = HardwareProfile {
+            memory_bytes: 1024 * 1024,
+            ..hardware
+        };
+        assert!(matches!(
+            enforce_foundation_capacity(&effective.config, rejected),
+            Err(CapacityStartupError::Rejected { .. })
+        ));
+
+        let oversized_defaults = defaults.replace(
+            "ingestion_queue_capacity = 1024",
+            "ingestion_queue_capacity = 65536",
+        );
+        let oversized = config::load(
+            &oversized_defaults,
+            "capacity-reservation-test",
+            None,
+            config::Overrides::default(),
+            root.path(),
+        )
+        .expect("bounded but oversized queue config must load");
+        assert!(matches!(
+            enforce_foundation_capacity(&oversized.config, hardware),
+            Err(CapacityStartupError::Rejected { reasons })
+                if reasons.contains(&capacity::AdmissionReason::MemoryBudgetExceeded)
+        ));
     }
 }

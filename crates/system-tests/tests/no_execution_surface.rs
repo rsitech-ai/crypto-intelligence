@@ -13,6 +13,7 @@ mod generated_binding_policy;
 
 const APPROVED_FOUNDATION_DEPENDENCIES: &[&str] = &[
     "blake3",
+    "capacity",
     "clap",
     "config",
     "connector-binance",
@@ -22,6 +23,7 @@ const APPROVED_FOUNDATION_DEPENDENCIES: &[&str] = &[
     "fixed-decimal",
     "hex",
     "hmac",
+    "libc",
     "local-api",
     "observability",
     "orderbook",
