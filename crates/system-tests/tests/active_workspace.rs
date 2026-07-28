@@ -79,6 +79,7 @@ fn active_workspace_contains_only_implemented_packages() {
             "metadata-store",
             "observability",
             "orderbook",
+            "parquet-store",
             "raw-wal",
             "system-tests",
             "xtask",
