@@ -15,6 +15,7 @@ members = [
   "crates/connector-kraken",
   "crates/config",
   "crates/consolidated-market",
+  "crates/dataset",
   "crates/domain",
   "crates/event-envelope",
   "crates/feature-engine",

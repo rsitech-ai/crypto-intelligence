@@ -86,8 +86,11 @@ def authority():
  ])
  for x in["BTreeMap<Price, LevelValue>","GapDetected","ChecksumMismatch","StaleInstrumentGeneration"]:
   if x not in book:fail(f"orderbook missing {x}")
- data=read("crates/dataset/src/lib.rs").replace(" ","")
- for x in["f.as_known_at_ns>origin_ns","f.event_time_end_ns>origin_ns","embargo_ns"]:
+ data="\n".join([
+  read("crates/dataset/src/lib.rs"),
+  read("crates/dataset/src/folds.rs"),
+ ]).replace(" ","").replace("\n","")
+ for x in["feature.as_known_at_ns>origin_time_ns","feature.event_time_end_ns>origin_time_ns","purge_embargo_ns"]:
   if x not in data:fail(f"dataset missing {x}")
  event=read("crates/event-envelope/src/lib.rs")
  for x in["cmti:event:v1","raw_payload_hash","receive_monotonic_ns","connection_epoch","quality_score_ppm","IdentityMismatch"]:
