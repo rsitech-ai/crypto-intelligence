@@ -1,6 +1,6 @@
 schema_version = 1
 venue = "binance"
-reviewed_on = "2026-07-28"
+reviewed_on = "2026-07-29"
 evidence_kind = "maintainer-authored-factual-review"
 copyright_policy = "No provider documentation text is copied. This file retains only reviewed protocol facts and source URLs."
 retrieval_note = "The Binance documentation CDN challenged non-browser retrieval, so immutable repository documentation is preferred where available and the reviewed facts are retained locally."
@@ -36,6 +36,7 @@ url = "https://developers.binance.com/en/docs/catalog/core-trading-derivatives-t
 facts = [
   "USD-M market-data REST exposes exchange information, depth snapshots, and open interest.",
   "Tick size and quantity step come from explicit exchange-info filters rather than display precision fields.",
+  "USD-M contract status includes pending, trading, pre-settlement, settlement, close, pre-delivery, delivery, and delivered lifecycle states.",
 ]
 
 [[source]]
@@ -44,6 +45,7 @@ url = "https://github.com/binance/binance-spot-api-docs/blob/master/rest-api.md"
 facts = [
   "Spot REST exposes exchange information and weighted depth snapshots.",
   "Exchange information may be requested for a bounded symbol set.",
+  "Spot symbol status includes TRADING, HALT, and BREAK.",
 ]
 
 [[source]]
