@@ -1,4 +1,136 @@
 schema_version = 1
 artifact_id = "fixtures/exchanges/kraken/manifest.toml"
-status = "implemented"
+status = "tracked"
+certification_status = "fixture_parser_pass"
 local_only = true
+fixture_origin = "repository-owned synthetic values shaped by reviewed public schemas; the L2 golden vector is the public protocol checksum example"
+captured_exchange_traffic = false
+contains_credentials = false
+redistribution = "MIT OR Apache-2.0"
+reviewed_on = "2026-07-29"
+
+[[source]]
+id = "spot_book_v2"
+url = "https://docs.kraken.com/exchange/api-reference/spot-websocket-v2/book"
+scope = "Spot v2 L2 snapshot and update fields"
+snapshot = "fixtures/exchanges/kraken/documentation-review.toml"
+snapshot_sha256 = "a540732d02061ee78490919d4b1b19db4e885fefddf50b3d15c00b2000d0e91b"
+
+[[source]]
+id = "spot_book_checksum_v2"
+url = "https://docs.kraken.com/exchange/guides/websockets/book-checksum-v2"
+scope = "exact top-ten CRC32 formatting and public reference vector"
+snapshot = "fixtures/exchanges/kraken/documentation-review.toml"
+snapshot_sha256 = "a540732d02061ee78490919d4b1b19db4e885fefddf50b3d15c00b2000d0e91b"
+
+[[source]]
+id = "spot_level3_v2"
+url = "https://docs.kraken.com/exchange/api-reference/spot-websocket-v2/level3"
+scope = "authenticated individual-order visibility, lifecycle, capacity, and depth"
+snapshot = "fixtures/exchanges/kraken/documentation-review.toml"
+snapshot_sha256 = "a540732d02061ee78490919d4b1b19db4e885fefddf50b3d15c00b2000d0e91b"
+
+[[source]]
+id = "spot_level3_checksum_v2"
+url = "https://docs.kraken.com/exchange/guides/websockets/l3-checksum-v2"
+scope = "queue-sensitive L3 checksum semantics"
+snapshot = "fixtures/exchanges/kraken/documentation-review.toml"
+snapshot_sha256 = "a540732d02061ee78490919d4b1b19db4e885fefddf50b3d15c00b2000d0e91b"
+
+[[source]]
+id = "spot_trade"
+url = "https://docs.kraken.com/exchange/api-reference/spot-websocket-v2/trade"
+scope = "Spot individual-trade snapshot and update semantics"
+snapshot = "fixtures/exchanges/kraken/documentation-review.toml"
+snapshot_sha256 = "a540732d02061ee78490919d4b1b19db4e885fefddf50b3d15c00b2000d0e91b"
+
+[[source]]
+id = "spot_instrument"
+url = "https://docs.kraken.com/exchange/api-reference/spot-websocket-v2/instrument"
+scope = "Spot asset and pair lifecycle, increments, minimums, and precision metadata"
+snapshot = "fixtures/exchanges/kraken/documentation-review.toml"
+snapshot_sha256 = "a540732d02061ee78490919d4b1b19db4e885fefddf50b3d15c00b2000d0e91b"
+
+[[source]]
+id = "spot_status_heartbeat"
+url = "https://docs.kraken.com/exchange/api-reference/spot-websocket-v2/status"
+scope = "connection status and heartbeat behavior"
+snapshot = "fixtures/exchanges/kraken/documentation-review.toml"
+snapshot_sha256 = "a540732d02061ee78490919d4b1b19db4e885fefddf50b3d15c00b2000d0e91b"
+
+[[source]]
+id = "futures_book"
+url = "https://docs.kraken.com/exchange/api-reference/futures-websocket/book"
+scope = "Futures L2 snapshot, delta, sequence, and timestamp fields"
+snapshot = "fixtures/exchanges/kraken/documentation-review.toml"
+snapshot_sha256 = "a540732d02061ee78490919d4b1b19db4e885fefddf50b3d15c00b2000d0e91b"
+
+[[source]]
+id = "futures_trade"
+url = "https://docs.kraken.com/exchange/api-reference/futures-websocket/trade"
+scope = "Futures individual-trade fields and classifications"
+snapshot = "fixtures/exchanges/kraken/documentation-review.toml"
+snapshot_sha256 = "a540732d02061ee78490919d4b1b19db4e885fefddf50b3d15c00b2000d0e91b"
+
+[[fixture]]
+path = "fixtures/exchanges/kraken/spot-book-snapshot.json"
+sha256 = "50d33f9e5b7dad544d9f82014ddbaa7cbe84a6ce71c1be96ccb61b2c76b9876f"
+market = "spot"
+route = "websocket_v2"
+record_type = "book_snapshot"
+
+[[fixture]]
+path = "fixtures/exchanges/kraken/spot-level3-snapshot.json"
+sha256 = "7c9fbeaa8d6c345d83a8ec8463e8d8f4725de4f3c44ad0b4bb504780cd2f3238"
+market = "spot"
+route = "websocket_v2"
+record_type = "level3_snapshot"
+
+[[fixture]]
+path = "fixtures/exchanges/kraken/spot-trade.json"
+sha256 = "6515aa16a2249d9f09936697b4d366ffbb549d279d93d6821edfd879bcb2fe80"
+market = "spot"
+route = "websocket_v2"
+record_type = "trade"
+
+[[fixture]]
+path = "fixtures/exchanges/kraken/spot-instrument.json"
+sha256 = "3aa461f2535b8537e6bc3fb59bf5c5b170e4f8cda8f52ec2301249562a5908bd"
+market = "spot"
+route = "websocket_v2"
+record_type = "instrument"
+
+[[fixture]]
+path = "fixtures/exchanges/kraken/spot-status.json"
+sha256 = "83645f9df251b1d673ab6b8fd316b7635da6d2ee174acd0e3d9771a932115d6a"
+market = "spot"
+route = "websocket_v2"
+record_type = "status"
+
+[[fixture]]
+path = "fixtures/exchanges/kraken/spot-heartbeat.json"
+sha256 = "7923603ff31ed3b46d611cecb8ea5e31c9d36b67b58cfecb4a91f27726baa3b0"
+market = "spot"
+route = "websocket_v2"
+record_type = "heartbeat"
+
+[[fixture]]
+path = "fixtures/exchanges/kraken/futures-book-snapshot.json"
+sha256 = "b022243713897774e83e5ae4834ac04a0656fd9fcc6971c1b797207b1f4721b4"
+market = "futures"
+route = "websocket"
+record_type = "book_snapshot"
+
+[[fixture]]
+path = "fixtures/exchanges/kraken/futures-book-update.json"
+sha256 = "ba9d40d6e5792d1e69543f9fa12bd0479682ea8324e02c945cb5eaf14e3c5775"
+market = "futures"
+route = "websocket"
+record_type = "book_update"
+
+[[fixture]]
+path = "fixtures/exchanges/kraken/futures-trade.json"
+sha256 = "e71e52e9c258e11811a5f19c54c70abaee3c565ea48b0b17c4858cdf9737d22e"
+market = "futures"
+route = "websocket"
+record_type = "trade"

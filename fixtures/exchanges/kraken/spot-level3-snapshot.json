@@ -1,0 +1,16 @@
+{
+  "channel": "level3",
+  "type": "snapshot",
+  "data": [{
+    "symbol": "BTC/USD",
+    "bids": [
+      {"order_id": "BID-1", "limit_price": "100.0", "order_qty": "0.03000000", "timestamp": "2024-01-08T12:26:39.000000001Z"}
+    ],
+    "asks": [
+      {"order_id": "ASK-1", "limit_price": "100.1", "order_qty": "0.01000000", "timestamp": "2024-01-08T12:26:39.000000001Z"},
+      {"order_id": "ASK-2", "limit_price": "100.1", "order_qty": "0.02000000", "timestamp": "2024-01-08T12:26:39.000000002Z"}
+    ],
+    "checksum": 776282110,
+    "timestamp": "2024-01-08T12:26:40.000000000Z"
+  }]
+}

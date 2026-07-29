@@ -1,0 +1,160 @@
+{
+  "schema_version": 1,
+  "venue": "kraken",
+  "fixture_status": "pass",
+  "production_certification_status": "blocked",
+  "evidence_scope": "retained-fixture",
+  "live_exchange_acceptance": false,
+  "manifest_sha256": "ccd7b9fd6d76eeed83a6fc38760d2654cfe8c0ad8657092e435d1649f20cda20",
+  "connector_version": "1.0.0",
+  "trade_semantics": "individual",
+  "liquidation_completeness": "not_supported",
+  "fixture_count": 9,
+  "fixtures": {
+    "fixtures/exchanges/kraken/futures-book-snapshot.json": "b022243713897774e83e5ae4834ac04a0656fd9fcc6971c1b797207b1f4721b4",
+    "fixtures/exchanges/kraken/futures-book-update.json": "ba9d40d6e5792d1e69543f9fa12bd0479682ea8324e02c945cb5eaf14e3c5775",
+    "fixtures/exchanges/kraken/futures-trade.json": "e71e52e9c258e11811a5f19c54c70abaee3c565ea48b0b17c4858cdf9737d22e",
+    "fixtures/exchanges/kraken/spot-book-snapshot.json": "50d33f9e5b7dad544d9f82014ddbaa7cbe84a6ce71c1be96ccb61b2c76b9876f",
+    "fixtures/exchanges/kraken/spot-heartbeat.json": "7923603ff31ed3b46d611cecb8ea5e31c9d36b67b58cfecb4a91f27726baa3b0",
+    "fixtures/exchanges/kraken/spot-instrument.json": "3aa461f2535b8537e6bc3fb59bf5c5b170e4f8cda8f52ec2301249562a5908bd",
+    "fixtures/exchanges/kraken/spot-level3-snapshot.json": "7c9fbeaa8d6c345d83a8ec8463e8d8f4725de4f3c44ad0b4bb504780cd2f3238",
+    "fixtures/exchanges/kraken/spot-status.json": "83645f9df251b1d673ab6b8fd316b7635da6d2ee174acd0e3d9771a932115d6a",
+    "fixtures/exchanges/kraken/spot-trade.json": "6515aa16a2249d9f09936697b4d366ffbb549d279d93d6821edfd879bcb2fe80"
+  },
+  "checks": [
+    {
+      "name": "fixture_hashes",
+      "status": "pass"
+    },
+    {
+      "name": "all_retained_fixture_record_types",
+      "status": "pass"
+    },
+    {
+      "name": "spot_v2_exact_decimal_checksum",
+      "status": "pass"
+    },
+    {
+      "name": "selected_l3_queue_checksum",
+      "status": "pass"
+    },
+    {
+      "name": "futures_sequence_fields",
+      "status": "pass"
+    },
+    {
+      "name": "field_reordering",
+      "status": "pass"
+    },
+    {
+      "name": "schema_drift_rejection",
+      "status": "pass"
+    },
+    {
+      "name": "payload_size_rejection",
+      "status": "pass"
+    },
+    {
+      "name": "truthful_capabilities",
+      "status": "pass"
+    }
+  ],
+  "production_gates": [
+    {
+      "number": 1,
+      "name": "golden parser fixtures for every subscribed message type",
+      "status": "partial",
+      "evidence": "9 provenance-bound retained fixtures cover the certified parser subset; no production subscription inventory exists"
+    },
+    {
+      "number": 2,
+      "name": "unknown-field and field-reordering tests",
+      "status": "pass",
+      "evidence": "runner reorders every fixture and rejects injected undocumented and duplicate fields"
+    },
+    {
+      "number": 3,
+      "name": "numeric boundary tests and fixed-point round trips",
+      "status": "partial",
+      "evidence": "source decimal lexemes and official CRC32 vector pass; wider property tests remain focused-test work"
+    },
+    {
+      "number": 4,
+      "name": "snapshot/delta reconstruction",
+      "status": "partial",
+      "evidence": "Spot L2/L3 snapshots are reconstructed and checksum-gated; retained Spot update and Futures engine reconstruction are not yet certified"
+    },
+    {
+      "number": 5,
+      "name": "missing duplicated and reordered sequences",
+      "status": "partial",
+      "evidence": "Futures sequence fields are retained; transport-session discontinuity tests are not run by this runner"
+    },
+    {
+      "number": 6,
+      "name": "checksum mismatch and forced resnapshot where supported",
+      "status": "pass",
+      "evidence": "focused connector tests prove Spot L2 and selected L3 mismatch suppression and snapshot recovery"
+    },
+    {
+      "number": 7,
+      "name": "heartbeat timeout and clean reconnect",
+      "status": "partial",
+      "evidence": "fixture book state is cleared and resnapshotted across a synthetic reconnect; heartbeat timeout supervision is not implemented"
+    },
+    {
+      "number": 8,
+      "name": "rate-limit and backoff",
+      "status": "blocked",
+      "evidence": "L3 subscription capacity is declared, but production transport enforcement is not implemented"
+    },
+    {
+      "number": 9,
+      "name": "schema-drift fail-safe",
+      "status": "pass",
+      "evidence": "runner injects and rejects an undocumented field and duplicate key"
+    },
+    {
+      "number": 10,
+      "name": "clock-skew and timestamp-unit",
+      "status": "partial",
+      "evidence": "Spot RFC3339 and Futures millisecond shapes are retained; clock-skew policy is not implemented"
+    },
+    {
+      "number": 11,
+      "name": "burst-load and bounded queue",
+      "status": "partial",
+      "evidence": "payload and collection bounds exist; production session queue evidence is not available"
+    },
+    {
+      "number": 12,
+      "name": "raw-WAL replay equivalence",
+      "status": "not_run",
+      "evidence": "durable parser binding exists, but a Kraken session replay test is not yet executed"
+    },
+    {
+      "number": 13,
+      "name": "kill-and-restart recovery",
+      "status": "blocked",
+      "evidence": "no supervised production Kraken transport restart path exists"
+    },
+    {
+      "number": 14,
+      "name": "data-completeness metadata",
+      "status": "pass",
+      "evidence": "unsupported liquidations and delivery uncertainty are declared without overstatement"
+    },
+    {
+      "number": 15,
+      "name": "terms and redistribution review",
+      "status": "pass",
+      "evidence": "manifest records reviewed-restricted terms and local synthetic fixture provenance"
+    }
+  ],
+  "limitations": [
+    "No authenticated token acquisition, account data, order placement, or trading",
+    "L3 parser and integrity behavior use local fixtures; live authenticated L3 acceptance is not proven",
+    "This artifact validates retained parser and checksum fixtures, not live exchange acceptance",
+    "Production transport, operational rate enforcement, supervised reconnect, raw-WAL session replay, and canary evidence remain blocked or unrun"
+  ]
+}

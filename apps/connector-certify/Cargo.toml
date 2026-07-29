@@ -10,6 +10,7 @@ publish.workspace = true
 connector-binance = { path = "../../crates/connector-binance" }
 connector-bybit = { path = "../../crates/connector-bybit" }
 connector-core = { path = "../../crates/connector-core" }
+connector-kraken = { path = "../../crates/connector-kraken" }
 clap.workspace = true
 domain = { path = "../../crates/domain" }
 fixed-decimal = { path = "../../crates/fixed-decimal" }
