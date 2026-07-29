@@ -75,6 +75,7 @@ fn active_workspace_contains_only_implemented_packages() {
             "connector-kraken",
             "collector-runtime",
             "crypto-evaluate",
+            "crypto-replay",
             "cryptoriskd",
             "domain",
             "event-envelope",
@@ -87,6 +88,7 @@ fn active_workspace_contains_only_implemented_packages() {
             "parquet-store",
             "quality",
             "raw-wal",
+            "replay-engine",
             "system-tests",
             "xtask",
         ])

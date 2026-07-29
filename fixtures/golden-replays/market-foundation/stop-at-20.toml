@@ -1,5 +1,5 @@
 schema_version = 1
-artifact_id = "fixtures/golden-replays/market-foundation/manifest.toml"
+artifact_id = "fixtures/golden-replays/market-foundation/stop-at-20.toml"
 status = "implemented"
 local_only = true
 venue = "binance"
@@ -17,16 +17,17 @@ max_total_input_bytes = 65536
 max_levels_per_side = 100
 max_buffered_deltas = 8
 max_buffered_level_updates = 32
+stop_at_receive_monotonic_ns = 20
 
 [expected]
-normalized_event_hash = "bff5485b87ed0d85053aa6cb4be4888e34eb18175b25077567ceacb2de902fc7"
+normalized_event_hash = "7891d0c21eca7a93d16843fa7b79ef0c73b48526cdc3cbe79fb1a2d99c749637"
 book_state_hash = "0df4cebb4f07b01926a89952e826e55e412820e1927253ca47730e1cb7875e72"
 quality_incident_hash = "29c1739deeec06d20afc3bdb2bb0b4e0141ceec7f443d13dca422d206660b684"
-replayed_records = 3
-normalized_events = 3
+replayed_records = 2
+normalized_events = 2
 quality_incidents = 0
 silent_integrity_failures = 0
-logical_elapsed_ns = 20
+logical_elapsed_ns = 10
 
 [[record]]
 stream_id = 7

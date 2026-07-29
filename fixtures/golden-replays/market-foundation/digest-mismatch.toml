@@ -1,5 +1,5 @@
 schema_version = 1
-artifact_id = "fixtures/golden-replays/market-foundation/manifest.toml"
+artifact_id = "fixtures/golden-replays/market-foundation/digest-mismatch.toml"
 status = "implemented"
 local_only = true
 venue = "binance"
@@ -19,7 +19,7 @@ max_buffered_deltas = 8
 max_buffered_level_updates = 32
 
 [expected]
-normalized_event_hash = "bff5485b87ed0d85053aa6cb4be4888e34eb18175b25077567ceacb2de902fc7"
+normalized_event_hash = "aff5485b87ed0d85053aa6cb4be4888e34eb18175b25077567ceacb2de902fc7"
 book_state_hash = "0df4cebb4f07b01926a89952e826e55e412820e1927253ca47730e1cb7875e72"
 quality_incident_hash = "29c1739deeec06d20afc3bdb2bb0b4e0141ceec7f443d13dca422d206660b684"
 replayed_records = 3
