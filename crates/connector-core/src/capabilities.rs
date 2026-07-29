@@ -320,7 +320,7 @@ impl OpenInterestFields {
     pub const NOTIONAL: Self = Self(0b0000_0010);
 }
 
-field_set!(OptionsFields, 0b0001_1111_1111_u32);
+field_set!(OptionsFields, 0b0011_1111_1111_u32);
 impl OptionsFields {
     pub const IMPLIED_VOLATILITY: Self = Self(0b0000_0001);
     pub const DELTA: Self = Self(0b0000_0010);
@@ -331,6 +331,7 @@ impl OptionsFields {
     pub const MARK_PRICE: Self = Self(0b0100_0000);
     pub const INDEX_PRICE: Self = Self(0b1000_0000);
     pub const FUNDING_RATE: Self = Self(0b0001_0000_0000);
+    pub const RHO: Self = Self(0b0010_0000_0000);
 }
 
 /// One bounded rate-limit rule.

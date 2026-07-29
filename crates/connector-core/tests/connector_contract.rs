@@ -838,6 +838,18 @@ fn validated_capabilities_serialize_every_normative_field() {
     );
 }
 
+#[test]
+fn option_rho_is_a_first_class_capability_bit() {
+    assert_eq!(
+        OptionsFields::from_bits(OptionsFields::RHO.bits()).expect("rho must be recognized"),
+        OptionsFields::RHO
+    );
+    assert_eq!(
+        OptionsFields::from_bits(0b0100_0000_0000),
+        Err(CapabilityError::UnknownFieldBit)
+    );
+}
+
 #[tokio::test]
 async fn discrete_commands_are_bounded_fifo_and_not_latest_only() {
     let (control, _interrupt) = CancellationChannel::channel();

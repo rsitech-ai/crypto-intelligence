@@ -9,6 +9,7 @@ members = [
   "crates/connector-binance",
   "crates/connector-bybit",
   "crates/connector-core",
+  "crates/connector-deribit",
   "crates/connector-kraken",
   "crates/config",
   "crates/domain",

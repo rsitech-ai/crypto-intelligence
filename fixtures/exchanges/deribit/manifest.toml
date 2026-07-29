@@ -1,4 +1,164 @@
 schema_version = 1
 artifact_id = "fixtures/exchanges/deribit/manifest.toml"
-status = "implemented"
+status = "tracked"
+certification_status = "fixture_parser_pass"
 local_only = true
+fixture_origin = "repository-owned synthetic values shaped by reviewed public schemas; no captured exchange traffic"
+captured_exchange_traffic = false
+contains_credentials = false
+redistribution = "MIT OR Apache-2.0"
+reviewed_on = "2026-07-29"
+
+[[source]]
+id = "notifications"
+url = "https://docs.deribit.com/articles/notifications"
+scope = "JSON-RPC subscription notification envelope and channel-local ordering"
+snapshot = "fixtures/exchanges/deribit/documentation-review.toml"
+snapshot_sha256 = "e1725fcc89ecc1dec32f7853a79afb2b68962b202e24135af7ee8954e3409e7e"
+
+[[source]]
+id = "instruments"
+url = "https://docs.deribit.com/api-reference/market-data/public-get_instruments"
+scope = "futures, perpetuals, and options identity, lifecycle, contract, currency, strike, and side metadata"
+snapshot = "fixtures/exchanges/deribit/documentation-review.toml"
+snapshot_sha256 = "e1725fcc89ecc1dec32f7853a79afb2b68962b202e24135af7ee8954e3409e7e"
+
+[[source]]
+id = "ticker"
+url = "https://docs.deribit.com/subscriptions/upcoming/market-data/tickerinstrument_nameinterval"
+scope = "mark, index, open interest, funding, delivery, IV, Greeks, and lifecycle fields"
+snapshot = "fixtures/exchanges/deribit/documentation-review.toml"
+snapshot_sha256 = "e1725fcc89ecc1dec32f7853a79afb2b68962b202e24135af7ee8954e3409e7e"
+
+[[source]]
+id = "book"
+url = "https://docs.deribit.com/subscriptions/orderbook/bookinstrument_nameinterval"
+scope = "snapshot, change actions, and change_id continuity"
+snapshot = "fixtures/exchanges/deribit/documentation-review.toml"
+snapshot_sha256 = "e1725fcc89ecc1dec32f7853a79afb2b68962b202e24135af7ee8954e3409e7e"
+
+[[source]]
+id = "trades"
+url = "https://docs.deribit.com/subscriptions/trades/tradesinstrument_nameinterval"
+scope = "individual trade identity, sequence, price, amount, and classification"
+snapshot = "fixtures/exchanges/deribit/documentation-review.toml"
+snapshot_sha256 = "e1725fcc89ecc1dec32f7853a79afb2b68962b202e24135af7ee8954e3409e7e"
+
+[[source]]
+id = "perpetual_interest"
+url = "https://docs.deribit.com/subscriptions/market-data/perpetualinstrument_nameinterval"
+scope = "perpetual-only interest and index observations"
+snapshot = "fixtures/exchanges/deribit/documentation-review.toml"
+snapshot_sha256 = "e1725fcc89ecc1dec32f7853a79afb2b68962b202e24135af7ee8954e3409e7e"
+
+[[source]]
+id = "delivery_prices"
+url = "https://docs.deribit.com/api-reference/market-data/public-get_delivery_prices"
+scope = "historical settlement and delivery observations"
+snapshot = "fixtures/exchanges/deribit/documentation-review.toml"
+snapshot_sha256 = "e1725fcc89ecc1dec32f7853a79afb2b68962b202e24135af7ee8954e3409e7e"
+
+[[source]]
+id = "rate_limits"
+url = "https://docs.deribit.com/articles/rate-limits"
+scope = "credit pools, sustained and burst request limits, and exhaustion behavior"
+snapshot = "fixtures/exchanges/deribit/documentation-review.toml"
+snapshot_sha256 = "e1725fcc89ecc1dec32f7853a79afb2b68962b202e24135af7ee8954e3409e7e"
+
+[[source]]
+id = "connection_management"
+url = "https://docs.deribit.com/articles/connection-management-best-practices"
+scope = "simultaneous WebSocket connection cap and reconnect behavior"
+snapshot = "fixtures/exchanges/deribit/documentation-review.toml"
+snapshot_sha256 = "e1725fcc89ecc1dec32f7853a79afb2b68962b202e24135af7ee8954e3409e7e"
+
+[[source]]
+id = "numeric_notation"
+url = "https://support.deribit.com/hc/en-us/articles/25944812424349-3-December-2024"
+scope = "scientific notation in JSON numeric values"
+snapshot = "fixtures/exchanges/deribit/documentation-review.toml"
+snapshot_sha256 = "e1725fcc89ecc1dec32f7853a79afb2b68962b202e24135af7ee8954e3409e7e"
+
+[[source]]
+id = "linear_option_symbols"
+url = "https://support.deribit.com/hc/en-us/articles/31424932728093-Linear-USDC-Options"
+scope = "fractional USDC option strike encoding in instrument names"
+snapshot = "fixtures/exchanges/deribit/documentation-review.toml"
+snapshot_sha256 = "e1725fcc89ecc1dec32f7853a79afb2b68962b202e24135af7ee8954e3409e7e"
+
+[[fixture]]
+path = "fixtures/exchanges/deribit/option-instrument.json"
+sha256 = "41be6ed9bd305515b0fab46a78c2bd17787dc706e16fac2a40c0cc9ee92e9bf3"
+market = "option"
+route = "public_get_instruments"
+record_type = "instrument"
+
+[[fixture]]
+path = "fixtures/exchanges/deribit/future-instrument.json"
+sha256 = "a975da09cc7039a43d7190c5bb3f6a16d41627ac92e26bdda2c2eaf147b4c2dd"
+market = "future"
+route = "public_get_instruments"
+record_type = "instrument"
+
+[[fixture]]
+path = "fixtures/exchanges/deribit/perpetual-instrument.json"
+sha256 = "48cc393791181fd4d00383f7d4c8b63a882deacc16905e2ec0dbcb4f4093e6b2"
+market = "perpetual"
+route = "public_get_instruments"
+record_type = "instrument"
+
+[[fixture]]
+path = "fixtures/exchanges/deribit/option-ticker.json"
+sha256 = "846ece30c21e7c380db2ac6c04073944a23584c3c96e26b097588145c7a40b6e"
+market = "option"
+route = "websocket_subscription"
+record_type = "ticker"
+
+[[fixture]]
+path = "fixtures/exchanges/deribit/perpetual-ticker.json"
+sha256 = "9d726b84670627c693bd9cad7c29072d3db4d806decfae4f93448fd4a8dc3fdd"
+market = "perpetual"
+route = "websocket_subscription"
+record_type = "ticker"
+
+[[fixture]]
+path = "fixtures/exchanges/deribit/future-ticker.json"
+sha256 = "b05dc3deb355a8ca9730997dc3050bd42e78214a1dccda12f65fe672ebdffb81"
+market = "future"
+route = "websocket_subscription"
+record_type = "ticker"
+
+[[fixture]]
+path = "fixtures/exchanges/deribit/book-snapshot.json"
+sha256 = "73edc667828d793dee2e3fe456b2a55b990aaf4db090bb8ffcb071c0337f5b47"
+market = "perpetual"
+route = "websocket_subscription"
+record_type = "book_snapshot"
+
+[[fixture]]
+path = "fixtures/exchanges/deribit/book-change.json"
+sha256 = "d1befd28e241522160a0d8574c23bfc2bc2e64bdc67323a3b91395f07e654f93"
+market = "perpetual"
+route = "websocket_subscription"
+record_type = "book_change"
+
+[[fixture]]
+path = "fixtures/exchanges/deribit/trades.json"
+sha256 = "89db09ccdd75c814d2242a0fc3bc86dad5cae7b16df7bba5b6fd6d98a5531b42"
+market = "perpetual"
+route = "websocket_subscription"
+record_type = "trade"
+
+[[fixture]]
+path = "fixtures/exchanges/deribit/perpetual-interest.json"
+sha256 = "4cac189404f3622016d1e05696f3d62908b2d3d27d32182961203dc183237600"
+market = "perpetual"
+route = "websocket_subscription"
+record_type = "perpetual_interest"
+
+[[fixture]]
+path = "fixtures/exchanges/deribit/delivery-prices.json"
+sha256 = "105e4395fc6808c9859e2e519e39263780450cc887ce72ac5c8040d1ce3b132f"
+market = "future_option"
+route = "public_get_delivery_prices"
+record_type = "delivery_prices"

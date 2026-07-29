@@ -17,12 +17,17 @@ use connector_bybit::{
     parse_native_message as parse_bybit_message,
 };
 use connector_core::{Completeness, StreamClass, TradeSemantics};
+use connector_deribit::{
+    DeribitBookSynchronizer, DeribitInput, DeribitMessage, NativeParseError as DeribitParseError,
+    capabilities as deribit_capabilities, normalize_option_ticker,
+    parse_native_message as parse_deribit_message,
+};
 use connector_kraken::{
     KrakenBookSynchronizer, KrakenInput, KrakenL3Policy, KrakenMessage,
     NativeParseError as KrakenParseError, capabilities as kraken_capabilities,
     parse_native_message as parse_kraken_message,
 };
-use domain::{InstrumentId, ProductType, VenueId};
+use domain::{AssetId, AssetNamespace, InstrumentId, ProductType, VenueId};
 use fixed_decimal::{FixedDecimal, Price, Quantity};
 use orderbook::{ApplyResult, BookConfig, BookSession, ChecksumPolicy, SequencePolicy};
 use serde::{Deserialize, Serialize};
@@ -132,8 +137,9 @@ fn run(arguments: Arguments) -> Result<String, String> {
     match arguments.venue.as_str() {
         "binance" => run_binance(arguments),
         "bybit" => run_bybit(arguments),
+        "deribit" => run_deribit(arguments),
         "kraken" => run_kraken(arguments),
-        _ => Err("supported venues are binance, bybit, and kraken".to_owned()),
+        _ => Err("supported venues are binance, bybit, deribit, and kraken".to_owned()),
     }
 }
 
@@ -465,6 +471,110 @@ fn run_kraken(arguments: Arguments) -> Result<String, String> {
     Ok(report_hash)
 }
 
+fn run_deribit(arguments: Arguments) -> Result<String, String> {
+    let workspace = workspace_root_for(&arguments.fixtures, "deribit")?;
+    let manifest_path = arguments.fixtures.join("manifest.toml");
+    let manifest_bytes = read_regular_bounded(&manifest_path, MAX_MANIFEST_BYTES)?;
+    let manifest: FixtureManifest = toml::from_str(
+        std::str::from_utf8(&manifest_bytes)
+            .map_err(|_| "fixture manifest is not UTF-8".to_owned())?,
+    )
+    .map_err(|error| format!("fixture manifest is invalid: {error}"))?;
+    validate_deribit_manifest_metadata(&manifest, &workspace)?;
+    validate_deribit_manifest_coverage(&manifest)?;
+    let mut fixture_hashes = BTreeMap::new();
+    for fixture in &manifest.fixture {
+        validate_deribit_safe_fixture_path(&fixture.path)?;
+        let path = workspace.join(&fixture.path);
+        let raw = read_regular_bounded(&path, MAX_FIXTURE_BYTES)?;
+        let actual_hash = sha256_hex(&raw);
+        if actual_hash != fixture.sha256 {
+            return Err(format!(
+                "fixture hash mismatch for {}: expected {}, got {actual_hash}",
+                fixture.path, fixture.sha256
+            ));
+        }
+        validate_deribit_fixture(fixture, &raw)?;
+        if fixture_hashes
+            .insert(fixture.path.clone(), actual_hash)
+            .is_some()
+        {
+            return Err(format!("duplicate fixture path: {}", fixture.path));
+        }
+    }
+    validate_deribit_injected_failures()?;
+    validate_deribit_option_identity(&workspace)?;
+    validate_deribit_book_integrity(&workspace)?;
+    let capabilities =
+        deribit_capabilities().map_err(|error| format!("capabilities invalid: {error}"))?;
+    if capabilities.trade_semantics() != TradeSemantics::Individual
+        || capabilities.liquidation_completeness() != Completeness::NotSupported
+    {
+        return Err("Deribit capability surface overstates the retained parser".to_owned());
+    }
+
+    let report = CertificationReport {
+        schema_version: 1,
+        venue: "deribit".to_owned(),
+        fixture_status: "pass".to_owned(),
+        production_certification_status: "blocked".to_owned(),
+        evidence_scope: "retained-fixture".to_owned(),
+        live_exchange_acceptance: false,
+        manifest_sha256: sha256_hex(&manifest_bytes),
+        connector_version: capabilities.connector_version().to_owned(),
+        trade_semantics: "individual".to_owned(),
+        liquidation_completeness: "not_supported".to_owned(),
+        fixture_count: fixture_hashes.len(),
+        fixtures: fixture_hashes,
+        checks: [
+            "fixture_hashes",
+            "all_retained_fixture_record_types",
+            "complete_generation_aware_option_identity",
+            "source_iv_and_greeks_are_distinct",
+            "previous_change_id_gap_recovery",
+            "delivery_and_settlement_observations",
+            "field_reordering",
+            "scientific_notation_exactness",
+            "schema_drift_and_duplicate_key_rejection",
+            "payload_size_rejection",
+            "truthful_capabilities",
+        ]
+        .into_iter()
+        .map(|name| CertificationCheck {
+            name: name.to_owned(),
+            status: "pass".to_owned(),
+        })
+        .collect(),
+        production_gates: deribit_production_gates(),
+        limitations: vec![
+            "No authenticated raw-channel subscription, account data, order placement, or trading"
+                .to_owned(),
+            "This artifact validates repository-owned retained fixtures, not live exchange acceptance"
+                .to_owned(),
+            "Production WebSocket/REST transport, operational rate enforcement, heartbeat supervision, raw-WAL session replay, and canary evidence remain blocked or unrun".to_owned(),
+            "Source-reported option IV and Greeks are retained as observations and are not a locally recomputed volatility surface".to_owned(),
+            "Deribit's ungrouped book has no source depth limit; this adapter intentionally rejects snapshots above 10,000 levels per side".to_owned(),
+        ],
+    };
+    let mut encoded = serde_json::to_vec_pretty(&report)
+        .map_err(|error| format!("could not encode report: {error}"))?;
+    encoded.push(b'\n');
+    let report_hash = sha256_hex(&encoded);
+    let report_path = arguments.fixtures.join("certification.json");
+    let hash_path = arguments.fixtures.join("certification.sha256");
+    let hash_bytes = format!("{report_hash}  certification.json\n").into_bytes();
+    if arguments.check {
+        compare_exact(&report_path, &encoded)?;
+        compare_exact(&hash_path, &hash_bytes)?;
+    } else {
+        fs::write(&report_path, encoded)
+            .map_err(|error| format!("could not write {}: {error}", report_path.display()))?;
+        fs::write(&hash_path, hash_bytes)
+            .map_err(|error| format!("could not write {}: {error}", hash_path.display()))?;
+    }
+    Ok(report_hash)
+}
+
 fn validate_manifest_metadata(manifest: &FixtureManifest, workspace: &Path) -> Result<(), String> {
     if manifest.schema_version != 1
         || manifest.artifact_id != "fixtures/exchanges/binance/manifest.toml"
@@ -594,6 +704,53 @@ fn validate_kraken_manifest_metadata(
     Ok(())
 }
 
+fn validate_deribit_manifest_metadata(
+    manifest: &FixtureManifest,
+    workspace: &Path,
+) -> Result<(), String> {
+    if manifest.schema_version != 1
+        || manifest.artifact_id != "fixtures/exchanges/deribit/manifest.toml"
+        || manifest.status != "tracked"
+        || manifest.certification_status != "fixture_parser_pass"
+        || !manifest.local_only
+        || manifest.captured_exchange_traffic
+        || manifest.contains_credentials
+        || manifest.redistribution != "MIT OR Apache-2.0"
+        || manifest.fixture_origin.is_empty()
+        || manifest.reviewed_on.is_empty()
+        || manifest.source.is_empty()
+        || manifest.fixture.is_empty()
+    {
+        return Err("Deribit fixture manifest metadata is not certification-ready".to_owned());
+    }
+    for source in &manifest.source {
+        if source.id.is_empty()
+            || !(source.url.starts_with("https://docs.deribit.com/")
+                || source
+                    .url
+                    .starts_with("https://support.deribit.com/hc/en-us/articles/"))
+            || source.scope.is_empty()
+            || validate_deribit_safe_fixture_path(&source.snapshot).is_err()
+            || source.snapshot_sha256.len() != 64
+            || !source
+                .snapshot_sha256
+                .bytes()
+                .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+        {
+            return Err("Deribit fixture documentation source is invalid".to_owned());
+        }
+        let snapshot_path = workspace.join(&source.snapshot);
+        let snapshot = read_regular_bounded(&snapshot_path, MAX_DOCUMENTATION_REVIEW_BYTES)?;
+        if sha256_hex(&snapshot) != source.snapshot_sha256 {
+            return Err(format!(
+                "documentation snapshot hash mismatch: {}",
+                source.snapshot
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn validate_manifest_coverage(manifest: &FixtureManifest) -> Result<(), String> {
     let actual = manifest
         .fixture
@@ -697,6 +854,43 @@ fn validate_kraken_manifest_coverage(manifest: &FixtureManifest) -> Result<(), S
     Ok(())
 }
 
+fn validate_deribit_manifest_coverage(manifest: &FixtureManifest) -> Result<(), String> {
+    let actual = manifest
+        .fixture
+        .iter()
+        .map(|fixture| {
+            (
+                fixture.market.as_str(),
+                fixture.route.as_str(),
+                fixture.record_type.as_str(),
+            )
+        })
+        .collect::<BTreeSet<_>>();
+    let expected = BTreeSet::from([
+        ("future", "public_get_instruments", "instrument"),
+        ("future", "websocket_subscription", "ticker"),
+        (
+            "future_option",
+            "public_get_delivery_prices",
+            "delivery_prices",
+        ),
+        ("option", "public_get_instruments", "instrument"),
+        ("option", "websocket_subscription", "ticker"),
+        ("perpetual", "public_get_instruments", "instrument"),
+        ("perpetual", "websocket_subscription", "book_change"),
+        ("perpetual", "websocket_subscription", "book_snapshot"),
+        ("perpetual", "websocket_subscription", "perpetual_interest"),
+        ("perpetual", "websocket_subscription", "ticker"),
+        ("perpetual", "websocket_subscription", "trade"),
+    ]);
+    if actual != expected || manifest.fixture.len() != expected.len() {
+        return Err(format!(
+            "Deribit fixture coverage must be exact: expected {expected:?}, got {actual:?}"
+        ));
+    }
+    Ok(())
+}
+
 fn validate_safe_fixture_path(path: &str) -> Result<(), String> {
     let path = Path::new(path);
     if path.as_os_str().is_empty()
@@ -747,6 +941,24 @@ fn validate_kraken_safe_fixture_path(path: &str) -> Result<(), String> {
             .any(|component| !matches!(component, Component::Normal(_)))
     {
         return Err(format!("unsafe Kraken fixture path: {}", path.display()));
+    }
+    Ok(())
+}
+
+fn validate_deribit_safe_fixture_path(path: &str) -> Result<(), String> {
+    let path = Path::new(path);
+    if path.as_os_str().is_empty()
+        || path
+            .as_os_str()
+            .to_string_lossy()
+            .chars()
+            .any(char::is_control)
+        || !path.starts_with("fixtures/exchanges/deribit")
+        || path
+            .components()
+            .any(|component| !matches!(component, Component::Normal(_)))
+    {
+        return Err(format!("unsafe Deribit fixture path: {}", path.display()));
     }
     Ok(())
 }
@@ -900,6 +1112,42 @@ fn validate_kraken_fixture(fixture: &ManifestFixture, raw: &[u8]) -> Result<(), 
     }
 }
 
+fn validate_deribit_fixture(fixture: &ManifestFixture, raw: &[u8]) -> Result<(), String> {
+    let input = match fixture.route.as_str() {
+        "websocket_subscription" => DeribitInput::Subscription,
+        "public_get_instruments" => DeribitInput::InstrumentsResponse,
+        "public_get_delivery_prices" => DeribitInput::DeliveryPricesResponse,
+        other => return Err(format!("unsupported Deribit fixture route: {other}")),
+    };
+    let message = parse_deribit_message(input, raw).map_err(|error| error.to_string())?;
+    let matches = matches!(
+        (fixture.record_type.as_str(), &message),
+        ("instrument", DeribitMessage::Instruments(value)) if value.len() == 1
+    ) || matches!(
+        (fixture.record_type.as_str(), &message),
+        ("ticker", DeribitMessage::Ticker(_))
+            | ("trade", DeribitMessage::Trades(_))
+            | ("perpetual_interest", DeribitMessage::PerpetualInterest(_))
+            | ("delivery_prices", DeribitMessage::DeliveryPrices { .. })
+    ) || matches!(
+        (fixture.record_type.as_str(), &message),
+        ("book_snapshot", DeribitMessage::Book(value))
+            if value.kind == connector_deribit::BookMessageKind::Snapshot
+    ) || matches!(
+        (fixture.record_type.as_str(), &message),
+        ("book_change", DeribitMessage::Book(value))
+            if value.kind == connector_deribit::BookMessageKind::Change
+    );
+    if matches {
+        Ok(())
+    } else {
+        Err(format!(
+            "fixture {} did not parse as {}",
+            fixture.path, fixture.record_type
+        ))
+    }
+}
+
 fn require_bybit_message(market: BybitMarket, raw: &[u8], expected: &str) -> Result<(), String> {
     let message = parse_bybit_message(BybitInput::PublicWebSocket(market), raw)
         .map_err(|error| error.to_string())?;
@@ -1039,6 +1287,162 @@ fn validate_kraken_injected_failures() -> Result<(), String> {
     Ok(())
 }
 
+fn validate_deribit_injected_failures() -> Result<(), String> {
+    let reordered = br#"{"params":{"data":{"index_price":64500.25,"timestamp":1760000000823,"interest":0.004999511380756577},"channel":"perpetual.BTC-PERPETUAL.100ms"},"method":"subscription","jsonrpc":"2.0"}"#;
+    if !matches!(
+        parse_deribit_message(DeribitInput::Subscription, reordered),
+        Ok(DeribitMessage::PerpetualInterest(_))
+    ) {
+        return Err("Deribit field-reordering probe did not parse".to_owned());
+    }
+    let scientific = br#"{"jsonrpc":"2.0","method":"subscription","params":{"channel":"perpetual.BTC-PERPETUAL.100ms","data":{"interest":4.999511380756577e-3,"timestamp":1760000000823,"index_price":6.450025e4}}}"#;
+    let Ok(DeribitMessage::PerpetualInterest(scientific)) =
+        parse_deribit_message(DeribitInput::Subscription, scientific)
+    else {
+        return Err("Deribit scientific-notation probe did not parse".to_owned());
+    };
+    if scientific.interest
+        != FixedDecimal::parse_canonical("0.004999511380756577")
+            .map_err(|error| error.to_string())?
+        || scientific.index_price
+            != Price::new(
+                FixedDecimal::parse_canonical("64500.25").map_err(|error| error.to_string())?,
+            )
+            .map_err(|error| error.to_string())?
+    {
+        return Err("Deribit scientific notation changed the numeric value".to_owned());
+    }
+    let drift = br#"{"jsonrpc":"2.0","method":"subscription","params":{"channel":"perpetual.BTC-PERPETUAL.100ms","data":{"interest":1,"timestamp":1,"index_price":1,"undocumented":true}}}"#;
+    if parse_deribit_message(DeribitInput::Subscription, drift)
+        != Err(DeribitParseError::SchemaDrift)
+    {
+        return Err("Deribit unknown-field injection did not fail closed".to_owned());
+    }
+    let duplicate = br#"{"jsonrpc":"2.0","jsonrpc":"2.0","method":"subscription","params":{"channel":"perpetual.BTC-PERPETUAL.100ms","data":{"interest":1,"timestamp":1,"index_price":1}}}"#;
+    if parse_deribit_message(DeribitInput::Subscription, duplicate)
+        != Err(DeribitParseError::MalformedJson)
+    {
+        return Err("Deribit duplicate-field injection did not fail closed".to_owned());
+    }
+    let oversized = vec![b' '; connector_deribit::MAX_NATIVE_PAYLOAD_BYTES + 1];
+    if parse_deribit_message(DeribitInput::Subscription, &oversized)
+        != Err(DeribitParseError::PayloadTooLarge)
+    {
+        return Err("Deribit oversized-payload injection did not fail closed".to_owned());
+    }
+    Ok(())
+}
+
+fn validate_deribit_option_identity(workspace: &Path) -> Result<(), String> {
+    let instrument_raw = read_regular_bounded(
+        &workspace.join("fixtures/exchanges/deribit/option-instrument.json"),
+        MAX_FIXTURE_BYTES,
+    )?;
+    let ticker_raw = read_regular_bounded(
+        &workspace.join("fixtures/exchanges/deribit/option-ticker.json"),
+        MAX_FIXTURE_BYTES,
+    )?;
+    let DeribitMessage::Instruments(mut instruments) =
+        parse_deribit_message(DeribitInput::InstrumentsResponse, &instrument_raw)
+            .map_err(|error| error.to_string())?
+    else {
+        return Err("Deribit option metadata fixture has the wrong shape".to_owned());
+    };
+    let metadata = instruments
+        .pop()
+        .filter(|_| instruments.is_empty())
+        .ok_or_else(|| "Deribit option metadata must contain one instrument".to_owned())?;
+    let DeribitMessage::Ticker(ticker) =
+        parse_deribit_message(DeribitInput::Subscription, &ticker_raw)
+            .map_err(|error| error.to_string())?
+    else {
+        return Err("Deribit option ticker fixture has the wrong shape".to_owned());
+    };
+    let base = AssetId::new(AssetNamespace::Native, "bitcoin", "", "BTC", 1)
+        .map_err(|error| error.to_string())?;
+    let quote =
+        AssetId::new(AssetNamespace::Fiat, "", "", "USD", 1).map_err(|error| error.to_string())?;
+    let binding =
+        connector_deribit::DeribitInstrumentBinding::try_new(7, base.clone(), quote, base)
+            .map_err(|error| error.to_string())?;
+    let definition = metadata
+        .to_definition(&binding)
+        .map_err(|error| error.to_string())?;
+    let normalized =
+        normalize_option_ticker(&metadata, &ticker, &binding).map_err(|error| error.to_string())?;
+    if definition.product_type() != ProductType::Option
+        || definition.expiry_time().is_none()
+        || definition.strike().is_none()
+        || definition.option_side().is_none()
+        || definition.id().generation() != 7
+        || normalized.instrument != *definition.id()
+        || normalized.mark_iv.is_negative()
+    {
+        return Err("Deribit option identity or source metrics are incomplete".to_owned());
+    }
+    Ok(())
+}
+
+fn validate_deribit_book_integrity(workspace: &Path) -> Result<(), String> {
+    let read_book = |name: &str| -> Result<connector_deribit::DeribitBookMessage, String> {
+        let raw = read_regular_bounded(
+            &workspace.join(format!("fixtures/exchanges/deribit/{name}")),
+            MAX_FIXTURE_BYTES,
+        )?;
+        let DeribitMessage::Book(message) = parse_deribit_message(DeribitInput::Subscription, &raw)
+            .map_err(|error| error.to_string())?
+        else {
+            return Err(format!("{name} did not parse as a Deribit book"));
+        };
+        Ok(message)
+    };
+    let snapshot = read_book("book-snapshot.json")?;
+    let change = read_book("book-change.json")?;
+    let mut synchronizer = DeribitBookSynchronizer::try_new(deribit_book_config()?)
+        .map_err(|error| error.to_string())?;
+    let session = BookSession {
+        connection_epoch: 1,
+        subscription_epoch: 1,
+        instrument_generation: 1,
+    };
+    synchronizer
+        .start_session(session)
+        .map_err(|error| error.to_string())?;
+    if synchronizer
+        .apply(&snapshot, 1)
+        .map_err(|error| error.to_string())?
+        != ApplyResult::Applied
+        || synchronizer
+            .apply(&change, 2)
+            .map_err(|error| error.to_string())?
+            != ApplyResult::Applied
+    {
+        return Err("Deribit retained book did not synchronize".to_owned());
+    }
+    let mut gap = change.clone();
+    gap.change_id = 103;
+    gap.previous_change_id = Some(102);
+    if synchronizer
+        .apply(&gap, 3)
+        .map_err(|error| error.to_string())?
+        != ApplyResult::GapDetected
+        || synchronizer.snapshot().is_ok()
+    {
+        return Err("Deribit continuity gap did not suppress publication".to_owned());
+    }
+    let mut replacement = snapshot;
+    replacement.change_id = 200;
+    if synchronizer
+        .apply(&replacement, 4)
+        .map_err(|error| error.to_string())?
+        != ApplyResult::Applied
+        || synchronizer.snapshot().is_err()
+    {
+        return Err("Deribit replacement snapshot did not restore trust".to_owned());
+    }
+    Ok(())
+}
+
 fn validate_kraken_book_integrity(workspace: &Path) -> Result<(), String> {
     let read_spot = |name: &str| -> Result<KrakenMessage, String> {
         let raw = read_regular_bounded(
@@ -1134,6 +1538,31 @@ fn kraken_spot_book_config() -> Result<BookConfig, String> {
         checksum_policy: ChecksumPolicy::Required,
         max_l3_orders: Some(5_000),
         max_l3_levels_per_side: Some(10),
+    })
+}
+
+fn deribit_book_config() -> Result<BookConfig, String> {
+    let decimal = |value: &str| {
+        FixedDecimal::parse_canonical(value)
+            .map_err(|error| format!("invalid certification decimal: {error}"))
+    };
+    Ok(BookConfig {
+        instrument: InstrumentId::new_for_product(
+            VenueId::new("deribit").map_err(|error| error.to_string())?,
+            "BTC-PERPETUAL",
+            ProductType::Perpetual,
+            1,
+        )
+        .map_err(|error| error.to_string())?,
+        price_tick: Price::new(decimal("0.5")?).map_err(|error| error.to_string())?,
+        quantity_step: Quantity::new(decimal("10")?).map_err(|error| error.to_string())?,
+        max_levels_per_side: 100,
+        max_buffered_deltas: 8,
+        max_buffered_level_updates: 32,
+        sequence_policy: SequencePolicy::PreviousFinal,
+        checksum_policy: ChecksumPolicy::Disabled,
+        max_l3_orders: None,
+        max_l3_levels_per_side: None,
     })
 }
 
@@ -1548,12 +1977,115 @@ fn kraken_production_gates() -> Vec<CertificationGate> {
     .collect()
 }
 
+fn deribit_production_gates() -> Vec<CertificationGate> {
+    [
+        (
+            1,
+            "golden parser fixtures for every retained message type",
+            "pass",
+            "11 provenance-bound fixtures cover futures, perpetuals, options, books, trades, interest, and delivery prices",
+        ),
+        (
+            2,
+            "unknown-field, duplicate-key, and field-reordering tests",
+            "pass",
+            "runner reorders a representative subscription payload and rejects injected schema drift and duplicate keys",
+        ),
+        (
+            3,
+            "numeric boundary tests and fixed-point round trips",
+            "partial",
+            "ordinary and scientific source lexemes map to exact fixed decimals within explicit bounds; broader property matrices remain future work",
+        ),
+        (
+            4,
+            "snapshot and delta reconstruction",
+            "pass",
+            "runner reconstructs the retained snapshot and change atomically",
+        ),
+        (
+            5,
+            "missing, duplicated, and reordered change identifiers",
+            "partial",
+            "gap suppression and snapshot recovery pass; a production transport disorder soak has not run",
+        ),
+        (
+            6,
+            "checksum mismatch and forced resnapshot",
+            "not_applicable",
+            "Deribit publishes change continuity identifiers but no checksum on this channel",
+        ),
+        (
+            7,
+            "heartbeat timeout and clean reconnect",
+            "partial",
+            "book state requires a replacement snapshot after a synthetic reconnect; transport heartbeat supervision is not implemented",
+        ),
+        (
+            8,
+            "rate-limit and backoff",
+            "blocked",
+            "public subscription cadence is declared, but production transport enforcement is not implemented",
+        ),
+        (
+            9,
+            "schema-drift fail-safe",
+            "pass",
+            "unknown fields, duplicate keys, unsupported intervals, and route mismatches fail closed",
+        ),
+        (
+            10,
+            "clock-skew and timestamp-unit tests",
+            "partial",
+            "millisecond conversion is checked and the perpetual sentinel is excluded from canonical expiry; clock-skew policy is not implemented",
+        ),
+        (
+            11,
+            "burst-load and bounded queue",
+            "partial",
+            "payload and collection bounds exist; production session queue evidence is unavailable",
+        ),
+        (
+            12,
+            "raw-WAL replay equivalence",
+            "not_run",
+            "focused tests bind parser output to a WAL receipt, but the certifier does not execute a persisted session replay",
+        ),
+        (
+            13,
+            "long soak and resubscribe",
+            "blocked",
+            "production transport and live canary are not implemented",
+        ),
+        (
+            14,
+            "live testnet or production canary",
+            "blocked",
+            "no live exchange acceptance was requested or recorded",
+        ),
+        (
+            15,
+            "terms and redistribution review",
+            "pass",
+            "manifest records reviewed-restricted terms and repository-owned synthetic fixture provenance",
+        ),
+    ]
+    .into_iter()
+    .map(|(number, name, status, evidence)| CertificationGate {
+        number,
+        name: name.to_owned(),
+        status: status.to_owned(),
+        evidence: evidence.to_owned(),
+    })
+    .collect()
+}
+
 fn workspace_root(fixtures: &Path) -> Result<PathBuf, String> {
     workspace_root_for(fixtures, "binance")
 }
 
 fn workspace_root_for(fixtures: &Path, venue: &str) -> Result<PathBuf, String> {
-    if !matches!(venue, "binance" | "bybit" | "kraken") {
+    if !matches!(venue, "binance" | "bybit" | "deribit" | "kraken") {
         return Err("unsupported fixture venue".to_owned());
     }
     let workspace = Path::new(env!("CARGO_MANIFEST_DIR"))

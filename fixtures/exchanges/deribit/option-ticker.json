@@ -1,0 +1,42 @@
+{
+  "jsonrpc": "2.0",
+  "method": "subscription",
+  "params": {
+    "channel": "ticker.BTC-29JUN26-65000-C.100ms",
+    "data": {
+      "instrument_name": "BTC-29JUN26-65000-C",
+      "timestamp": 1760000000123,
+      "state": "open",
+      "index_price": 64500.25,
+      "min_price": 0.0001,
+      "max_price": 1,
+      "mark_price": 0.0525,
+      "estimated_delivery_price": 64495.75,
+      "last_price": 0.052,
+      "best_bid_price": 0.0515,
+      "best_bid_amount": 2.5,
+      "best_ask_price": 0.053,
+      "best_ask_amount": 1.2,
+      "open_interest": 1250.5,
+      "underlying_price": 64610.5,
+      "underlying_index": "BTC-29JUN26",
+      "interest_rate": 0.043,
+      "bid_iv": 52.1,
+      "ask_iv": 53.4,
+      "mark_iv": 52.75,
+      "greeks": {
+        "delta": 0.4812,
+        "gamma": 0.000031,
+        "rho": 12.75,
+        "theta": -18.5,
+        "vega": 22.1
+      },
+      "stats": {
+        "volume": 250.5,
+        "low": 0.04,
+        "high": 0.06,
+        "price_change": -1.2
+      }
+    }
+  }
+}

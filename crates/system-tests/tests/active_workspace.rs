@@ -71,6 +71,7 @@ fn active_workspace_contains_only_implemented_packages() {
             "connector-bybit",
             "connector-certify",
             "connector-core",
+            "connector-deribit",
             "connector-kraken",
             "crypto-evaluate",
             "cryptoriskd",

@@ -1,0 +1,29 @@
+{
+  "jsonrpc": "2.0",
+  "id": 42,
+  "result": [
+    {
+      "tick_size": 0.5,
+      "tick_size_steps": [],
+      "settlement_period": "month",
+      "settlement_currency": "BTC",
+      "quote_currency": "USD",
+      "price_index": "btc_usd",
+      "min_trade_amount": 10,
+      "kind": "future",
+      "is_active": true,
+      "instrument_name": "BTC-29JUN26",
+      "instrument_id": 900002,
+      "instrument_type": "reversed",
+      "future_type": "reversed",
+      "expiration_timestamp": 1782720000000,
+      "creation_timestamp": 1750000000000,
+      "counter_currency": "USD",
+      "contract_size": 10,
+      "base_currency": "BTC",
+      "state": "open",
+      "qty_tick_size": 10,
+      "underlying_type": "crypto"
+    }
+  ]
+}

@@ -1,0 +1,171 @@
+{
+  "schema_version": 1,
+  "venue": "deribit",
+  "fixture_status": "pass",
+  "production_certification_status": "blocked",
+  "evidence_scope": "retained-fixture",
+  "live_exchange_acceptance": false,
+  "manifest_sha256": "c45aae5fd813fdffddd9c75bfe5c97799419f15cf327d678f3b5099b98e3cf96",
+  "connector_version": "1.0.0",
+  "trade_semantics": "individual",
+  "liquidation_completeness": "not_supported",
+  "fixture_count": 11,
+  "fixtures": {
+    "fixtures/exchanges/deribit/book-change.json": "d1befd28e241522160a0d8574c23bfc2bc2e64bdc67323a3b91395f07e654f93",
+    "fixtures/exchanges/deribit/book-snapshot.json": "73edc667828d793dee2e3fe456b2a55b990aaf4db090bb8ffcb071c0337f5b47",
+    "fixtures/exchanges/deribit/delivery-prices.json": "105e4395fc6808c9859e2e519e39263780450cc887ce72ac5c8040d1ce3b132f",
+    "fixtures/exchanges/deribit/future-instrument.json": "a975da09cc7039a43d7190c5bb3f6a16d41627ac92e26bdda2c2eaf147b4c2dd",
+    "fixtures/exchanges/deribit/future-ticker.json": "b05dc3deb355a8ca9730997dc3050bd42e78214a1dccda12f65fe672ebdffb81",
+    "fixtures/exchanges/deribit/option-instrument.json": "41be6ed9bd305515b0fab46a78c2bd17787dc706e16fac2a40c0cc9ee92e9bf3",
+    "fixtures/exchanges/deribit/option-ticker.json": "846ece30c21e7c380db2ac6c04073944a23584c3c96e26b097588145c7a40b6e",
+    "fixtures/exchanges/deribit/perpetual-instrument.json": "48cc393791181fd4d00383f7d4c8b63a882deacc16905e2ec0dbcb4f4093e6b2",
+    "fixtures/exchanges/deribit/perpetual-interest.json": "4cac189404f3622016d1e05696f3d62908b2d3d27d32182961203dc183237600",
+    "fixtures/exchanges/deribit/perpetual-ticker.json": "9d726b84670627c693bd9cad7c29072d3db4d806decfae4f93448fd4a8dc3fdd",
+    "fixtures/exchanges/deribit/trades.json": "89db09ccdd75c814d2242a0fc3bc86dad5cae7b16df7bba5b6fd6d98a5531b42"
+  },
+  "checks": [
+    {
+      "name": "fixture_hashes",
+      "status": "pass"
+    },
+    {
+      "name": "all_retained_fixture_record_types",
+      "status": "pass"
+    },
+    {
+      "name": "complete_generation_aware_option_identity",
+      "status": "pass"
+    },
+    {
+      "name": "source_iv_and_greeks_are_distinct",
+      "status": "pass"
+    },
+    {
+      "name": "previous_change_id_gap_recovery",
+      "status": "pass"
+    },
+    {
+      "name": "delivery_and_settlement_observations",
+      "status": "pass"
+    },
+    {
+      "name": "field_reordering",
+      "status": "pass"
+    },
+    {
+      "name": "scientific_notation_exactness",
+      "status": "pass"
+    },
+    {
+      "name": "schema_drift_and_duplicate_key_rejection",
+      "status": "pass"
+    },
+    {
+      "name": "payload_size_rejection",
+      "status": "pass"
+    },
+    {
+      "name": "truthful_capabilities",
+      "status": "pass"
+    }
+  ],
+  "production_gates": [
+    {
+      "number": 1,
+      "name": "golden parser fixtures for every retained message type",
+      "status": "pass",
+      "evidence": "11 provenance-bound fixtures cover futures, perpetuals, options, books, trades, interest, and delivery prices"
+    },
+    {
+      "number": 2,
+      "name": "unknown-field, duplicate-key, and field-reordering tests",
+      "status": "pass",
+      "evidence": "runner reorders a representative subscription payload and rejects injected schema drift and duplicate keys"
+    },
+    {
+      "number": 3,
+      "name": "numeric boundary tests and fixed-point round trips",
+      "status": "partial",
+      "evidence": "ordinary and scientific source lexemes map to exact fixed decimals within explicit bounds; broader property matrices remain future work"
+    },
+    {
+      "number": 4,
+      "name": "snapshot and delta reconstruction",
+      "status": "pass",
+      "evidence": "runner reconstructs the retained snapshot and change atomically"
+    },
+    {
+      "number": 5,
+      "name": "missing, duplicated, and reordered change identifiers",
+      "status": "partial",
+      "evidence": "gap suppression and snapshot recovery pass; a production transport disorder soak has not run"
+    },
+    {
+      "number": 6,
+      "name": "checksum mismatch and forced resnapshot",
+      "status": "not_applicable",
+      "evidence": "Deribit publishes change continuity identifiers but no checksum on this channel"
+    },
+    {
+      "number": 7,
+      "name": "heartbeat timeout and clean reconnect",
+      "status": "partial",
+      "evidence": "book state requires a replacement snapshot after a synthetic reconnect; transport heartbeat supervision is not implemented"
+    },
+    {
+      "number": 8,
+      "name": "rate-limit and backoff",
+      "status": "blocked",
+      "evidence": "public subscription cadence is declared, but production transport enforcement is not implemented"
+    },
+    {
+      "number": 9,
+      "name": "schema-drift fail-safe",
+      "status": "pass",
+      "evidence": "unknown fields, duplicate keys, unsupported intervals, and route mismatches fail closed"
+    },
+    {
+      "number": 10,
+      "name": "clock-skew and timestamp-unit tests",
+      "status": "partial",
+      "evidence": "millisecond conversion is checked and the perpetual sentinel is excluded from canonical expiry; clock-skew policy is not implemented"
+    },
+    {
+      "number": 11,
+      "name": "burst-load and bounded queue",
+      "status": "partial",
+      "evidence": "payload and collection bounds exist; production session queue evidence is unavailable"
+    },
+    {
+      "number": 12,
+      "name": "raw-WAL replay equivalence",
+      "status": "not_run",
+      "evidence": "focused tests bind parser output to a WAL receipt, but the certifier does not execute a persisted session replay"
+    },
+    {
+      "number": 13,
+      "name": "long soak and resubscribe",
+      "status": "blocked",
+      "evidence": "production transport and live canary are not implemented"
+    },
+    {
+      "number": 14,
+      "name": "live testnet or production canary",
+      "status": "blocked",
+      "evidence": "no live exchange acceptance was requested or recorded"
+    },
+    {
+      "number": 15,
+      "name": "terms and redistribution review",
+      "status": "pass",
+      "evidence": "manifest records reviewed-restricted terms and repository-owned synthetic fixture provenance"
+    }
+  ],
+  "limitations": [
+    "No authenticated raw-channel subscription, account data, order placement, or trading",
+    "This artifact validates repository-owned retained fixtures, not live exchange acceptance",
+    "Production WebSocket/REST transport, operational rate enforcement, heartbeat supervision, raw-WAL session replay, and canary evidence remain blocked or unrun",
+    "Source-reported option IV and Greeks are retained as observations and are not a locally recomputed volatility surface",
+    "Deribit's ungrouped book has no source depth limit; this adapter intentionally rejects snapshots above 10,000 levels per side"
+  ]
+}

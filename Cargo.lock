@@ -562,6 +562,7 @@ dependencies = [
  "connector-binance",
  "connector-bybit",
  "connector-core",
+ "connector-deribit",
  "connector-kraken",
  "domain",
  "fixed-decimal",
@@ -580,6 +581,24 @@ dependencies = [
  "blake3",
  "domain",
  "event-envelope",
+ "raw-wal",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
+name = "connector-deribit"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "connector-core",
+ "domain",
+ "event-envelope",
+ "fixed-decimal",
+ "orderbook",
  "raw-wal",
  "serde",
  "serde_json",
