@@ -353,25 +353,30 @@ fn classify_symbol(
 ) -> Result<SymbolDisposition, MetadataError> {
     let object = value.as_object().ok_or(MetadataError::MalformedJson)?;
     ensure_symbol_fields_allowed(market, object)?;
-    if market == BinanceMarket::UsdMarginedPerpetual
-        && required_token(object, "contractType")? != "PERPETUAL"
-    {
-        return Ok(SymbolDisposition::UnsupportedContract);
-    }
     let symbol = required_string(object, "symbol")?;
     if !is_supported_symbol(symbol) {
         return Ok(SymbolDisposition::UnsupportedSymbol);
     }
     let status = required_token(object, "status")?;
-    match (market, status.as_str()) {
-        (BinanceMarket::Spot, "TRADING") | (BinanceMarket::UsdMarginedPerpetual, "TRADING") => {
-            Ok(SymbolDisposition::Supported)
+    match market {
+        BinanceMarket::Spot => match status.as_str() {
+            "TRADING" => Ok(SymbolDisposition::Supported),
+            "HALT" | "BREAK" => Ok(SymbolDisposition::Inactive),
+            _ => Err(MetadataError::SchemaDrift),
+        },
+        BinanceMarket::UsdMarginedPerpetual => {
+            let contract_type = required_token(object, "contractType")?;
+            match (contract_type.as_str(), status.as_str()) {
+                ("PERPETUAL", "TRADING") => Ok(SymbolDisposition::Supported),
+                ("PERPETUAL", "PENDING_TRADING") => Ok(SymbolDisposition::Pending),
+                ("PERPETUAL", "PRE_SETTLE" | "SETTLING" | "CLOSE")
+                | ("PERPETUAL_DELIVERING", "PRE_DELIVERING" | "DELIVERING" | "DELIVERED") => {
+                    Ok(SymbolDisposition::Inactive)
+                }
+                ("PERPETUAL" | "PERPETUAL_DELIVERING", _) => Err(MetadataError::SchemaDrift),
+                _ => Ok(SymbolDisposition::UnsupportedContract),
+            }
         }
-        (BinanceMarket::UsdMarginedPerpetual, "PENDING_TRADING") => Ok(SymbolDisposition::Pending),
-        (BinanceMarket::Spot, "BREAK") | (BinanceMarket::UsdMarginedPerpetual, "SETTLING") => {
-            Ok(SymbolDisposition::Inactive)
-        }
-        _ => Err(MetadataError::SchemaDrift),
     }
 }
 

@@ -232,3 +232,83 @@ fn current_exchange_info_fields_skip_only_explicitly_unsupported_or_inactive_rec
     assert_eq!(report.pending_instruments()[0].status(), "PENDING_TRADING");
     assert!(report.pending_instruments()[0].delivery_time().is_some());
 }
+
+#[test]
+fn official_inactive_statuses_are_retained_as_lifecycle_facts() {
+    let mut spot: serde_json::Value =
+        serde_json::from_slice(SPOT_EXCHANGE_INFO).expect("spot fixture");
+    for (symbol, base_asset, status) in [("ETHUSDT", "ETH", "HALT"), ("SOLUSDT", "SOL", "BREAK")] {
+        let mut inactive = spot["symbols"][0].clone();
+        inactive["symbol"] = serde_json::json!(symbol);
+        inactive["baseAsset"] = serde_json::json!(base_asset);
+        inactive["status"] = serde_json::json!(status);
+        spot["symbols"]
+            .as_array_mut()
+            .expect("symbols")
+            .push(inactive);
+    }
+    let report = parse_exchange_info_report(
+        BinanceMarket::Spot,
+        &serde_json::to_vec(&spot).expect("spot JSON"),
+    )
+    .expect("all documented Spot statuses");
+    assert_eq!(report.instruments().len(), 1);
+    assert_eq!(report.skipped_inactive(), 2);
+    assert_eq!(
+        report
+            .lifecycle()
+            .iter()
+            .map(|fact| fact.status())
+            .collect::<Vec<_>>(),
+        ["HALT", "BREAK"]
+    );
+
+    let mut futures: serde_json::Value =
+        serde_json::from_slice(USDM_EXCHANGE_INFO).expect("USD-M fixture");
+    for (index, (status, contract_type)) in [
+        ("PRE_SETTLE", "PERPETUAL"),
+        ("SETTLING", "PERPETUAL"),
+        ("CLOSE", "PERPETUAL"),
+        ("PRE_DELIVERING", "PERPETUAL_DELIVERING"),
+        ("DELIVERING", "PERPETUAL_DELIVERING"),
+        ("DELIVERED", "PERPETUAL_DELIVERING"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let mut inactive = futures["symbols"][0].clone();
+        let symbol = format!("TEST{index}USDT");
+        inactive["symbol"] = serde_json::json!(symbol);
+        inactive["pair"] = inactive["symbol"].clone();
+        inactive["baseAsset"] = serde_json::json!(format!("TEST{index}"));
+        inactive["contractType"] = serde_json::json!(contract_type);
+        inactive["status"] = serde_json::json!(status);
+        futures["symbols"]
+            .as_array_mut()
+            .expect("symbols")
+            .push(inactive);
+    }
+    let report = parse_exchange_info_report(
+        BinanceMarket::UsdMarginedPerpetual,
+        &serde_json::to_vec(&futures).expect("USD-M JSON"),
+    )
+    .expect("all documented inactive USD-M statuses");
+    assert_eq!(report.instruments().len(), 1);
+    assert_eq!(report.skipped_unsupported_contracts(), 0);
+    assert_eq!(report.skipped_inactive(), 6);
+    assert_eq!(
+        report
+            .lifecycle()
+            .iter()
+            .map(|fact| fact.status())
+            .collect::<Vec<_>>(),
+        [
+            "PRE_SETTLE",
+            "SETTLING",
+            "CLOSE",
+            "PRE_DELIVERING",
+            "DELIVERING",
+            "DELIVERED",
+        ]
+    );
+}
