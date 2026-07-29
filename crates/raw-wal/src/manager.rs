@@ -384,6 +384,8 @@ pub enum ManagerError {
     },
     #[error("segmented WAL manager has no writable active segment")]
     Inactive,
+    #[error("verified recovery replay requires an empty active segment")]
+    ReplayRequiresEmptyActiveSegment,
     #[error("WAL segment sealed durably but successor creation failed: {source}")]
     SuccessorCreation {
         compression_job: Box<CompressionJob>,
@@ -931,13 +933,18 @@ impl SegmentedWalWriter {
     /// Recovery rotates a non-empty active segment before returning, so every
     /// record present at recovery time is represented by a sealed manifest and
     /// can be bound to an exact WAL identity, segment position, and declared
-    /// stream identity here. Callers must discard staged output if this method
-    /// returns an error.
+    /// stream identity here. Replay fails before visiting anything if records
+    /// have since been appended to the active segment; callers must recover a
+    /// fresh writer instead of accepting an incomplete prefix. Callers must
+    /// discard staged output if this method returns an error.
     pub fn visit_verified_records(
         &self,
         mut visitor: impl FnMut(VerifiedRecoveredRecord<'_>),
     ) -> Result<(), ManagerError> {
         self.ensure_directory_identity()?;
+        if self.active_record_count != 0 {
+            return Err(ManagerError::ReplayRequiresEmptyActiveSegment);
+        }
         for sealed_name in &self.sealed_names {
             let manifest = verify_sealed_v2_segment_at(&self.directory_lock, sealed_name)?;
             let segment_ordinal = manifest.segment_ordinal();

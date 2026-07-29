@@ -353,6 +353,28 @@ fn validated_replay_visits_sealed_then_active_records_in_chain_order() {
 }
 
 #[test]
+fn verified_recovery_replay_rejects_new_active_records_instead_of_omitting_them() {
+    let directory = tempfile::tempdir().expect("temporary directory must exist");
+    let policy = RotationPolicy::new(segment_limit_for_one(b"sealed"), 300_000_000_000)
+        .expect("policy must be valid");
+    let mut writer = SegmentedWalWriter::create(directory.path(), metadata(), policy, 10)
+        .expect("writer must create");
+    writer
+        .append(record(1), b"sealed", 11, CREATED_WALL_NS + 1)
+        .expect("sealed append must succeed");
+    writer
+        .append(record(2), b"active", 12, CREATED_WALL_NS + 2)
+        .expect("append must succeed");
+
+    let mut visited = 0;
+    assert!(matches!(
+        writer.visit_verified_records(|_| visited += 1),
+        Err(ManagerError::ReplayRequiresEmptyActiveSegment)
+    ));
+    assert_eq!(visited, 0, "partial replay must not escape to the caller");
+}
+
+#[test]
 fn manager_sync_is_explicit_and_keeps_records_recoverable() {
     let directory = tempfile::tempdir().expect("temporary directory must exist");
     let policy = RotationPolicy::default();
