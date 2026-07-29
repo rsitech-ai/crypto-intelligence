@@ -1,6 +1,17 @@
-//! consolidated-market production contract.
-pub mod fair_price;
-pub mod stablecoin;
+//! Deterministic, quality-aware consolidated market primitives.
 
-#[derive(Clone,Copy,Debug,Eq,PartialEq)] pub struct ContractMetadata { pub schema_version:u32, pub bounded:bool, pub point_in_time:bool }
-impl Default for ContractMetadata { fn default()->Self{Self{schema_version:1,bounded:true,point_in_time:true}} }
+mod fair_price;
+mod stablecoin;
+
+pub use fair_price::{
+    AbstentionReason, BookAdmissionExclusion, BookProvenance, CandidatePriceKind,
+    ConsolidatedError, ConsolidatedLineage, ConsolidatedOutcome, EstimatorConfigInput,
+    ExcludedVenue, FairPrice, FairPriceEstimator, IncludedVenue, InstrumentProvenance,
+    MetadataStatus, PolicyId, Ppm, TrustedBookAdmission, TrustedBookAdmissionInput,
+    VenueExclusionReason, VenueQuote, VenueQuoteInput, VenueTradingState, VerifiedCatalogSnapshot,
+};
+pub use stablecoin::{
+    PriceInterval, QuoteConversionReference, StablecoinDislocationState, StablecoinExcludedVenue,
+    StablecoinExclusionReason, StablecoinReferenceConfigInput, StablecoinReferenceEstimator,
+    StablecoinReferenceOutcome, StablecoinVenueQuote, StablecoinVenueQuoteInput,
+};

@@ -639,6 +639,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "consolidated-market"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "domain",
+ "event-envelope",
+ "feature-registry",
+ "fixed-decimal",
+ "instrument-registry",
+ "num-bigint",
+ "orderbook",
+ "quality",
+ "thiserror",
+]
+
+[[package]]
 name = "const-random"
 version = "0.1.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"

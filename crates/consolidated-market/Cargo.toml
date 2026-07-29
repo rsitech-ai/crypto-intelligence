@@ -7,7 +7,15 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
-serde.workspace = true
+blake3.workspace = true
+domain = { path = "../domain" }
+event-envelope = { path = "../event-envelope" }
+feature-registry = { path = "../feature-registry" }
+fixed-decimal = { path = "../fixed-decimal" }
+instrument-registry = { path = "../instrument-registry" }
+num-bigint.workspace = true
+orderbook = { path = "../orderbook" }
+quality = { path = "../quality" }
 thiserror.workspace = true
 
 [lints]
