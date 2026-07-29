@@ -266,8 +266,12 @@ path = "fixtures/exchanges/kraken/spot-trade.json"
 sha256 = "6515aa16a2249d9f09936697b4d366ffbb549d279d93d6821edfd879bcb2fe80"
 
 [[category.artifact]]
+path = "fixtures/golden-replays/features-v1/correction-v2.toml"
+sha256 = "675b49a6505a89b1febda093a1fb5c54fcbfc0e56ff58d3274a4c3d14527c3ab"
+
+[[category.artifact]]
 path = "fixtures/golden-replays/features-v1/manifest.toml"
-sha256 = "424feda47ba4d054ce97862e09ec745b03d27f92ca1bc179487cfacb50d1c1f5"
+sha256 = "f5ae5a249c903073c64115179b8a2965b8167eddc26a55f5db0d330d59bcf626"
 
 [[category.artifact]]
 path = "fixtures/golden-replays/market-foundation/digest-mismatch.toml"

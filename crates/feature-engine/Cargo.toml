@@ -8,6 +8,7 @@ publish.workspace = true
 autotests = false
 
 [dependencies]
+arrow.workspace = true
 blake3.workspace = true
 collector-runtime = { path = "../collector-runtime" }
 consolidated-market = { path = "../consolidated-market" }
@@ -17,18 +18,23 @@ domain = { path = "../domain" }
 event-envelope = { path = "../event-envelope" }
 feature-registry = { path = "../feature-registry" }
 fixed-decimal = { path = "../fixed-decimal" }
+hex.workspace = true
 orderbook = { path = "../orderbook" }
+parquet-store = { path = "../parquet-store" }
 quality = { path = "../quality" }
+raw-wal = { path = "../raw-wal" }
+rustix.workspace = true
 semver.workspace = true
 serde.workspace = true
+serde_json.workspace = true
 thiserror.workspace = true
+time.workspace = true
+toml.workspace = true
 volatility = { path = "../volatility" }
 
 [dev-dependencies]
 connector-core = { path = "../connector-core" }
 instrument-registry = { path = "../instrument-registry" }
-raw-wal = { path = "../raw-wal" }
-serde_json.workspace = true
 tempfile.workspace = true
 tokio.workspace = true
 

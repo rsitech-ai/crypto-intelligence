@@ -8,9 +8,12 @@ publish.workspace = true
 
 [dependencies]
 clap.workspace = true
+feature-engine = { path = "../../crates/feature-engine" }
+hex.workspace = true
 replay-engine = { path = "../../crates/replay-engine" }
 serde.workspace = true
 serde_json.workspace = true
+tempfile.workspace = true
 
 [lints]
 workspace = true

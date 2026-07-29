@@ -1,11 +1,12 @@
-use std::num::NonZeroU64;
+use std::{fs, num::NonZeroU64};
 
 use domain::{SourceId, SourceKind, UnixNanos};
 use feature_engine::{
     ClockBasis, CountWindow, EmissionAction, EventCountState, Finalization, HalfLifeEwmaState,
-    LogicalClock, PartitionConfig, PartitionId, RecordedClock, RecordedTimestamp, ThresholdKind,
-    ThresholdWindow, ThresholdWindowState, TimeWindow, TimeWindowSpec, TimerId, WatermarkKey,
-    WatermarkTracker, WatermarkUpdate, WindowLifecycle,
+    LogicalClock, MaterializationError, MaterializationMode, Materializer, PartitionConfig,
+    PartitionId, PointInTimeFeatureSet, PointInTimeTrainingPlan, RecordedClock, RecordedTimestamp,
+    ThresholdKind, ThresholdWindow, ThresholdWindowState, TimeWindow, TimeWindowSpec, TimerId,
+    WatermarkKey, WatermarkTracker, WatermarkUpdate, WindowLifecycle,
 };
 use feature_registry::{DurationNanos, WindowDefinition, WindowId, WindowKind};
 use fixed_decimal::FixedDecimal;
@@ -398,4 +399,222 @@ fn live_recorded_replay_and_batch_drivers_produce_identical_task_two_outputs() {
         live.emissions[2],
         Some(EmissionAction::Corrected { .. })
     ));
+}
+
+fn private_materialization_root(label: &str) -> tempfile::TempDir {
+    let root = tempfile::Builder::new()
+        .prefix(label)
+        .tempdir()
+        .expect("materialization root");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(root.path(), fs::Permissions::from_mode(0o700))
+            .expect("private materialization root");
+    }
+    root
+}
+
+#[test]
+fn live_wal_and_real_parquet_paths_produce_identical_feature_rows() {
+    let manifest = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../fixtures/golden-replays/features-v1/manifest.toml"
+    );
+    let live_root = private_materialization_root("cmti-features-live-");
+    let wal_root = private_materialization_root("cmti-features-wal-");
+    let parquet_root = private_materialization_root("cmti-features-parquet-");
+
+    let live = Materializer::run_fixture(
+        manifest,
+        MaterializationMode::LiveSimulation,
+        live_root.path(),
+    )
+    .expect("live fixture materialization");
+    let wal = Materializer::run_fixture(manifest, MaterializationMode::WalReplay, wal_root.path())
+        .expect("verified WAL fixture materialization");
+    let parquet = Materializer::run_fixture(
+        manifest,
+        MaterializationMode::ParquetReplay,
+        parquet_root.path(),
+    )
+    .expect("verified Parquet fixture materialization");
+
+    assert_eq!(live.rows(), wal.rows());
+    assert_eq!(wal.rows(), parquet.rows());
+    assert_eq!(live.fixed_point_digest(), wal.fixed_point_digest());
+    assert_eq!(wal.fixed_point_digest(), parquet.fixed_point_digest());
+    assert_eq!(live.lineage_digest(), parquet.lineage_digest());
+    assert_eq!(
+        live.finality_quality_digest(),
+        parquet.finality_quality_digest()
+    );
+    assert!(
+        live.float_max_abs_error(&parquet)
+            .expect("same float shape")
+            <= 1e-12
+    );
+
+    assert_eq!(live.rows().len(), 3);
+    assert_eq!(live.rows()[0].feature_id(), "consolidated_price");
+    assert_eq!(live.rows()[0].datum_json(), r#""101.25""#);
+    assert_eq!(live.rows()[1].feature_id(), "realized_volatility");
+    assert_eq!(live.rows()[1].float_value(), Some(0.125));
+    assert_eq!(live.rows()[2].quality_millionths(), 800_000);
+
+    assert!(live.wal_segment_blake3().is_none());
+    assert!(live.sealed_manifest_blake3().is_none());
+    assert!(
+        wal.wal_segment_blake3()
+            .is_some_and(|digest| digest != [0; 32])
+    );
+    assert!(wal.sealed_manifest_blake3().is_none());
+    assert!(parquet.wal_segment_blake3().is_none());
+    assert!(
+        parquet
+            .sealed_manifest_blake3()
+            .is_some_and(|digest| digest != [0; 32])
+    );
+}
+
+#[test]
+fn corrected_dataset_versions_remain_immutable_and_queries_are_point_in_time() {
+    let base_manifest = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../fixtures/golden-replays/features-v1/manifest.toml"
+    );
+    let correction_manifest = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../fixtures/golden-replays/features-v1/correction-v2.toml"
+    );
+    let root = private_materialization_root("cmti-features-correction-");
+
+    let base = Materializer::run_fixture(
+        base_manifest,
+        MaterializationMode::ParquetReplay,
+        root.path(),
+    )
+    .expect("sealed base feature dataset");
+    let base_hash = base
+        .sealed_manifest_blake3()
+        .expect("base manifest hash must be durable");
+    let correction =
+        Materializer::run_correction_fixture(correction_manifest, root.path(), base_hash)
+            .expect("sealed correction dataset");
+    let correction_hash = correction
+        .sealed_manifest_blake3()
+        .expect("correction manifest hash must be durable");
+
+    assert_ne!(base_hash, correction_hash);
+    assert_eq!(
+        Materializer::verify_fixture_dataset(base_manifest, root.path())
+            .expect("base version remains independently verifiable")
+            .sealed_manifest_blake3(),
+        Some(base_hash)
+    );
+    assert_eq!(
+        Materializer::verify_fixture_dataset(correction_manifest, root.path())
+            .expect("correction version and its chain verify")
+            .sealed_manifest_blake3(),
+        Some(correction_hash)
+    );
+
+    let history =
+        PointInTimeFeatureSet::try_new(vec![base.rows()[0].clone(), correction.rows()[0].clone()])
+            .expect("consecutive immutable correction history");
+    assert!(
+        history
+            .as_known_at(base.rows()[0].as_known_at_ns() - 1)
+            .is_empty()
+    );
+    let before_correction = history.as_known_at(base.rows()[0].computed_at_ns());
+    assert_eq!(before_correction.len(), 1);
+    assert_eq!(before_correction[0].datum_json(), r#""101.25""#);
+    assert_eq!(before_correction[0].revision(), 1);
+
+    let after_correction = history.as_known_at(correction.rows()[0].computed_at_ns());
+    assert_eq!(after_correction.len(), 1);
+    assert_eq!(after_correction[0].datum_json(), r#""101.5""#);
+    assert_eq!(after_correction[0].revision(), 2);
+}
+
+#[test]
+fn missing_float_features_round_trip_without_inventing_zero_or_float_bits() {
+    let manifest = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../fixtures/golden-replays/features-v1/manifest.toml"
+    );
+    let root = private_materialization_root("cmti-features-missing-");
+    let source = fs::read_to_string(manifest).expect("base manifest");
+    let missing = source.replace(
+        "value_type = \"float64\"\nvalue = \"0.125\"",
+        "value_type = \"float64\"\nmissingness_reason = \"insufficient_history\"",
+    );
+    assert_ne!(source, missing, "fixture mutation must apply");
+    let missing_manifest = root.path().join("missing.toml");
+    fs::write(&missing_manifest, missing).expect("write missingness fixture");
+
+    let report = Materializer::run_fixture(
+        &missing_manifest,
+        MaterializationMode::ParquetReplay,
+        root.path(),
+    )
+    .expect("explicit missing feature must round trip");
+    let volatility = report
+        .rows()
+        .iter()
+        .find(|row| row.feature_id() == "realized_volatility")
+        .expect("volatility row");
+    assert_eq!(
+        volatility.datum_json(),
+        r#"{"missing":"insufficient_history"}"#
+    );
+    assert_eq!(volatility.float_value(), None);
+}
+
+#[test]
+fn correction_publication_rejects_unversioned_changes_to_base_rows() {
+    let base_manifest = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../fixtures/golden-replays/features-v1/manifest.toml"
+    );
+    let correction_manifest = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../fixtures/golden-replays/features-v1/correction-v2.toml"
+    );
+    let root = private_materialization_root("cmti-features-tampered-correction-");
+    let base = Materializer::run_fixture(
+        base_manifest,
+        MaterializationMode::ParquetReplay,
+        root.path(),
+    )
+    .expect("base publication");
+    let source = fs::read_to_string(correction_manifest).expect("correction manifest");
+    let tampered = source.replace("value = \"0.125\"", "value = \"0.5\"");
+    assert_ne!(source, tampered, "fixture mutation must apply");
+    let tampered_manifest = root.path().join("tampered-correction.toml");
+    fs::write(&tampered_manifest, tampered).expect("write tampered correction");
+
+    assert!(matches!(
+        Materializer::run_correction_fixture(
+            &tampered_manifest,
+            root.path(),
+            base.sealed_manifest_blake3().expect("base hash"),
+        ),
+        Err(MaterializationError::InvalidCorrectionHistory)
+    ));
+}
+
+#[test]
+fn generated_training_plan_carries_all_point_in_time_guards() {
+    let plan = PointInTimeTrainingPlan::try_new("predictions", "materialized_features")
+        .expect("safe table identifiers");
+    let sql = plan.sql();
+
+    assert!(sql.contains("f.as_known_at_ns <= p.prediction_time_ns"));
+    assert!(sql.contains("f.computed_at_ns <= p.prediction_time_ns"));
+    assert!(sql.contains("f.finality_as_known_at_ns <= p.prediction_time_ns"));
+    assert!(sql.contains("f.event_time_end_ns <= p.prediction_time_ns"));
+    assert!(sql.contains("ORDER BY f.revision DESC"));
+    assert!(PointInTimeTrainingPlan::try_new("predictions; DROP TABLE x", "features").is_err());
 }
