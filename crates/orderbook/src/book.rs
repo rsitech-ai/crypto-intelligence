@@ -150,6 +150,8 @@ impl L2Book {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BookSnapshotView {
     instrument: InstrumentId,
+    price_tick: Price,
+    quantity_step: Quantity,
     bids: Vec<BookLevel>,
     asks: Vec<BookLevel>,
     last_source_sequence: u64,
@@ -162,7 +164,7 @@ pub struct BookSnapshotView {
 
 impl BookSnapshotView {
     pub(crate) fn new(
-        instrument: InstrumentId,
+        config: &BookConfig,
         book: &L2Book,
         session: BookSession,
         updated_monotonic_ns: u64,
@@ -170,7 +172,9 @@ impl BookSnapshotView {
         l3_orders: Vec<L3Order>,
     ) -> Self {
         Self {
-            instrument,
+            instrument: config.instrument.clone(),
+            price_tick: config.price_tick,
+            quantity_step: config.quantity_step,
             bids: book.bids_descending(),
             asks: book.asks_ascending(),
             last_source_sequence: book.sequence(),
@@ -184,6 +188,14 @@ impl BookSnapshotView {
 
     pub const fn instrument(&self) -> &InstrumentId {
         &self.instrument
+    }
+
+    pub const fn price_tick(&self) -> Price {
+        self.price_tick
+    }
+
+    pub const fn quantity_step(&self) -> Quantity {
+        self.quantity_step
     }
 
     pub fn bids(&self) -> &[BookLevel] {

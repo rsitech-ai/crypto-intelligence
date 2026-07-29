@@ -22,7 +22,8 @@ pub use native::{
     parse_native_message,
 };
 pub use normalizer::{
-    NormalizationContext, NormalizationError, normalize_depth_snapshot, normalize_native_message,
+    BinanceTradeNormalizationReceipt, NormalizationContext, NormalizationError,
+    normalize_depth_snapshot, normalize_native_message, normalize_trade_with_receipt,
 };
 pub use parser::{
     EXPECTED_GENERATION, EXPECTED_SOURCE, EXPECTED_SYMBOL, ParseError, parse_fixture_line,

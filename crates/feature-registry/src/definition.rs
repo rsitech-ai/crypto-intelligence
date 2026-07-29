@@ -87,6 +87,7 @@ pub enum FeatureStatus {
 #[serde(rename_all = "snake_case")]
 pub enum FeatureValueType {
     FixedDecimal,
+    FixedDecimalMap,
     Float64,
     Integer,
     Boolean,

@@ -1,8 +1,8 @@
 use connector_core::NormalizedOutput;
 use domain::ProductType;
 use orderbook::{
-    ApplyResult, BookConfig, BookError, BookSession, BookSnapshotView, BookState, ChecksumPolicy,
-    OrderBookEngine, SequencePolicy, SnapshotStrategy,
+    ApplyResult, BookConfig, BookError, BookEventApplyOutcome, BookSession, BookSnapshotView,
+    BookState, ChecksumPolicy, OrderBookEngine, SequencePolicy, SnapshotStrategy,
 };
 use thiserror::Error;
 
@@ -84,7 +84,17 @@ impl BinanceBookSynchronizer {
         &mut self,
         output: &NormalizedOutput,
     ) -> Result<ApplyResult, BinanceBookSyncError> {
-        let outcome = match self.engine.apply_event(output.event()) {
+        self.apply_output_with_receipt(output)
+            .map(|outcome| outcome.result())
+    }
+
+    /// Applies a durable normalized output and surfaces an opaque exact
+    /// post-state receipt when the event alone produced the trusted state.
+    pub fn apply_output_with_receipt(
+        &mut self,
+        output: &NormalizedOutput,
+    ) -> Result<BookEventApplyOutcome, BinanceBookSyncError> {
+        let outcome = match self.engine.apply_event_with_receipt(output.event()) {
             Ok(outcome) => outcome,
             Err(error) if invalidated_by(&error) => {
                 self.begin_recovery()?;
@@ -93,7 +103,7 @@ impl BinanceBookSynchronizer {
             Err(error) => return Err(BinanceBookSyncError::Book(error)),
         };
         if matches!(
-            outcome,
+            outcome.result(),
             ApplyResult::GapDetected | ApplyResult::ChecksumMismatch
         ) {
             self.begin_recovery()?;

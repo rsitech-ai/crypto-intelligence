@@ -1,6 +1,6 @@
 //! Point-in-time feature observation contracts.
 
-use std::cmp::Ordering;
+use std::{cmp::Ordering, collections::BTreeMap};
 
 use domain::{AssetId, InstrumentId, SourceId, UnixNanos, VenueId};
 use fixed_decimal::FixedDecimal;
@@ -16,6 +16,7 @@ use crate::{
 };
 
 const MAX_SOURCE_COVERAGE: usize = 64;
+pub const MAX_FIXED_DECIMAL_MAP_ENTRIES: usize = 100_000;
 /// Closed entity identity over the frozen canonical domain identifiers.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(tag = "scope", content = "id", rename_all = "snake_case")]
@@ -71,10 +72,36 @@ impl<'de> Deserialize<'de> for FiniteF64 {
     }
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(transparent)]
+pub struct FixedDecimalMap {
+    values: BTreeMap<FixedDecimal, FixedDecimal>,
+}
+
+impl FixedDecimalMap {
+    pub fn try_new(
+        values: BTreeMap<FixedDecimal, FixedDecimal>,
+        capacity: usize,
+    ) -> Result<Self, RegistryError> {
+        if capacity == 0 || capacity > MAX_FIXED_DECIMAL_MAP_ENTRIES {
+            return Err(RegistryError::InvalidFeatureMapCapacity);
+        }
+        if values.len() > capacity {
+            return Err(RegistryError::FeatureMapCapacityExceeded);
+        }
+        Ok(Self { values })
+    }
+
+    pub const fn values(&self) -> &BTreeMap<FixedDecimal, FixedDecimal> {
+        &self.values
+    }
+}
+
 /// Typed feature value.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum FeatureValue {
     FixedDecimal(FixedDecimal),
+    FixedDecimalMap(FixedDecimalMap),
     Float64(FiniteF64),
     Integer(i64),
     Boolean(bool),
@@ -87,6 +114,7 @@ impl Serialize for FeatureValue {
     {
         match self {
             Self::FixedDecimal(value) => value.serialize(serializer),
+            Self::FixedDecimalMap(value) => value.serialize(serializer),
             Self::Float64(value) => value.serialize(serializer),
             Self::Integer(value) => value.serialize(serializer),
             Self::Boolean(value) => value.serialize(serializer),
@@ -98,6 +126,7 @@ impl FeatureValue {
     pub const fn value_type(&self) -> FeatureValueType {
         match self {
             Self::FixedDecimal(_) => FeatureValueType::FixedDecimal,
+            Self::FixedDecimalMap(_) => FeatureValueType::FixedDecimalMap,
             Self::Float64(_) => FeatureValueType::Float64,
             Self::Integer(_) => FeatureValueType::Integer,
             Self::Boolean(_) => FeatureValueType::Boolean,

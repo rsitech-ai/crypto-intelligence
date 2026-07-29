@@ -3,7 +3,7 @@ use feature_registry::{
     CodeRevision, DurationNanos, EntityScope, EventTimePolicy, FeatureDatum, FeatureDefinition,
     FeatureDefinitionInput, FeatureDocumentation, FeatureEntity, FeatureId, FeatureObservation,
     FeatureObservationInput, FeatureRegistry, FeatureStatus, FeatureValue, FeatureValueType,
-    FinalityState, FormulaHash, InputRequirement, LineageHash, MissingnessPolicy,
+    FinalityState, FixedDecimalMap, FormulaHash, InputRequirement, LineageHash, MissingnessPolicy,
     MissingnessReason, NormalizationKind, NormalizationPolicy, ObservationRevision,
     QualityRequirement, QualityScore, RegistryError, SourceCoverage, SourceCoverageEntry,
     WindowDefinition, WindowId, WindowKind,
@@ -11,7 +11,7 @@ use feature_registry::{
 use fixed_decimal::FixedDecimal;
 use quality::SourceHealthState;
 use semver::Version;
-use std::num::NonZeroU64;
+use std::{collections::BTreeMap, num::NonZeroU64};
 
 fn version(value: &str) -> Version {
     Version::parse(value).expect("test version should be valid")
@@ -119,6 +119,35 @@ fn observation() -> FeatureObservation {
         lineage_hash: LineageHash::new(hash(9)).expect("test lineage should be valid"),
     })
     .expect("test observation should be valid")
+}
+
+#[test]
+fn fixed_decimal_map_values_are_bounded_ordered_and_typed() {
+    let values = BTreeMap::from([
+        (
+            FixedDecimal::parse_canonical("100").unwrap(),
+            FixedDecimal::parse_canonical("1").unwrap(),
+        ),
+        (
+            FixedDecimal::parse_canonical("101").unwrap(),
+            FixedDecimal::parse_canonical("-3").unwrap(),
+        ),
+    ]);
+    let map = FixedDecimalMap::try_new(values.clone(), 2).expect("exact bounded price map");
+    assert_eq!(map.values(), &values);
+    assert_eq!(
+        serde_json::to_value(FeatureValue::FixedDecimalMap(map.clone()))
+            .expect("map should serialize canonically"),
+        serde_json::json!({"100": "1", "101": "-3"})
+    );
+    assert_eq!(
+        FeatureValue::FixedDecimalMap(map).value_type(),
+        FeatureValueType::FixedDecimalMap
+    );
+    assert_eq!(
+        FixedDecimalMap::try_new(values, 1),
+        Err(RegistryError::FeatureMapCapacityExceeded)
+    );
 }
 
 #[test]
@@ -552,7 +581,7 @@ fn machine_snapshot_is_canonical_json_with_no_runtime_capacity() {
     )
     .expect("snapshot should be JSON");
 
-    assert_eq!(snapshot["schema_version"], 1);
+    assert_eq!(snapshot["schema_version"], 2);
     assert_eq!(snapshot["definitions"][0]["id"], "realized_volatility");
     assert!(snapshot.get("capacity").is_none());
 }
@@ -607,8 +636,8 @@ fn registry_snapshot_digest_is_schema_pinned() {
     assert_eq!(
         registry.snapshot_digest().expect("snapshot should hash"),
         [
-            191, 110, 2, 31, 210, 189, 255, 121, 89, 151, 224, 194, 55, 37, 145, 81, 154, 208, 70,
-            28, 129, 116, 27, 111, 207, 35, 230, 85, 106, 99, 170, 149,
+            31, 214, 231, 115, 153, 150, 54, 160, 48, 31, 162, 3, 249, 69, 70, 50, 100, 148, 88,
+            235, 161, 178, 71, 6, 55, 199, 123, 72, 79, 240, 55, 111,
         ],
         "update this golden only with an intentional snapshot schema version change"
     );

@@ -17,13 +17,14 @@ pub use definition::{
 };
 pub use observation::{
     CodeRevision, FeatureDatum, FeatureEntity, FeatureObservation, FeatureObservationInput,
-    FeatureValue, FinalityState, FiniteF64, LineageHash, MissingnessReason, ObservationRevision,
-    SourceCoverage, SourceCoverageEntry,
+    FeatureValue, FinalityState, FiniteF64, FixedDecimalMap, LineageHash,
+    MAX_FIXED_DECIMAL_MAP_ENTRIES, MissingnessReason, ObservationRevision, SourceCoverage,
+    SourceCoverageEntry,
 };
 
 const MAX_REGISTRY_DEFINITIONS: usize = 4_096;
-const SNAPSHOT_SCHEMA_VERSION: u32 = 1;
-const SNAPSHOT_HASH_DOMAIN: &[u8] = b"crypto-intelligence/feature-registry-snapshot/v1";
+const SNAPSHOT_SCHEMA_VERSION: u32 = 2;
+const SNAPSHOT_HASH_DOMAIN: &[u8] = b"crypto-intelligence/feature-registry-snapshot/v2";
 
 /// Fail-closed feature-contract errors.
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
@@ -70,6 +71,10 @@ pub enum RegistryError {
     NonFiniteValue,
     #[error("feature value type does not match its declared type")]
     ValueTypeMismatch,
+    #[error("feature map capacity must be within the declared global bound")]
+    InvalidFeatureMapCapacity,
+    #[error("feature map exceeds its declared bounded capacity")]
+    FeatureMapCapacityExceeded,
     #[error("invalid feature observation must carry explicit missingness")]
     InvalidObservationMustBeMissing,
     #[error("source coverage is empty or exceeds its bound")]

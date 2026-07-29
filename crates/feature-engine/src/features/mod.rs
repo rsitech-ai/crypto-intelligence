@@ -16,6 +16,8 @@ use feature_registry::CodeRevision;
 pub mod catalog;
 pub mod cross_venue;
 pub mod derivatives;
+pub mod microstructure_catalog;
+pub mod microstructure_emission;
 pub mod orderbook;
 pub mod orderflow;
 pub mod price;
@@ -23,6 +25,38 @@ pub mod quality;
 pub mod volatility;
 
 pub use catalog::{Task4FeatureKind, task_four_definitions};
+pub use microstructure_catalog::{Task5FeatureRecipe, task_five_definitions, task_five_recipes};
+pub use microstructure_emission::{
+    Task5EmissionError, Task5FeatureEmissionInput, emit_book_snapshot_core_features,
+    emit_book_spread_features, emit_trade_flow_core_features,
+};
+pub use orderbook::{
+    ActiveLevelCounts, BookDistribution, BookEvidencePolicy, BookMetricObservation, BookSideShape,
+    BookStateEvidence, DepthBand, DepthSpreadChange, DisplayedDepthRecoveryEpisode,
+    FullyObservedDepthBand, InstrumentDefinitionEvidence, L2_UNAVAILABLE_AFTER_MS, LevelGapDensity,
+    LiquidityWallDistances, MAX_BOOK_SHAPE_LEVELS, MAX_DEPTH_BAND_BPS, MAX_RECOVERY_OBSERVATIONS,
+    QuadraticBookShape, SpreadMetrics, SweepCost, SweepSide, active_level_counts,
+    ask_book_shape_quadratic, ask_level_gap_density, bid_book_shape_quadratic,
+    bid_level_gap_density, book_depth_and_spread_change, book_distribution, book_quote_age_ms,
+    book_shape_quadratic, depth_within_band, expected_sweep_cost, fully_observed_depth_within_band,
+    level_gap_density, liquidity_wall_distance_bps, maximum_executable_quote_notional, microprice,
+    normalized_imbalance, spread, weighted_midpoint,
+};
+pub use orderflow::{
+    AggressiveTradeImbalances, AggressiveTradeSums, AggressiveTradeTotals, AggressorAuthority,
+    AggressorSide, BookQuoteSide, FlowTradeObservation, LargeTradeClusterActivity, LifecycleAction,
+    LifecycleCapability, LifecycleMetrics, LifecycleObservation, LifecycleObservationInput,
+    LifecycleRates, LifecycleRatios, LifecycleSemantics, LifecycleWindow, MAX_FLOW_TRADES,
+    QuoteSideStaleness, SweepEqualPricePolicy, TopOfBookObservation, TopOfBookSideStaleness,
+    TopOfBookWindow, TradeClusterStatistics, TradeFlowWindow, TradePrintSweepDirection, TradeShock,
+    TradeShockResponse, TradeShockThreshold, TradeShockWeighting, aggressive_trade_imbalances,
+    aggressive_trade_sums, aggressive_trade_totals, certified_lifecycle_metrics,
+    certified_lifecycle_rates, certified_lifecycle_ratios, interarrival_coefficient_of_variation,
+    large_trade_cluster_activity, require_order_lifecycle_semantics, signed_volume_at_price,
+    top_of_book_ofi, top_of_book_side_staleness, top_of_book_staleness_for_side,
+    trade_cluster_statistics, trade_intensity_per_second, trade_print_sweep_direction,
+    trade_shock_response,
+};
 
 pub use price::{
     FinalizedTradeWindow, HorizonReturn, MAX_PRICE_OBSERVATIONS, PriceObservation,
@@ -61,6 +95,14 @@ pub enum FeatureComputationError {
     Stale,
     #[error("required source is disconnected")]
     SourceDisconnected,
+    #[error("the source does not support the required feature semantics")]
+    SourceNotSupported,
+    #[error("the required feature semantics are unavailable under the source license")]
+    PrivacyOrLicenseRestriction,
+    #[error("feature input is below the declared liquidity threshold")]
+    BelowLiquidityThreshold,
+    #[error("the declared analytical model does not apply to this input")]
+    ModelNotApplicable,
     #[error("feature observation is outside the declared half-open window")]
     OutsideWindow,
     #[error("feature input lineage contains a duplicate")]
@@ -85,6 +127,12 @@ impl FeatureComputationError {
             Self::SequenceGap => Some(MissingnessReason::SequenceGap),
             Self::Stale => Some(MissingnessReason::Stale),
             Self::SourceDisconnected => Some(MissingnessReason::SourceDisconnected),
+            Self::SourceNotSupported => Some(MissingnessReason::SourceNotSupported),
+            Self::PrivacyOrLicenseRestriction => {
+                Some(MissingnessReason::PrivacyOrLicenseRestriction)
+            }
+            Self::BelowLiquidityThreshold => Some(MissingnessReason::BelowLiquidityThreshold),
+            Self::ModelNotApplicable => Some(MissingnessReason::ModelNotApplicable),
             Self::InvalidInput
             | Self::CapacityExceeded
             | Self::NonMonotonicTime

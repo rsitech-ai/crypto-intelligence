@@ -874,16 +874,23 @@ name = "feature-engine"
 version = "0.1.0"
 dependencies = [
  "blake3",
+ "connector-binance",
+ "connector-core",
  "consolidated-market",
  "domain",
  "event-envelope",
  "feature-registry",
  "fixed-decimal",
+ "instrument-registry",
+ "orderbook",
  "quality",
+ "raw-wal",
  "semver",
  "serde",
  "serde_json",
+ "tempfile",
  "thiserror",
+ "tokio",
  "volatility",
 ]
 
