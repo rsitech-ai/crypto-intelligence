@@ -7,8 +7,14 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+connector-core = { path = "../connector-core" }
+domain = { path = "../domain" }
+quality = { path = "../quality" }
 serde.workspace = true
 thiserror.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true
 
 [lints]
 workspace = true

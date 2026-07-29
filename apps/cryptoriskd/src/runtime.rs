@@ -6,6 +6,7 @@ use std::{
     time::{Instant, SystemTime, UNIX_EPOCH},
 };
 
+use collector_runtime::QualityEvent;
 use connector_binance::{ParseError, parse_fixture_line};
 use domain::{AssetId, AssetNamespace, InstrumentId, SourceId, UnixNanos};
 use event_envelope::SnapshotKind;
@@ -404,6 +405,25 @@ impl RunningDaemon {
 
     pub fn poll_wal_rotation(&mut self) -> Result<(), RuntimeError> {
         self.wal.poll_rotation().map_err(RuntimeError::Persistence)
+    }
+
+    pub fn publish_source_quality(&self, event: &QualityEvent) -> Result<(), RuntimeError> {
+        self.tracing.with_default(|| {
+            tracing::info!(
+                event = "source_quality_changed",
+                component = "collector_supervisor",
+                source_id = event.source().name(),
+                source_generation = event.source().generation(),
+                connection_epoch = event.connection_epoch().get(),
+                quality_sequence = event.sequence().get(),
+                observed_at_unix_nanos = event.observed_at().value(),
+                quality_from = event.from().as_str(),
+                quality_to = event.to().as_str(),
+                quality_cause = event.cause().as_str()
+            );
+        });
+        self.tracing.sync()?;
+        Ok(())
     }
 
     pub async fn shutdown(mut self) -> Result<(), RuntimeError> {

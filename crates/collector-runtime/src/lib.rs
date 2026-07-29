@@ -1,5 +1,11 @@
-//! collector-runtime production contract.
+//! Bounded collector admission, retry, overflow, quality, and shutdown policy.
+
 pub mod supervisor;
 
-#[derive(Clone,Copy,Debug,Eq,PartialEq)] pub struct ContractMetadata { pub schema_version:u32, pub bounded:bool, pub point_in_time:bool }
-impl Default for ContractMetadata { fn default()->Self{Self{schema_version:1,bounded:true,point_in_time:true}} }
+pub use quality::{QualityCause, QualityEvent, SourceHealthState, SourceHealthTracker};
+pub use supervisor::{
+    AdmissionError, AdmissionLimits, CollectorSupervisor, CoverageTier, OfferOutcome,
+    OverflowAction, OverflowReport, QueueClass, QueueMetrics, QueueTracker, RetryDecision,
+    RetryPolicy, ShutdownActions, ShutdownError, ShutdownPhase, ShutdownReport, SourcePolicy,
+    SupervisorHarness, execute_shutdown, overflow_action,
+};

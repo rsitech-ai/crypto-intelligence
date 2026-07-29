@@ -134,6 +134,10 @@ impl Redactor {
         let numeric = matches!(
             field,
             FieldName::Sequence
+                | FieldName::SourceGeneration
+                | FieldName::ConnectionEpoch
+                | FieldName::QualitySequence
+                | FieldName::ObservedAtUnixNanos
                 | FieldName::QueueDepth
                 | FieldName::DurationMicros
                 | FieldName::PendingWalCompressionJobs

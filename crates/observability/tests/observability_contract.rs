@@ -77,10 +77,16 @@ fn stable_metric_and_field_catalogs_are_complete_and_unique() {
         "event",
         "component",
         "connection_id",
+        "connection_epoch",
         "event_id",
         "forecast_id",
         "replay_id",
         "incident_id",
+        "quality_sequence",
+        "observed_at_unix_nanos",
+        "quality_from",
+        "quality_to",
+        "quality_cause",
     ] {
         assert!(field_names.contains(required), "missing field {required}");
     }
