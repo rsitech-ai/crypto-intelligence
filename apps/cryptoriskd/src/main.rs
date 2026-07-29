@@ -5,14 +5,19 @@ mod startup;
 use std::{
     io::{self, Write},
     path::PathBuf,
-    time::Duration,
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use clap::Parser;
-use config::{
-    ConfigError, ConfigLayers, EffectiveConfig, EnvironmentOverrides, LogLevel, Overrides,
-    RuntimeOverrides, TextLayer,
+use collector_runtime::{
+    AdmissionError, AdmissionLimits, CollectorSupervisor, CoverageTier as SupervisorCoverageTier,
+    RetryPolicy, SourcePolicy,
 };
+use config::{
+    ConfigError, ConfigLayers, CoverageTier, EffectiveConfig, EnvironmentOverrides, LogLevel,
+    Overrides, RuntimeOverrides, TextLayer,
+};
+use domain::{SourceId, SourceKind, UnixNanos};
 use observability::LocalLogLevel;
 use raw_wal::manager::RotationPolicy;
 use runtime::{RuntimeError, RuntimeLimits, RuntimeOptions, start_fixture_runtime_with_limits};
@@ -27,6 +32,11 @@ use tokio::{runtime::Runtime, sync::watch};
 
 const MAX_CONFIG_BYTES: usize = 1024 * 1024;
 const WAL_ROTATION_POLL_INTERVAL: Duration = Duration::from_secs(1);
+const FOUNDATION_RETRY_ATTEMPTS: u32 = 5;
+const FOUNDATION_RETRY_BASE_DELAY_MS: u64 = 250;
+const FOUNDATION_RETRY_MAXIMUM_DELAY_MS: u64 = 30_000;
+const FOUNDATION_RETRY_JITTER_BASIS_POINTS: u16 = 1_000;
+const FOUNDATION_RETRY_SEED: u64 = 0x434d_5449_5f46_4e44;
 
 #[derive(Debug, Parser)]
 #[command(name = "cryptoriskd")]
@@ -77,6 +87,8 @@ struct PreparedStartup {
     arguments: Arguments,
     effective: EffectiveConfig,
     runtime_limits: RuntimeLimits,
+    collector_supervisor: CollectorSupervisor,
+    supervised_sources: Vec<SourceId>,
 }
 
 fn prepare(arguments: Arguments) -> Result<PreparedStartup, AppError> {
@@ -129,6 +141,8 @@ fn prepare(arguments: Arguments) -> Result<PreparedStartup, AppError> {
         &effective.config,
         &effective.paths.data_root,
     )?;
+    let (collector_supervisor, supervised_sources) =
+        prepare_foundation_supervisor(&effective.config)?;
     let shutdown_grace = Duration::from_secs(effective.config.shutdown_grace_seconds());
     let runtime_limits = RuntimeLimits::new(
         effective.config.ingestion_queue_capacity(),
@@ -143,7 +157,72 @@ fn prepare(arguments: Arguments) -> Result<PreparedStartup, AppError> {
         arguments,
         effective,
         runtime_limits,
+        collector_supervisor,
+        supervised_sources,
     })
+}
+
+fn prepare_foundation_supervisor(
+    config: &config::AppConfig,
+) -> Result<(CollectorSupervisor, Vec<SourceId>), AppError> {
+    let enabled = config
+        .venues()
+        .iter()
+        .filter(|venue| venue.enabled())
+        .collect::<Vec<_>>();
+    let mut tier_limits = [0_u32; 3];
+    for venue in &enabled {
+        let index = coverage_tier_index(venue.coverage_tier());
+        tier_limits[index] = tier_limits[index]
+            .checked_add(venue.instrument_budget())
+            .ok_or(AdmissionError::CounterExhausted)?;
+    }
+    let limits = AdmissionLimits::try_new(
+        tier_limits[0],
+        tier_limits[1],
+        tier_limits[2],
+        enabled.len(),
+    )?;
+    let retry = RetryPolicy::try_new(
+        FOUNDATION_RETRY_ATTEMPTS,
+        FOUNDATION_RETRY_BASE_DELAY_MS,
+        FOUNDATION_RETRY_MAXIMUM_DELAY_MS,
+        FOUNDATION_RETRY_JITTER_BASIS_POINTS,
+        FOUNDATION_RETRY_SEED,
+    )?;
+    let mut supervisor = CollectorSupervisor::try_new(limits)?;
+    let mut sources = Vec::with_capacity(enabled.len());
+    for venue in enabled {
+        let source = SourceId::new(SourceKind::Exchange, venue.id().as_str(), 1)
+            .map_err(|_| AdmissionError::InvalidSource)?;
+        supervisor.admit(
+            source.clone(),
+            SourcePolicy::new(
+                supervisor_coverage_tier(venue.coverage_tier()),
+                std::num::NonZeroU32::new(venue.instrument_budget())
+                    .ok_or(AdmissionError::InvalidLimits)?,
+            ),
+            retry,
+        )?;
+        sources.push(source);
+    }
+    Ok((supervisor, sources))
+}
+
+const fn coverage_tier_index(tier: CoverageTier) -> usize {
+    match tier {
+        CoverageTier::A => 0,
+        CoverageTier::B => 1,
+        CoverageTier::C => 2,
+    }
+}
+
+const fn supervisor_coverage_tier(tier: CoverageTier) -> SupervisorCoverageTier {
+    match tier {
+        CoverageTier::A => SupervisorCoverageTier::A,
+        CoverageTier::B => SupervisorCoverageTier::B,
+        CoverageTier::C => SupervisorCoverageTier::C,
+    }
 }
 
 const fn local_log_level(level: LogLevel) -> LocalLogLevel {
@@ -169,6 +248,8 @@ async fn run(prepared: PreparedStartup) -> Result<(), AppError> {
         arguments,
         effective,
         runtime_limits,
+        mut collector_supervisor,
+        supervised_sources,
     } = prepared;
     let mut cancellation = install_shutdown_listener()?;
     let mut secret_cancellation = cancellation.clone();
@@ -181,7 +262,7 @@ async fn run(prepared: PreparedStartup) -> Result<(), AppError> {
     let fixture = effective.paths.fixture_input.try_clone()?;
     let wal_directory = open_wal_directory(&effective.paths.data_root)?;
     let log = startup::open_rotating_log(&effective.paths.log_root)?;
-    let mut running = match start_fixture_runtime_with_limits(
+    let daemon = match start_fixture_runtime_with_limits(
         RuntimeOptions {
             fixture,
             wal_directory: wal_directory.try_clone()?,
@@ -199,6 +280,30 @@ async fn run(prepared: PreparedStartup) -> Result<(), AppError> {
         Ok(running) => running,
         Err(RuntimeError::Cancelled) => return Ok(()),
         Err(error) => return Err(error.into()),
+    };
+    let healthy_at = match current_wall_time_ns() {
+        Ok(observed_at) => UnixNanos::new(observed_at),
+        Err(error) => {
+            daemon.shutdown().await?;
+            return Err(AppError::ObservationClock(error));
+        }
+    };
+    for source in &supervised_sources {
+        if let Err(error) = collector_supervisor.mark_healthy(source, healthy_at) {
+            daemon.shutdown().await?;
+            return Err(error.into());
+        }
+    }
+    while let Some(event) = collector_supervisor.pop_quality_event() {
+        if let Err(error) = daemon.publish_source_quality(&event) {
+            daemon.shutdown().await?;
+            return Err(error.into());
+        }
+    }
+    let mut running = RunningFoundation {
+        daemon,
+        collector_supervisor,
+        supervised_sources,
     };
 
     if is_cancelled(&cancellation) {
@@ -238,7 +343,7 @@ async fn run(prepared: PreparedStartup) -> Result<(), AppError> {
 }
 
 async fn wait_for_shutdown_or_wal_rotation(
-    running: &mut runtime::RunningDaemon,
+    running: &mut RunningFoundation,
     cancellation: &mut watch::Receiver<bool>,
 ) -> Result<(), RuntimeError> {
     let mut interval = tokio::time::interval(WAL_ROTATION_POLL_INTERVAL);
@@ -276,8 +381,32 @@ fn supported_environment_overrides() -> Result<EnvironmentOverrides, ConfigError
     EnvironmentOverrides::from_pairs(pairs)
 }
 
-async fn shutdown_running(running: runtime::RunningDaemon) -> Result<(), AppError> {
-    running.shutdown().await?;
+struct RunningFoundation {
+    daemon: runtime::RunningDaemon,
+    collector_supervisor: CollectorSupervisor,
+    supervised_sources: Vec<SourceId>,
+}
+
+impl RunningFoundation {
+    fn readiness(&self) -> &runtime::Readiness {
+        self.daemon.readiness()
+    }
+
+    fn poll_wal_rotation(&mut self) -> Result<(), RuntimeError> {
+        self.daemon.poll_wal_rotation()
+    }
+}
+
+async fn shutdown_running(running: RunningFoundation) -> Result<(), AppError> {
+    let supervision_result = running.supervised_sources.iter().try_for_each(|source| {
+        running
+            .collector_supervisor
+            .source_state(source)
+            .map(|_| ())
+    });
+    let shutdown_result = running.daemon.shutdown().await;
+    shutdown_result?;
+    supervision_result?;
     Ok(())
 }
 
@@ -319,12 +448,21 @@ fn is_cancelled(cancellation: &watch::Receiver<bool>) -> bool {
     *cancellation.borrow()
 }
 
+fn current_wall_time_ns() -> io::Result<i64> {
+    let elapsed = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|_| io::Error::other("system clock precedes the Unix epoch"))?;
+    i64::try_from(elapsed.as_nanos()).map_err(|_| io::Error::other("wall timestamp overflow"))
+}
+
 #[derive(Debug, Error)]
 enum AppError {
     #[error("configuration failed: {0}")]
     Config(#[from] ConfigError),
     #[error("capacity admission failed: {0}")]
     Capacity(#[from] capacity_startup::CapacityStartupError),
+    #[error("collector supervision failed: {0}")]
+    Collector(#[from] AdmissionError),
     #[error("startup failed: {0}")]
     Startup(#[from] StartupError),
     #[error("runtime failed: {0}")]
@@ -335,6 +473,8 @@ enum AppError {
     Serialization(#[from] serde_json::Error),
     #[error("async runtime initialization failed: {0}")]
     AsyncRuntime(io::Error),
+    #[error("source-quality observation clock failed: {0}")]
+    ObservationClock(io::Error),
 }
 
 #[cfg(test)]
@@ -344,7 +484,7 @@ mod tests {
     use super::{
         build_async_runtime,
         capacity_startup::{CapacityStartupError, enforce_foundation_capacity},
-        local_log_level,
+        local_log_level, prepare_foundation_supervisor,
     };
     use capacity::{CapacityEvidence, EvidenceLevel, HardwareProfile};
     use config::LogLevel;
@@ -438,5 +578,43 @@ mod tests {
             Err(CapacityStartupError::Rejected { reasons })
                 if reasons.contains(&capacity::AdmissionReason::MemoryBudgetExceeded)
         ));
+    }
+
+    #[test]
+    fn foundation_supervisor_owns_every_validated_source_before_runtime_startup() {
+        let root = tempfile::tempdir().expect("temporary supervisor root");
+        for directory in ["data", "logs"] {
+            let path = root.path().join(directory);
+            fs::create_dir(&path).expect("private writable root");
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o700))
+                .expect("private writable mode");
+        }
+        fs::create_dir_all(root.path().join("models/public-test-artifacts"))
+            .expect("model registry");
+        fs::write(root.path().join("fixture.jsonl"), "{}\n").expect("fixture");
+        let defaults = include_str!("../../../configs/default.toml")
+            .replace("fixtures/binance/btcusdt-book-v1.jsonl", "fixture.jsonl");
+        let effective = config::load(
+            &defaults,
+            "supervisor-test",
+            None,
+            config::Overrides::default(),
+            root.path(),
+        )
+        .expect("foundation config must load");
+        effective
+            .config
+            .validate_foundation_runtime()
+            .expect("foundation profile");
+
+        let (supervisor, sources) =
+            prepare_foundation_supervisor(&effective.config).expect("supervisor plan");
+        assert_eq!(sources.len(), 1);
+        assert_eq!(
+            supervisor
+                .source_state(&sources[0])
+                .expect("source quality"),
+            collector_runtime::SourceHealthState::Recovering
+        );
     }
 }

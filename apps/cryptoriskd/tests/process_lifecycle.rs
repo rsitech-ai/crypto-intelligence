@@ -326,10 +326,19 @@ fn assert_private_structured_logs(root: &Path) {
                 .expect("every daemon log line must be structured JSON")
         })
         .collect::<Vec<_>>();
-    assert_eq!(events.len(), 2);
+    assert_eq!(events.len(), 3);
     assert_eq!(events[0]["event"], "fixture_runtime_ready");
-    assert_eq!(events[1]["event"], "fixture_runtime_stopped");
-    for event in events {
+    assert_eq!(events[1]["event"], "source_quality_changed");
+    assert_eq!(events[1]["component"], "collector_supervisor");
+    assert_eq!(events[1]["source_id"], "binance");
+    assert_eq!(events[1]["source_generation"], 1);
+    assert_eq!(events[1]["connection_epoch"], 1);
+    assert_eq!(events[1]["quality_sequence"], 1);
+    assert_eq!(events[1]["quality_from"], "recovering");
+    assert_eq!(events[1]["quality_to"], "healthy");
+    assert_eq!(events[1]["quality_cause"], "recovery_verified");
+    assert_eq!(events[2]["event"], "fixture_runtime_stopped");
+    for event in [events[0].clone(), events[2].clone()] {
         assert_eq!(event["level"], "info");
         assert_eq!(event["component"], "runtime");
         assert!(
@@ -338,6 +347,7 @@ fn assert_private_structured_logs(root: &Path) {
                 .is_some_and(|target| !target.is_empty())
         );
     }
+    assert_eq!(events[1]["level"], "info");
 }
 
 fn wait_until_executable_is_cryptoriskd(daemon: &DaemonProcess) {

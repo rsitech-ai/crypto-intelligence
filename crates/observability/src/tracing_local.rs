@@ -259,6 +259,10 @@ impl JsonVisitor {
         match FieldName::parse(field.name()) {
             Some(
                 FieldName::Sequence
+                | FieldName::SourceGeneration
+                | FieldName::ConnectionEpoch
+                | FieldName::QualitySequence
+                | FieldName::ObservedAtUnixNanos
                 | FieldName::QueueDepth
                 | FieldName::DurationMicros
                 | FieldName::PendingWalCompressionJobs,

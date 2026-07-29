@@ -6,6 +6,8 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
+use collector_runtime::{QualityCause, SourceHealthState, SourceHealthTracker};
+use domain::{SourceId, SourceKind, UnixNanos};
 use local_api::{
     auth::{SessionAuthenticator, SessionSecret, insert_authentication_metadata},
     proto::market_v1::{GetOrderBookSnapshotRequest, ProductType, SnapshotHealth},
@@ -704,6 +706,49 @@ async fn healthy_shutdown_completes_within_five_seconds_and_syncs_logs() {
     for forbidden in ["panic", "\"level\":\"error\"", "\"level\":\"warn\""] {
         assert!(!log.contains(forbidden));
     }
+}
+
+#[tokio::test]
+async fn source_quality_publication_is_structured_and_durable() {
+    let directory = tempfile::tempdir().expect("temporary runtime root must exist");
+    let running = start(directory.path(), descriptor())
+        .await
+        .expect("fixture runtime must start");
+    let source = SourceId::new(SourceKind::Exchange, "binance", 1).expect("quality source");
+    let mut tracker = SourceHealthTracker::new(source, std::num::NonZeroU64::MIN);
+    let prepared = tracker
+        .prepare(
+            SourceHealthState::Healthy,
+            QualityCause::RecoveryVerified,
+            UnixNanos::new(1),
+        )
+        .expect("quality event");
+    let event = prepared.event().clone();
+    tracker.commit(prepared).expect("quality commit");
+
+    running
+        .publish_source_quality(&event)
+        .expect("quality publication");
+    running.shutdown().await.expect("runtime must stop");
+
+    let records = fs::read_to_string(directory.path().join("logs/cmti.jsonl"))
+        .expect("structured log")
+        .lines()
+        .map(|line| serde_json::from_str::<serde_json::Value>(line).expect("JSON log"))
+        .collect::<Vec<_>>();
+    let quality = records
+        .iter()
+        .find(|record| record["event"] == "source_quality_changed")
+        .expect("quality log");
+    assert_eq!(quality["component"], "collector_supervisor");
+    assert_eq!(quality["source_id"], "binance");
+    assert_eq!(quality["source_generation"], 1);
+    assert_eq!(quality["connection_epoch"], 1);
+    assert_eq!(quality["quality_sequence"], 1);
+    assert_eq!(quality["observed_at_unix_nanos"], 1);
+    assert_eq!(quality["quality_from"], "recovering");
+    assert_eq!(quality["quality_to"], "healthy");
+    assert_eq!(quality["quality_cause"], "recovery_verified");
 }
 
 #[tokio::test]

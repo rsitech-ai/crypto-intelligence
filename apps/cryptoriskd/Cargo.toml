@@ -9,6 +9,7 @@ publish.workspace = true
 [dependencies]
 capacity = { path = "../../crates/capacity" }
 clap.workspace = true
+collector-runtime = { path = "../../crates/collector-runtime" }
 config = { path = "../../crates/config" }
 connector-binance = { path = "../../crates/connector-binance" }
 domain = { path = "../../crates/domain" }
