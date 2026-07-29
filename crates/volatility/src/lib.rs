@@ -1,10 +1,21 @@
-//! Deterministic bounded analytical volatility and jump measures.
+//! Deterministic bounded volatility measures and walk-forward forecasts.
 //!
-//! Task 4 owns realized measures only. Forecast model modules remain inactive
-//! until their later approved task.
+//! EWMA initializes from the first squared return and applies decay only from
+//! the second observation. HAR-RV normalization is fitted only on the supplied
+//! training rows. Model selection accepts inner folds only, so untouched outer
+//! test outcomes have no selection API.
 
+mod ewma;
+mod forecast;
+mod har;
 mod measures;
 
+pub use ewma::{EwmaForecast, EwmaVolatility};
+pub use forecast::{
+    CandidateModel, CandidateScore, ForecastError, ModelFamily, SelectionConfig,
+    SelectionObservation, SelectionReport, select_volatility_model, volatility_normalized_state,
+};
+pub use har::{HarRvModel, HarRvObservation, PredictorNormalization, VolatilityForecast};
 pub use measures::{
     MAX_MEASURE_OBSERVATIONS, MeasureError, OhlcBar, SeasonalBaseline, bipower_variation,
     downside_semivariance, forecast_residual, garman_klass_variance, jump_variation,

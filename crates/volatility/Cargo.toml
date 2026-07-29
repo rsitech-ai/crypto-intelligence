@@ -8,11 +8,17 @@ publish.workspace = true
 autotests = false
 
 [dependencies]
+blake3.workspace = true
+dataset = { path = "../dataset" }
 thiserror.workspace = true
 
 [[test]]
 name = "reference_measures"
 path = "tests/reference_measures.rs"
+
+[[test]]
+name = "forecast_models"
+path = "tests/forecast_models.rs"
 
 [lints]
 workspace = true
