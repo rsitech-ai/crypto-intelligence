@@ -3,6 +3,7 @@ resolver = "2"
 exclude = ["vendor/libsqlite3-sys"]
 members = [
   "apps/connector-certify",
+  "apps/crypto-replay",
   "apps/crypto-evaluate",
   "apps/cryptoriskd",
   "crates/capacity",
@@ -24,6 +25,7 @@ members = [
   "crates/parquet-store",
   "crates/quality",
   "crates/raw-wal",
+  "crates/replay-engine",
   "crates/system-tests",
   "xtask",
 ]

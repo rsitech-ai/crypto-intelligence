@@ -270,8 +270,16 @@ path = "fixtures/golden-replays/features-v1/manifest.toml"
 sha256 = "424feda47ba4d054ce97862e09ec745b03d27f92ca1bc179487cfacb50d1c1f5"
 
 [[category.artifact]]
+path = "fixtures/golden-replays/market-foundation/digest-mismatch.toml"
+sha256 = "961006c2d586dce685f74acd8cb3119ab1af95f6a59ba53d9552901802440e52"
+
+[[category.artifact]]
 path = "fixtures/golden-replays/market-foundation/manifest.toml"
-sha256 = "026be0748ef6a7858d10c5c8df269944e2393cd5b8f7d7a1f192da7d2bacc41f"
+sha256 = "70d57fb6ab03ef7ff7f1a43671ab18a2607e7154e547a616ef9747af9d10d27b"
+
+[[category.artifact]]
+path = "fixtures/golden-replays/market-foundation/stop-at-20.toml"
+sha256 = "5d3f01f58596beb7dcbe0f38ebc2676c5791636a5983f8ea5f6614621cff4bce"
 
 [[category.artifact]]
 path = "fixtures/golden-replays/model-host-v1/manifest.toml"

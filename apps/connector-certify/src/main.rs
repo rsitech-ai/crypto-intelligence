@@ -40,8 +40,10 @@ const MAX_FIXTURE_BYTES: u64 = 8 * 1024 * 1024;
 #[derive(Debug, Parser)]
 #[command(about = "Deterministically certify retained connector fixtures")]
 struct Arguments {
-    #[arg(long)]
-    venue: String,
+    #[arg(long, required_unless_present = "all", conflicts_with = "all")]
+    venue: Option<String>,
+    #[arg(long, required_unless_present = "venue", conflicts_with = "venue")]
+    all: bool,
     #[arg(long)]
     fixtures: PathBuf,
     #[arg(long)]
@@ -120,9 +122,15 @@ struct CertificationGate {
 
 fn main() -> ExitCode {
     match run(Arguments::parse()) {
-        Ok(report_hash) => {
+        Ok(CertificationResult::Venue(report_hash)) => {
             println!(
                 "connector-certify: FIXTURE_PASS production_certification=BLOCKED sha256={report_hash}"
+            );
+            ExitCode::SUCCESS
+        }
+        Ok(CertificationResult::All(report_hash)) => {
+            println!(
+                "connector-certify: FIXTURE_PASS venues=binance,bybit,deribit,kraken production_certification=BLOCKED sha256={report_hash}"
             );
             ExitCode::SUCCESS
         }
@@ -133,14 +141,77 @@ fn main() -> ExitCode {
     }
 }
 
-fn run(arguments: Arguments) -> Result<String, String> {
-    match arguments.venue.as_str() {
+enum CertificationResult {
+    Venue(String),
+    All(String),
+}
+
+fn run(arguments: Arguments) -> Result<CertificationResult, String> {
+    if arguments.all {
+        return run_all(arguments).map(CertificationResult::All);
+    }
+    let venue = arguments
+        .venue
+        .clone()
+        .ok_or_else(|| "one certification mode is required".to_owned())?;
+    run_venue(&venue, arguments).map(CertificationResult::Venue)
+}
+
+fn run_venue(venue: &str, arguments: Arguments) -> Result<String, String> {
+    match venue {
         "binance" => run_binance(arguments),
         "bybit" => run_bybit(arguments),
         "deribit" => run_deribit(arguments),
         "kraken" => run_kraken(arguments),
         _ => Err("supported venues are binance, bybit, deribit, and kraken".to_owned()),
     }
+}
+
+fn run_all(arguments: Arguments) -> Result<String, String> {
+    if !arguments.check {
+        return Err("--all requires --check to prevent partial artifact writes".to_owned());
+    }
+    let workspace = compiled_workspace_root()?;
+    let expected_root = workspace
+        .join("fixtures/exchanges")
+        .canonicalize()
+        .map_err(|error| format!("could not resolve retained fixture root: {error}"))?;
+    let provided_root = arguments.fixtures.canonicalize().map_err(|error| {
+        format!(
+            "could not resolve {}: {error}",
+            arguments.fixtures.display()
+        )
+    })?;
+    if provided_root != expected_root {
+        return Err("fixture path is not the retained all-venue fixture directory".to_owned());
+    }
+
+    let mut aggregate = Sha256::new();
+    aggregate.update(b"cmti:connector-certification:all:v1\0");
+    for venue in ["binance", "bybit", "deribit", "kraken"] {
+        let report_hash = run_venue(
+            venue,
+            Arguments {
+                venue: Some(venue.to_owned()),
+                all: false,
+                fixtures: provided_root.join(venue),
+                check: true,
+            },
+        )?;
+        aggregate.update(
+            u64::try_from(venue.len())
+                .map_err(|_| "venue length overflow".to_owned())?
+                .to_be_bytes(),
+        );
+        aggregate.update(venue.as_bytes());
+        aggregate.update(
+            u64::try_from(report_hash.len())
+                .map_err(|_| "report hash length overflow".to_owned())?
+                .to_be_bytes(),
+        );
+        aggregate.update(report_hash.as_bytes());
+    }
+    Ok(format!("{:x}", aggregate.finalize()))
 }
 
 fn run_binance(arguments: Arguments) -> Result<String, String> {
@@ -2088,12 +2159,7 @@ fn workspace_root_for(fixtures: &Path, venue: &str) -> Result<PathBuf, String> {
     if !matches!(venue, "binance" | "bybit" | "deribit" | "kraken") {
         return Err("unsupported fixture venue".to_owned());
     }
-    let workspace = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .and_then(Path::parent)
-        .ok_or_else(|| "certification app is not inside a workspace".to_owned())?
-        .canonicalize()
-        .map_err(|error| format!("could not resolve compiled workspace: {error}"))?;
+    let workspace = compiled_workspace_root()?;
     let expected = workspace
         .join(format!("fixtures/exchanges/{venue}"))
         .canonicalize()
@@ -2106,6 +2172,16 @@ fn workspace_root_for(fixtures: &Path, venue: &str) -> Result<PathBuf, String> {
             "fixture path is not the retained {venue} fixture directory"
         ));
     }
+    Ok(workspace)
+}
+
+fn compiled_workspace_root() -> Result<PathBuf, String> {
+    let workspace = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(Path::parent)
+        .ok_or_else(|| "certification app is not inside a workspace".to_owned())?
+        .canonicalize()
+        .map_err(|error| format!("could not resolve compiled workspace: {error}"))?;
     Ok(workspace)
 }
 
