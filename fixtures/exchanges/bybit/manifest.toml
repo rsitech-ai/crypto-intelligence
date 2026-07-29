@@ -1,4 +1,136 @@
 schema_version = 1
 artifact_id = "fixtures/exchanges/bybit/manifest.toml"
-status = "implemented"
+status = "tracked"
+certification_status = "fixture_parser_pass"
 local_only = true
+fixture_origin = "repository-owned synthetic values shaped by reviewed public schemas"
+captured_exchange_traffic = false
+contains_credentials = false
+redistribution = "MIT OR Apache-2.0"
+reviewed_on = "2026-07-29"
+
+[[source]]
+id = "v5_orderbook"
+url = "https://bybit-exchange.github.io/docs/v5/websocket/public/orderbook"
+scope = "Spot and linear order-book snapshots, deltas, update IDs, cross sequences, and reset behavior"
+snapshot = "fixtures/exchanges/bybit/documentation-review.toml"
+snapshot_sha256 = "5c42ccdd487c4873cc69d0841c4b651731b8cf843c6e636381c344093a677d46"
+
+[[source]]
+id = "v5_public_trade"
+url = "https://bybit-exchange.github.io/docs/v5/websocket/public/trade"
+scope = "Spot and linear public-trade fields and batch sequence behavior"
+snapshot = "fixtures/exchanges/bybit/documentation-review.toml"
+snapshot_sha256 = "5c42ccdd487c4873cc69d0841c4b651731b8cf843c6e636381c344093a677d46"
+
+[[source]]
+id = "v5_ticker"
+url = "https://bybit-exchange.github.io/docs/v5/websocket/public/ticker"
+scope = "linear mark, index, funding, open-interest, and cross-sequence fields"
+snapshot = "fixtures/exchanges/bybit/documentation-review.toml"
+snapshot_sha256 = "5c42ccdd487c4873cc69d0841c4b651731b8cf843c6e636381c344093a677d46"
+
+[[source]]
+id = "v5_all_liquidation"
+url = "https://bybit-exchange.github.io/docs/v5/websocket/public/all-liquidation"
+scope = "venue-reported all-liquidation fields, 500-millisecond cadence, and delivery uncertainty"
+snapshot = "fixtures/exchanges/bybit/documentation-review.toml"
+snapshot_sha256 = "5c42ccdd487c4873cc69d0841c4b651731b8cf843c6e636381c344093a677d46"
+
+[[source]]
+id = "v5_instruments_info"
+url = "https://bybit-exchange.github.io/docs/v5/market/instrument"
+scope = "Spot and linear instrument definitions, lifecycle, increments, and pagination"
+snapshot = "fixtures/exchanges/bybit/documentation-review.toml"
+snapshot_sha256 = "5c42ccdd487c4873cc69d0841c4b651731b8cf843c6e636381c344093a677d46"
+
+[[source]]
+id = "v5_connect"
+url = "https://bybit-exchange.github.io/docs/v5/ws/connect"
+scope = "public endpoint separation and heartbeat behavior"
+snapshot = "fixtures/exchanges/bybit/documentation-review.toml"
+snapshot_sha256 = "5c42ccdd487c4873cc69d0841c4b651731b8cf843c6e636381c344093a677d46"
+
+[[source]]
+id = "v5_rate_limits"
+url = "https://bybit-exchange.github.io/docs/v5/rate-limit"
+scope = "IP and endpoint rate-limit behavior"
+snapshot = "fixtures/exchanges/bybit/documentation-review.toml"
+snapshot_sha256 = "5c42ccdd487c4873cc69d0841c4b651731b8cf843c6e636381c344093a677d46"
+
+[[fixture]]
+path = "fixtures/exchanges/bybit/spot-orderbook-snapshot.json"
+sha256 = "47ba0b138c88d1965b72173dcbb59e7142fa51fd01bc084bbf1727a9e1b3112d"
+market = "spot"
+route = "public_websocket"
+record_type = "orderbook_snapshot"
+
+[[fixture]]
+path = "fixtures/exchanges/bybit/spot-orderbook-delta.json"
+sha256 = "c8d7e5ffa089f15bf683a709076b16f28d0ae58416202d19a482a61c7576f199"
+market = "spot"
+route = "public_websocket"
+record_type = "orderbook_delta"
+
+[[fixture]]
+path = "fixtures/exchanges/bybit/spot-orderbook-reset.json"
+sha256 = "60a1018cac1496c85f4a4f58dc631537d7b473d240de8e9bc438bd3c2256a4bc"
+market = "spot"
+route = "public_websocket"
+record_type = "orderbook_service_reset_snapshot"
+
+[[fixture]]
+path = "fixtures/exchanges/bybit/linear-orderbook-snapshot.json"
+sha256 = "20f3eb7a27847ebf80712c3fbc2cb8044eb9cf1dc66ad84ffdb0d6beaaf3df6d"
+market = "linear_perpetual"
+route = "public_websocket"
+record_type = "orderbook_snapshot"
+
+[[fixture]]
+path = "fixtures/exchanges/bybit/linear-orderbook-delta.json"
+sha256 = "973ae6c2ad04d1351ff1197e9103db3067fc32e1fb98f45210e5c4ea5fcc1ead"
+market = "linear_perpetual"
+route = "public_websocket"
+record_type = "orderbook_delta"
+
+[[fixture]]
+path = "fixtures/exchanges/bybit/spot-public-trade.json"
+sha256 = "8fdcbdc1cbb0bfdb9b7255325e5674abcc78343c70155dfeae7956e39e9a4570"
+market = "spot"
+route = "public_websocket"
+record_type = "public_trade"
+
+[[fixture]]
+path = "fixtures/exchanges/bybit/linear-public-trade.json"
+sha256 = "33b0ee6a9f87cbe23ac6c4feb9c2c41c0863c671c0b5754eb4bfe56bc96fa99b"
+market = "linear_perpetual"
+route = "public_websocket"
+record_type = "public_trade"
+
+[[fixture]]
+path = "fixtures/exchanges/bybit/linear-ticker.json"
+sha256 = "4055eb043d70a14bb0a22e5a437db0091eae4ce98f4858dd6b2ce66e5db01b63"
+market = "linear_perpetual"
+route = "public_websocket"
+record_type = "ticker"
+
+[[fixture]]
+path = "fixtures/exchanges/bybit/linear-all-liquidation.json"
+sha256 = "4e51771e3154c19a2c68d682c9d481cdb8bb67aa9620edbb9eac312c494d3c1a"
+market = "linear_perpetual"
+route = "public_websocket"
+record_type = "all_liquidation"
+
+[[fixture]]
+path = "fixtures/exchanges/bybit/spot-instruments-info.json"
+sha256 = "c7581af9f8d1880e468e5f6dcad601b852c53b827017cbbd11571b6d273cc176"
+market = "spot"
+route = "rest"
+record_type = "instruments_info"
+
+[[fixture]]
+path = "fixtures/exchanges/bybit/linear-instruments-info.json"
+sha256 = "8525b4e98a3a0ba03fcf260d3ffd5583957e1d65f0eba71651af46e2c602d8f3"
+market = "linear_perpetual"
+route = "rest"
+record_type = "instruments_info"

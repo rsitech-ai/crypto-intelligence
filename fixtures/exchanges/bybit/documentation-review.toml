@@ -1,0 +1,67 @@
+schema_version = 1
+venue = "bybit"
+reviewed_on = "2026-07-29"
+evidence_kind = "maintainer-authored-factual-review"
+copyright_policy = "No provider documentation text is copied. This file retains only reviewed protocol facts and source URLs."
+
+[[source]]
+id = "v5_orderbook"
+url = "https://bybit-exchange.github.io/docs/v5/websocket/public/orderbook"
+facts = [
+  "Every order-book snapshot replaces the complete local book.",
+  "An update ID of 1 is a service-restart snapshot and is never a delta.",
+  "The update ID u and cross sequence seq are independent provider fields.",
+  "A size of zero in a delta removes that price level.",
+]
+
+[[source]]
+id = "v5_public_trade"
+url = "https://bybit-exchange.github.io/docs/v5/websocket/public/trade"
+facts = [
+  "One public-trade message may contain as many as 1024 trades.",
+  "More than 1024 trades may be split into messages that share one cross sequence.",
+  "Trade time, symbol, side, size, price, identifier, block-trade flag, and RPI flag are provider fields.",
+]
+
+[[source]]
+id = "v5_ticker"
+url = "https://bybit-exchange.github.io/docs/v5/websocket/public/ticker"
+facts = [
+  "Linear-derivative ticker data includes mark price, index price, open interest, funding rate, and next funding time.",
+  "The ticker cross sequence is independent from order-book update IDs.",
+]
+
+[[source]]
+id = "v5_all_liquidation"
+url = "https://bybit-exchange.github.io/docs/v5/websocket/public/all-liquidation"
+facts = [
+  "The all-liquidation stream reports every venue-reported liquidation for a symbol.",
+  "The documented push cadence is 500 milliseconds.",
+  "Transport delivery remains uncertain even though the venue labels the stream as all liquidation.",
+]
+
+[[source]]
+id = "v5_instruments_info"
+url = "https://bybit-exchange.github.io/docs/v5/market/instrument"
+facts = [
+  "Instrument information is category-scoped and Spot is distinct from linear derivatives.",
+  "Linear perpetual contracts identify contractType as LinearPerpetual.",
+  "Price tick size and quantity step come from explicit filter fields.",
+  "The linear catalog requires cursor pagination because its current size exceeds the default page size.",
+]
+
+[[source]]
+id = "v5_connect"
+url = "https://bybit-exchange.github.io/docs/v5/ws/connect"
+facts = [
+  "Public Spot and linear derivatives use separate V5 public WebSocket endpoints.",
+  "The client sends ping heartbeats and expects pong responses.",
+]
+
+[[source]]
+id = "v5_rate_limits"
+url = "https://bybit-exchange.github.io/docs/v5/rate-limit"
+facts = [
+  "Bybit documents separate IP and endpoint request limits.",
+  "Rate-limit responses must be treated as provider backpressure rather than successful data.",
+]
