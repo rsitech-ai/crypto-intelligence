@@ -30,6 +30,7 @@ members = [
   "crates/raw-wal",
   "crates/replay-engine",
   "crates/system-tests",
+  "crates/volatility",
   "xtask",
 ]
 [workspace.package]

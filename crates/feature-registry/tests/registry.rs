@@ -1,4 +1,4 @@
-use domain::{InstrumentId, SourceId, SourceKind, UnixNanos, VenueId};
+use domain::{AssetId, AssetNamespace, InstrumentId, SourceId, SourceKind, UnixNanos, VenueId};
 use feature_registry::{
     CodeRevision, DurationNanos, EntityScope, EventTimePolicy, FeatureDatum, FeatureDefinition,
     FeatureDefinitionInput, FeatureDocumentation, FeatureEntity, FeatureId, FeatureObservation,
@@ -32,6 +32,10 @@ fn instrument() -> InstrumentId {
         1,
     )
     .expect("test instrument should be valid")
+}
+
+fn asset(chain: &str, symbol: &str) -> AssetId {
+    AssetId::new(AssetNamespace::Native, chain, "", symbol, 1).expect("test asset should be valid")
 }
 
 fn definition_input(id: &str, feature_version: &str) -> FeatureDefinitionInput {
@@ -94,11 +98,12 @@ fn observation() -> FeatureObservation {
             FixedDecimal::parse_canonical("0.125").expect("test decimal should be valid"),
         )),
         value_type: FeatureValueType::FixedDecimal,
-        event_time_start: UnixNanos::new(1_000_000_000),
-        event_time_end: UnixNanos::new(2_000_000_000),
-        as_known_at: UnixNanos::new(2_100_000_000),
-        computed_at: UnixNanos::new(2_200_000_000),
-        watermark: UnixNanos::new(2_100_000_000),
+        event_time_start: UnixNanos::new(300_000_000_000),
+        event_time_end: UnixNanos::new(600_000_000_000),
+        as_known_at: UnixNanos::new(605_000_000_001),
+        computed_at: UnixNanos::new(605_000_000_002),
+        watermark: Some(UnixNanos::new(605_000_000_000)),
+        finality_as_known_at: UnixNanos::new(605_000_000_001),
         finality_state: FinalityState::Provisional,
         revision: ObservationRevision::new(1).expect("test revision should be valid"),
         source_coverage: SourceCoverage::try_new(vec![SourceCoverageEntry::new(
@@ -192,6 +197,33 @@ fn observation_is_validated_against_the_registered_definition() {
 }
 
 #[test]
+fn registry_rejects_wrong_extent_and_misaligned_window_geometry() {
+    let mut registry = FeatureRegistry::new();
+    registry
+        .register(definition("realized_volatility", "1.0.0"))
+        .expect("definition should register");
+
+    let mut wrong_extent = observation().into_input();
+    wrong_extent.event_time_start = UnixNanos::new(360_000_000_000);
+    assert_eq!(
+        registry.validate_observation(
+            &FeatureObservation::try_new(wrong_extent).expect("observation should be shaped")
+        ),
+        Err(RegistryError::WindowMismatch)
+    );
+
+    let mut misaligned = observation().into_input();
+    misaligned.event_time_start = UnixNanos::new(301_000_000_000);
+    misaligned.event_time_end = UnixNanos::new(601_000_000_000);
+    assert_eq!(
+        registry.validate_observation(
+            &FeatureObservation::try_new(misaligned).expect("observation should be shaped")
+        ),
+        Err(RegistryError::WindowMismatch)
+    );
+}
+
+#[test]
 fn observation_rejects_invalid_point_in_time_ordering() {
     let mut input = observation().into_input();
     input.as_known_at = UnixNanos::new(1_900_000_000);
@@ -199,6 +231,35 @@ fn observation_rejects_invalid_point_in_time_ordering() {
     assert_eq!(
         FeatureObservation::try_new(input),
         Err(RegistryError::InvalidTimeOrdering)
+    );
+}
+
+#[test]
+fn observation_rejects_finality_before_watermark_availability() {
+    let mut input = observation().into_input();
+    input.finality_as_known_at = UnixNanos::new(604_999_999_999);
+    assert_eq!(
+        FeatureObservation::try_new(input),
+        Err(RegistryError::InvalidTimeOrdering)
+    );
+}
+
+#[test]
+fn observation_rejects_noncanonical_asset_pairs() {
+    let btc = asset("bitcoin", "BTC");
+    let eth = asset("ethereum", "ETH");
+    let mut duplicate = observation().into_input();
+    duplicate.entity = FeatureEntity::AssetPair(btc.clone(), btc.clone());
+    assert_eq!(
+        FeatureObservation::try_new(duplicate),
+        Err(RegistryError::InvalidObservationEntity)
+    );
+
+    let mut reversed = observation().into_input();
+    reversed.entity = FeatureEntity::AssetPair(eth, btc);
+    assert_eq!(
+        FeatureObservation::try_new(reversed),
+        Err(RegistryError::InvalidObservationEntity)
     );
 }
 
@@ -445,6 +506,7 @@ fn registry_rejects_formula_quality_source_and_finality_drift() {
 
     let mut final_input = observation().into_input();
     final_input.finality_state = FinalityState::Final;
+    final_input.watermark = Some(UnixNanos::new(604_999_999_999));
     assert_eq!(
         registry.validate_observation(
             &FeatureObservation::try_new(final_input).expect("observation should be shaped")
@@ -515,6 +577,7 @@ fn observation_wire_shape_matches_the_normative_contract() {
         "as_known_at",
         "computed_at",
         "watermark",
+        "finality_as_known_at",
         "finality_state",
         "revision",
         "source_coverage",
@@ -527,7 +590,7 @@ fn observation_wire_shape_matches_the_normative_contract() {
     ] {
         assert!(object.contains_key(field), "wire shape is missing {field}");
     }
-    assert_eq!(object.len(), 21);
+    assert_eq!(object.len(), 22);
     assert_eq!(wire["value"], "0.125");
     assert!(wire["missingness_reason"].is_null());
     assert!(object.get("datum").is_none());
@@ -621,10 +684,14 @@ fn audit_accessors_expose_point_in_time_and_lineage_fields() {
 
     assert_eq!(
         observation.event_time_start(),
-        UnixNanos::new(1_000_000_000)
+        UnixNanos::new(300_000_000_000)
     );
-    assert_eq!(observation.as_known_at(), UnixNanos::new(2_100_000_000));
-    assert_eq!(observation.computed_at(), UnixNanos::new(2_200_000_000));
+    assert_eq!(observation.as_known_at(), UnixNanos::new(605_000_000_001));
+    assert_eq!(
+        observation.finality_as_known_at(),
+        UnixNanos::new(605_000_000_001)
+    );
+    assert_eq!(observation.computed_at(), UnixNanos::new(605_000_000_002));
     assert_eq!(observation.revision().value(), 1);
     assert_eq!(
         observation.code_commit().as_str(),

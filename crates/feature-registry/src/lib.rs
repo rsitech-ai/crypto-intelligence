@@ -82,6 +82,8 @@ pub enum RegistryError {
     UnknownDefinition,
     #[error("feature observation entity does not match its definition")]
     EntityScopeMismatch,
+    #[error("feature observation entity identity is invalid")]
+    InvalidObservationEntity,
     #[error("feature observation window does not match its definition")]
     WindowMismatch,
     #[error("feature observation resolution does not match its definition")]
@@ -98,6 +100,8 @@ pub enum RegistryError {
     SourceHealthRejected,
     #[error("final or corrected observation watermark has not passed allowed lateness")]
     FinalityBeforeWatermark,
+    #[error("feature observation predates its finalization evidence")]
+    FinalityKnowledgeMismatch,
 }
 
 /// Bounded registry keyed by exact feature identity and semantic version.
@@ -185,7 +189,10 @@ impl FeatureRegistry {
         if !entity_matches(definition.entities(), observation.entity()) {
             return Err(RegistryError::EntityScopeMismatch);
         }
-        if definition.window(observation.window_id()).is_none() {
+        let Some(window) = definition.window(observation.window_id()) else {
+            return Err(RegistryError::WindowMismatch);
+        };
+        if !window_geometry_matches(window, definition.output_resolution(), observation) {
             return Err(RegistryError::WindowMismatch);
         }
         if definition.output_resolution() != observation.resolution() {
@@ -229,6 +236,13 @@ impl FeatureRegistry {
         if matches!(
             observation.finality_state(),
             FinalityState::Final | FinalityState::Corrected
+        ) && observation.finality_as_known_at() > observation.as_known_at()
+        {
+            return Err(RegistryError::FinalityKnowledgeMismatch);
+        }
+        if matches!(
+            observation.finality_state(),
+            FinalityState::Final | FinalityState::Corrected
         ) {
             let lateness = i64::try_from(definition.allowed_lateness().value()).map_err(|_| {
                 RegistryError::InvalidDefinition {
@@ -240,7 +254,10 @@ impl FeatureRegistry {
                 .value()
                 .checked_add(lateness)
                 .ok_or(RegistryError::FinalityBeforeWatermark)?;
-            if observation.watermark().value() < final_watermark {
+            if observation
+                .watermark()
+                .is_none_or(|watermark| watermark.value() < final_watermark)
+            {
                 return Err(RegistryError::FinalityBeforeWatermark);
             }
         }
@@ -281,11 +298,59 @@ impl FeatureRegistry {
     }
 }
 
+fn window_geometry_matches(
+    window: &WindowDefinition,
+    resolution: DurationNanos,
+    observation: &FeatureObservation,
+) -> bool {
+    let start = observation.event_time_start().value();
+    let end = observation.event_time_end().value();
+    let Some(extent) = end
+        .checked_sub(start)
+        .and_then(|value| u64::try_from(value).ok())
+    else {
+        return false;
+    };
+    match window.parameter() {
+        WindowParameter::Time {
+            extent: declared,
+            advance,
+        } => {
+            extent == declared.value()
+                && match (window.kind(), advance) {
+                    (WindowKind::Sliding, Some(advance)) => i64::try_from(advance.value())
+                        .is_ok_and(|advance| start.rem_euclid(advance) == 0),
+                    (WindowKind::Tumbling, None) => i64::try_from(declared.value())
+                        .is_ok_and(|declared| start.rem_euclid(declared) == 0),
+                    _ => false,
+                }
+        }
+        WindowParameter::SessionAligned {
+            extent: declared,
+            utc_anchor,
+        } => {
+            extent == declared.value()
+                && i64::try_from(declared.value()).is_ok_and(|declared| {
+                    start
+                        .checked_sub(utc_anchor.value())
+                        .is_some_and(|delta| delta.rem_euclid(declared) == 0)
+                })
+        }
+        WindowParameter::ExponentiallyWeighted { lookback, .. } => {
+            extent == lookback.value()
+                && i64::try_from(resolution.value())
+                    .is_ok_and(|resolution| start.rem_euclid(resolution) == 0)
+        }
+        WindowParameter::EventCount { .. } | WindowParameter::Threshold { .. } => true,
+    }
+}
+
 fn entity_matches(scope: EntityScope, entity: &FeatureEntity) -> bool {
     matches!(
         (scope, entity),
         (EntityScope::Instrument, FeatureEntity::Instrument(_))
             | (EntityScope::Asset, FeatureEntity::Asset(_))
+            | (EntityScope::AssetPair, FeatureEntity::AssetPair(_, _))
             | (EntityScope::Venue, FeatureEntity::Venue(_))
             | (EntityScope::Source, FeatureEntity::Source(_))
             | (EntityScope::Global, FeatureEntity::Global)

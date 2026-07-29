@@ -93,6 +93,7 @@ fn active_workspace_contains_only_implemented_packages() {
             "raw-wal",
             "replay-engine",
             "system-tests",
+            "volatility",
             "xtask",
         ])
     );

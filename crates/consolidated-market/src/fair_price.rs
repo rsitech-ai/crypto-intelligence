@@ -166,6 +166,7 @@ struct EstimatorConfig {
     minimum_conversion_sources: u16,
     maximum_conversion_interval_width: Ppm,
     require_catalog_provenance: bool,
+    eligible_sources: Option<Box<[SourceId]>>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -605,6 +606,14 @@ impl IncludedVenue {
         &self.quote.source
     }
 
+    pub const fn source_health(&self) -> SourceHealthState {
+        self.quote.source_health
+    }
+
+    pub const fn quality(&self) -> Ppm {
+        self.quote.quality
+    }
+
     pub const fn raw_weight(&self) -> u64 {
         self.raw_weight
     }
@@ -654,6 +663,7 @@ impl ExcludedVenue {
 pub struct ConsolidatedLineage {
     policy_id: PolicyId,
     as_of: UnixNanos,
+    eligible_sources: Option<Box<[SourceId]>>,
     included: Vec<IncludedVenue>,
     excluded: Vec<ExcludedVenue>,
     book_admission_excluded: Vec<BookAdmissionExclusion>,
@@ -667,6 +677,11 @@ impl ConsolidatedLineage {
 
     pub const fn as_of(&self) -> UnixNanos {
         self.as_of
+    }
+
+    /// Canonical source universe fixed by the estimator policy.
+    pub fn eligible_sources(&self) -> Option<&[SourceId]> {
+        self.eligible_sources.as_deref()
     }
 
     pub fn decision(&self, source: &SourceId) -> Option<&VenueExclusionReason> {
@@ -714,8 +729,28 @@ pub struct FairPrice {
 }
 
 impl FairPrice {
+    pub fn base_asset(&self) -> &AssetId {
+        self.lineage
+            .included
+            .first()
+            .expect("available fair price always has an included venue")
+            .quote
+            .instrument
+            .base_asset()
+    }
+
     pub const fn price(&self) -> Price {
         self.price
+    }
+
+    /// Latest source-event time contributing to this consolidated estimate.
+    pub fn event_time(&self) -> UnixNanos {
+        self.lineage
+            .included
+            .iter()
+            .map(|entry| entry.quote.event_time)
+            .max()
+            .expect("available fair price always has an included venue")
     }
 
     pub const fn interval(&self) -> PriceInterval {
@@ -800,8 +835,31 @@ impl FairPriceEstimator {
                 minimum_conversion_sources: input.minimum_conversion_sources,
                 maximum_conversion_interval_width: input.maximum_conversion_interval_width,
                 require_catalog_provenance: input.require_catalog_provenance,
+                eligible_sources: None,
             },
         })
+    }
+
+    /// Creates an estimator with an authoritative coverage denominator.
+    pub fn try_new_with_eligible_sources(
+        input: EstimatorConfigInput,
+        mut eligible_sources: Vec<SourceId>,
+    ) -> Result<Self, ConsolidatedError> {
+        let mut estimator = Self::try_new(input)?;
+        if eligible_sources.len() < estimator.config.minimum_venues
+            || eligible_sources.len() > estimator.config.maximum_venues
+            || eligible_sources
+                .iter()
+                .any(|source| source.kind() != SourceKind::Exchange)
+        {
+            return Err(ConsolidatedError::InvalidConfig);
+        }
+        eligible_sources.sort_by(compare_source);
+        if eligible_sources.windows(2).any(|pair| pair[0] == pair[1]) {
+            return Err(ConsolidatedError::InvalidConfig);
+        }
+        estimator.config.eligible_sources = Some(eligible_sources.into_boxed_slice());
+        Ok(estimator)
     }
 
     pub fn admit_trusted_book(
@@ -913,6 +971,9 @@ impl FairPriceEstimator {
         let mut unique_venues =
             HashSet::with_capacity(quotes.len() + book_admission_excluded.len());
         for excluded in &book_admission_excluded {
+            if !self.is_configured_source(&excluded.source) {
+                return Err(ConsolidatedError::InvalidInputSet);
+            }
             if !unique_sources.insert(excluded.source.clone())
                 || !unique_venues.insert(excluded.instrument.venue().clone())
             {
@@ -920,6 +981,9 @@ impl FairPriceEstimator {
             }
         }
         for quote in quotes {
+            if !self.is_configured_source(&quote.source) {
+                return Err(ConsolidatedError::InvalidInputSet);
+            }
             if !unique_sources.insert(quote.source.clone())
                 || !unique_venues.insert(quote.instrument.id().venue().clone())
             {
@@ -1196,6 +1260,13 @@ impl FairPriceEstimator {
             None
         };
         Ok(reason)
+    }
+
+    fn is_configured_source(&self, source: &SourceId) -> bool {
+        self.config
+            .eligible_sources
+            .as_deref()
+            .is_none_or(|sources| sources.contains(source))
     }
 
     fn adjusted_candidate<'a>(
@@ -1588,6 +1659,7 @@ fn build_lineage(
     ConsolidatedLineage {
         policy_id: config.policy_id.clone(),
         as_of,
+        eligible_sources: config.eligible_sources.clone(),
         included,
         excluded,
         book_admission_excluded,
@@ -1617,6 +1689,25 @@ fn hash_config(hasher: &mut blake3::Hasher, config: &EstimatorConfig) {
             .to_be_bytes(),
     );
     hasher.update(&[u8::from(config.require_catalog_provenance)]);
+    match &config.eligible_sources {
+        Some(sources) => {
+            hasher.update(&[1]);
+            hasher.update(&(sources.len() as u64).to_be_bytes());
+            for source in sources {
+                hash_source(hasher, source);
+            }
+        }
+        None => {
+            hasher.update(&[0]);
+        }
+    }
+}
+
+fn compare_source(left: &SourceId, right: &SourceId) -> std::cmp::Ordering {
+    (left.kind() as u8)
+        .cmp(&(right.kind() as u8))
+        .then_with(|| left.name().cmp(right.name()))
+        .then_with(|| left.generation().cmp(&right.generation()))
 }
 
 fn hash_quote(hasher: &mut blake3::Hasher, quote: &VenueQuote) {

@@ -199,7 +199,11 @@ fn run_engine(inputs: impl IntoIterator<Item = RecordedInput>) -> EngineOutput {
         tracker
             .advance(
                 &key,
-                WatermarkUpdate::new(UnixNanos::new(input.watermark), SourceHealthState::Healthy),
+                WatermarkUpdate::new(
+                    UnixNanos::new(input.watermark),
+                    UnixNanos::new(input.watermark + 1),
+                    SourceHealthState::Healthy,
+                ),
             )
             .expect("watermark should advance monotonically");
         let decision = tracker.decision(tracked_window);

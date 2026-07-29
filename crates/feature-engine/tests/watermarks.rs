@@ -23,7 +23,7 @@ fn key(name: &str, partition: &str) -> WatermarkKey {
 }
 
 fn update(at: i64, health: SourceHealthState) -> WatermarkUpdate {
-    WatermarkUpdate::new(UnixNanos::new(at), health)
+    WatermarkUpdate::new(UnixNanos::new(at), UnixNanos::new(at), health)
 }
 
 fn minute_zero() -> TimeWindow {
@@ -98,6 +98,29 @@ fn watermark_regression_and_unknown_partition_fail_without_mutation() {
     tracker
         .advance(&binance, update(10, SourceHealthState::Healthy))
         .expect("first watermark should advance");
+    tracker
+        .advance(
+            &binance,
+            WatermarkUpdate::new(
+                UnixNanos::new(10),
+                UnixNanos::new(20),
+                SourceHealthState::Healthy,
+            ),
+        )
+        .expect("availability may advance without moving event time");
+    let decision_before = tracker.decision(minute_zero());
+    assert_eq!(
+        tracker.advance(
+            &binance,
+            WatermarkUpdate::new(
+                UnixNanos::new(10),
+                UnixNanos::new(19),
+                SourceHealthState::Healthy,
+            ),
+        ),
+        Err(WatermarkError::InvalidWatermark)
+    );
+    assert_eq!(tracker.decision(minute_zero()), decision_before);
 
     assert!(matches!(
         tracker.advance(&binance, update(9, SourceHealthState::Healthy)),

@@ -1,8 +1,14 @@
-//! volatility production contract.
-pub mod ewma;
-pub mod forecast;
-pub mod har;
-pub mod measures;
+//! Deterministic bounded analytical volatility and jump measures.
+//!
+//! Task 4 owns realized measures only. Forecast model modules remain inactive
+//! until their later approved task.
 
-#[derive(Clone,Copy,Debug,Eq,PartialEq)] pub struct ContractMetadata { pub schema_version:u32, pub bounded:bool, pub point_in_time:bool }
-impl Default for ContractMetadata { fn default()->Self{Self{schema_version:1,bounded:true,point_in_time:true}} }
+mod measures;
+
+pub use measures::{
+    MAX_MEASURE_OBSERVATIONS, MeasureError, OhlcBar, SeasonalBaseline, bipower_variation,
+    downside_semivariance, forecast_residual, garman_klass_variance, jump_variation,
+    parkinson_variance, realized_correlation, realized_covariance, realized_variance,
+    realized_volatility, sample_correlation, sample_covariance, seasonality_adjusted_volatility,
+    upside_semivariance, volatility_of_volatility, volatility_term_ratio,
+};
