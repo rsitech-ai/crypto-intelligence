@@ -27,19 +27,19 @@ sha256 = "38ea6d05b7e4b161cd065f900717aa1e0c481174a61c76d2e053f5dbbc0fcf1a"
 
 [[category.artifact]]
 path = "fixtures/exchanges/binance/manifest.toml"
-sha256 = "ddbf08cc06d28e042dd7809a33cef5b1690d753864844d4acc3621d99bdab760"
+sha256 = "f7d1906b494dda6c991de0e43285891ec32694ee71c30b8f721beb842f9026a8"
 
 [[category.artifact]]
 path = "fixtures/exchanges/binance/certification.json"
-sha256 = "75844889d2754e832299304f0238730f2cb01bc50ca6f31b92e1d9df95ef555e"
+sha256 = "102343b404076130ee429e742881cb6970a720b46bdb43d79db53e7ee616a296"
 
 [[category.artifact]]
 path = "fixtures/exchanges/binance/certification.sha256"
-sha256 = "68e3e6e10210aea1140429dbdb83b073a525f328785edbb0bb3a0c184b0df066"
+sha256 = "b02ce3aafb8bbfc870f7523bb243d961379fd90d2e977c14b37f77d32aed438b"
 
 [[category.artifact]]
 path = "fixtures/exchanges/binance/documentation-review.toml"
-sha256 = "86e1c72079516233a58297fa979665ad18adbe0305e886c59989084ab15b9178"
+sha256 = "c9d88806bf2b425fe724f347fc0c6b7e6e36aded5d0cdb2d2c59f9fd9dd82173"
 
 [[category.artifact]]
 path = "fixtures/exchanges/binance/spot-aggregate-trade.json"

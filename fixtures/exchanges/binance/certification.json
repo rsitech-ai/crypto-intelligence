@@ -5,7 +5,7 @@
   "production_certification_status": "blocked",
   "evidence_scope": "retained-fixture",
   "live_exchange_acceptance": false,
-  "manifest_sha256": "ddbf08cc06d28e042dd7809a33cef5b1690d753864844d4acc3621d99bdab760",
+  "manifest_sha256": "f7d1906b494dda6c991de0e43285891ec32694ee71c30b8f721beb842f9026a8",
   "connector_version": "1.0.0",
   "trade_semantics": "aggregate",
   "liquidation_completeness": "sampled_largest_per_symbol_window_1000ms",
