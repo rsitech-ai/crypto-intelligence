@@ -535,6 +535,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "connector-bybit"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "connector-core",
+ "domain",
+ "event-envelope",
+ "fixed-decimal",
+ "instrument-registry",
+ "orderbook",
+ "raw-wal",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
 name = "connector-certify"
 version = "0.1.0"
 dependencies = [

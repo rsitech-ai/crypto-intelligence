@@ -68,6 +68,7 @@ fn active_workspace_contains_only_implemented_packages() {
             "capacity",
             "config",
             "connector-binance",
+            "connector-bybit",
             "connector-certify",
             "connector-core",
             "crypto-evaluate",

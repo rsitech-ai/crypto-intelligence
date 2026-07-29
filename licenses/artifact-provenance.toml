@@ -95,7 +95,55 @@ sha256 = "946ed4f3eccdec4231b50b14cb365b98b5f19b7142b435d1f479da0703ed6a46"
 
 [[category.artifact]]
 path = "fixtures/exchanges/bybit/manifest.toml"
-sha256 = "62e97521efdf90e52d88fe138d367bf5abe4a104f85c3ed9f7bb49bb4ad1a7a9"
+sha256 = "4367b23069ecd8d4e80b05cb3a30c3a2349b6503cfdbc3ee8de2d732e5b48adf"
+
+[[category.artifact]]
+path = "fixtures/exchanges/bybit/documentation-review.toml"
+sha256 = "5c42ccdd487c4873cc69d0841c4b651731b8cf843c6e636381c344093a677d46"
+
+[[category.artifact]]
+path = "fixtures/exchanges/bybit/linear-all-liquidation.json"
+sha256 = "4e51771e3154c19a2c68d682c9d481cdb8bb67aa9620edbb9eac312c494d3c1a"
+
+[[category.artifact]]
+path = "fixtures/exchanges/bybit/linear-instruments-info.json"
+sha256 = "8525b4e98a3a0ba03fcf260d3ffd5583957e1d65f0eba71651af46e2c602d8f3"
+
+[[category.artifact]]
+path = "fixtures/exchanges/bybit/linear-orderbook-delta.json"
+sha256 = "973ae6c2ad04d1351ff1197e9103db3067fc32e1fb98f45210e5c4ea5fcc1ead"
+
+[[category.artifact]]
+path = "fixtures/exchanges/bybit/linear-orderbook-snapshot.json"
+sha256 = "20f3eb7a27847ebf80712c3fbc2cb8044eb9cf1dc66ad84ffdb0d6beaaf3df6d"
+
+[[category.artifact]]
+path = "fixtures/exchanges/bybit/linear-public-trade.json"
+sha256 = "33b0ee6a9f87cbe23ac6c4feb9c2c41c0863c671c0b5754eb4bfe56bc96fa99b"
+
+[[category.artifact]]
+path = "fixtures/exchanges/bybit/linear-ticker.json"
+sha256 = "4055eb043d70a14bb0a22e5a437db0091eae4ce98f4858dd6b2ce66e5db01b63"
+
+[[category.artifact]]
+path = "fixtures/exchanges/bybit/spot-instruments-info.json"
+sha256 = "c7581af9f8d1880e468e5f6dcad601b852c53b827017cbbd11571b6d273cc176"
+
+[[category.artifact]]
+path = "fixtures/exchanges/bybit/spot-orderbook-delta.json"
+sha256 = "c8d7e5ffa089f15bf683a709076b16f28d0ae58416202d19a482a61c7576f199"
+
+[[category.artifact]]
+path = "fixtures/exchanges/bybit/spot-orderbook-reset.json"
+sha256 = "60a1018cac1496c85f4a4f58dc631537d7b473d240de8e9bc438bd3c2256a4bc"
+
+[[category.artifact]]
+path = "fixtures/exchanges/bybit/spot-orderbook-snapshot.json"
+sha256 = "47ba0b138c88d1965b72173dcbb59e7142fa51fd01bc084bbf1727a9e1b3112d"
+
+[[category.artifact]]
+path = "fixtures/exchanges/bybit/spot-public-trade.json"
+sha256 = "8fdcbdc1cbb0bfdb9b7255325e5674abcc78343c70155dfeae7956e39e9a4570"
 
 [[category.artifact]]
 path = "fixtures/exchanges/deribit/manifest.toml"
