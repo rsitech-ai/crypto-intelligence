@@ -16,6 +16,7 @@ members = [
   "crates/config",
   "crates/domain",
   "crates/event-envelope",
+  "crates/feature-engine",
   "crates/feature-registry",
   "crates/fixed-decimal",
   "crates/instrument-registry",

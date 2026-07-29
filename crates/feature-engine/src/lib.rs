@@ -1,10 +1,16 @@
-//! feature-engine production contract.
+//! Deterministic point-in-time watermark, window, and timer primitives.
+
 pub mod clock;
-pub mod features;
-pub mod lineage;
-pub mod materialize;
 pub mod watermark;
 pub mod window;
 
-#[derive(Clone,Copy,Debug,Eq,PartialEq)] pub struct ContractMetadata { pub schema_version:u32, pub bounded:bool, pub point_in_time:bool }
-impl Default for ContractMetadata { fn default()->Self{Self{schema_version:1,bounded:true,point_in_time:true}} }
+pub use clock::{ClockBasis, ClockError, LogicalClock, RecordedClock, RecordedTimestamp, TimerId};
+pub use watermark::{
+    CorrectionDecision, Finalization, FinalizationDecision, PartitionConfig, PartitionId,
+    WatermarkError, WatermarkKey, WatermarkTracker, WatermarkUpdate,
+};
+pub use window::{
+    CountWindow, EmissionAction, EventCountState, HalfLifeEwmaState, ThresholdKind,
+    ThresholdWindow, ThresholdWindowState, TimeWindow, TimeWindowSpec, WindowError,
+    WindowLifecycle,
+};

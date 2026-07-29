@@ -5,10 +5,27 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
+autotests = false
 
 [dependencies]
+blake3.workspace = true
+domain = { path = "../domain" }
+feature-registry = { path = "../feature-registry" }
+fixed-decimal = { path = "../fixed-decimal" }
+quality = { path = "../quality" }
 serde.workspace = true
 thiserror.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+
+[[test]]
+name = "watermarks"
+path = "tests/watermarks.rs"
+
+[[test]]
+name = "stream_batch_parity"
+path = "tests/stream_batch_parity.rs"
 
 [lints]
 workspace = true

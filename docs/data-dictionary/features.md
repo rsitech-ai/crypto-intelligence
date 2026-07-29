@@ -43,6 +43,52 @@ Exact duplicate `(id, version)` registrations fail without mutating the
 registry. A changed formula, window, normalization, input, or semantic meaning
 requires a new semantic version.
 
+## Window execution contract
+
+The `feature-engine` executes only validated `WindowDefinition` values. It
+does not accept caller-selected runtime parameters that can diverge from the
+registry snapshot.
+
+- Tumbling and sliding time windows use the canonical UTC anchor
+  `UnixNanos(0)` so 100 ms, one-second, one-minute, and longer boundaries stay
+  epoch-congruent. Session-aligned windows use their registered positive UTC
+  anchor.
+- Sliding membership is half-open, canonical, and limited to 1,024 windows per
+  event.
+- Exponentially weighted windows use their registered half-life. For elapsed
+  event time `delta`, the previous value has decay
+  `2^(-delta / half_life)`. These outputs are finite `float64` values governed
+  by the declared numerical-tolerance rule. The state keeps an exact compacted
+  prefix plus a caller-bounded late-event suffix of at most 4,096 events.
+  The engine derives the compaction boundary from the bound tracker as the
+  minimum healthy required-source watermark minus allowed lateness; callers
+  cannot supply an arbitrary timestamp. Samples at or before that boundary
+  become immutable, late events newer than it replay in event-time and
+  arrival-tie-break order, and older corrections fail closed for persistent
+  replay/materialization to handle. A late correction never moves the logical
+  clock backward.
+- Event-count windows use the registered event extent. A missing advance means
+  a non-overlapping advance equal to the extent; an explicit advance cannot
+  exceed the extent.
+- Volume and notional windows close on the event that reaches or crosses the
+  positive registered threshold. The closing total includes that event, then
+  the next window starts from zero.
+
+Watermark evaluation produces opaque evidence bound to one exact window and
+canonical policy identity. Only that evidence may create provisional, final,
+or invalid lifecycle revisions. Correction evidence additionally identifies a
+configured, currently healthy source and can be minted only while the window
+still evaluates as final. Repeated provisional updates, finalization,
+invalidation, and late correction all append immutable monotonically
+increasing revisions. After source recovery, fresh correction evidence may
+append a corrected revision after an invalid revision; the invalid historical
+revision remains retained.
+
+Task 2 parity covers live-recorded, serialized replay-input, and batch-iterator
+drivers through the same engine implementation. It is not yet an end-to-end
+raw-WAL or Parquet storage integration claim; those adapters remain later
+phase work.
+
 ## Observation contract
 
 | Field | Contract |
