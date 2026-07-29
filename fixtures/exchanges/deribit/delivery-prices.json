@@ -1,0 +1,17 @@
+{
+  "jsonrpc": "2.0",
+  "id": 3601,
+  "result": {
+    "data": [
+      {
+        "date": "2026-06-29",
+        "delivery_price": 64498.125
+      },
+      {
+        "date": "2026-05-29",
+        "delivery_price": 61250.5
+      }
+    ],
+    "records_total": 2
+  }
+}

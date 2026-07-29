@@ -1,0 +1,30 @@
+{
+  "jsonrpc": "2.0",
+  "id": 41,
+  "result": [
+    {
+      "tick_size": 0.0001,
+      "tick_size_steps": [],
+      "settlement_period": "month",
+      "settlement_currency": "BTC",
+      "quote_currency": "USD",
+      "price_index": "btc_usd",
+      "min_trade_amount": 0.1,
+      "kind": "option",
+      "is_active": true,
+      "instrument_name": "BTC-29JUN26-65000-C",
+      "instrument_id": 900001,
+      "instrument_type": "reversed",
+      "expiration_timestamp": 1782720000000,
+      "creation_timestamp": 1750000000000,
+      "counter_currency": "USD",
+      "contract_size": 1,
+      "base_currency": "BTC",
+      "state": "open",
+      "qty_tick_size": 0.1,
+      "underlying_type": "crypto",
+      "strike": 65000,
+      "option_type": "call"
+    }
+  ]
+}

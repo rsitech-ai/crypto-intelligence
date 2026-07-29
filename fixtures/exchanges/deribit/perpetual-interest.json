@@ -1,0 +1,12 @@
+{
+  "jsonrpc": "2.0",
+  "method": "subscription",
+  "params": {
+    "channel": "perpetual.BTC-PERPETUAL.100ms",
+    "data": {
+      "interest": 0.004999511380756577,
+      "timestamp": 1760000000823,
+      "index_price": 64500.25
+    }
+  }
+}

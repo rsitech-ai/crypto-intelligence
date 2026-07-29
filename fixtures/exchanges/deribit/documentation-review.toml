@@ -1,0 +1,109 @@
+schema_version = 1
+venue = "deribit"
+reviewed_on = "2026-07-29"
+reviewer = "Codex"
+fixture_policy = "repository-owned synthetic values shaped by reviewed public schemas; no captured exchange traffic"
+
+[[contract]]
+id = "notifications"
+url = "https://docs.deribit.com/articles/notifications"
+observed = [
+  "JSON-RPC version is 2.0",
+  "server notification method is subscription",
+  "params contains channel and data",
+  "ordering is scoped per channel",
+]
+
+[[contract]]
+id = "instruments"
+url = "https://docs.deribit.com/api-reference/market-data/public-get_instruments"
+observed = [
+  "kind distinguishes future and option",
+  "settlement_period distinguishes perpetual futures",
+  "instrument_type is linear or reversed",
+  "option_type is call or put",
+  "creation and expiration timestamps are milliseconds",
+  "contract size, ticks, lifecycle, currencies, and strike are source metadata",
+]
+
+[[contract]]
+id = "ticker"
+url = "https://docs.deribit.com/subscriptions/upcoming/market-data/tickerinstrument_nameinterval"
+observed = [
+  "ticker timestamps are milliseconds",
+  "lifecycle states include open, settlement, delivered, inactive, locked, halted, and archivized",
+  "stats, price bounds, and nullable top-of-book fields are required ticker members",
+  "options report bid, ask, and mark IV plus delta, gamma, rho, theta, and vega",
+  "perpetuals report current funding and eight-hour funding",
+  "mark, index, settlement, delivery, and open-interest fields remain distinct",
+]
+
+[[contract]]
+id = "book"
+url = "https://docs.deribit.com/subscriptions/orderbook/bookinstrument_nameinterval"
+observed = [
+  "first notification is a snapshot",
+  "updates use new, change, and delete actions",
+  "every message has change_id",
+  "continuity requires update prev_change_id to equal the preceding change_id",
+]
+
+[[contract]]
+id = "trades"
+url = "https://docs.deribit.com/subscriptions/trades/tradesinstrument_nameinterval"
+observed = [
+  "trade_id is unique per currency",
+  "trade_seq is sequenced per instrument",
+  "direction, amount, price, mark, index, contracts, and optional liquidation are reported",
+  "optional IV, Starbase, block, combo, and RFQ attribution fields may be present",
+]
+
+[[contract]]
+id = "perpetual_interest"
+url = "https://docs.deribit.com/subscriptions/market-data/perpetualinstrument_nameinterval"
+observed = [
+  "the channel is emitted only for perpetual instruments",
+  "interest, index price, and millisecond timestamp are reported",
+]
+
+[[contract]]
+id = "delivery_prices"
+url = "https://docs.deribit.com/api-reference/market-data/public-get_delivery_prices"
+observed = [
+  "records are historical settlement prices used at futures or options expiry",
+  "records contain date and delivery_price",
+  "the response is paginated and reports records_total",
+]
+
+[[contract]]
+id = "rate_limits"
+url = "https://docs.deribit.com/articles/rate-limits"
+observed = [
+  "public subscribe sustains approximately 3.3 requests per second with a burst capacity of 10",
+  "public get_instruments sustains 1 request per second with a burst capacity of 50",
+  "the venue uses continuously refilled credit pools, and limit exhaustion can terminate the session",
+]
+
+[[contract]]
+id = "connection_management"
+url = "https://docs.deribit.com/articles/connection-management-best-practices"
+observed = [
+  "the venue limits simultaneous WebSocket connections to 32 per IP",
+  "reconnection must restore subscriptions and order books require a replacement snapshot",
+]
+
+[[contract]]
+id = "numeric_notation"
+url = "https://support.deribit.com/hc/en-us/articles/25944812424349-3-December-2024"
+observed = [
+  "JSON numeric values may use ordinary or scientific notation",
+  "clients must not assume one textual representation for a numeric value",
+]
+
+[[contract]]
+id = "linear_option_symbols"
+url = "https://support.deribit.com/hc/en-us/articles/31424932728093-Linear-USDC-Options"
+observed = [
+  "some sub-dollar USDC option strikes encode the decimal point as d in the instrument name",
+  "the numeric strike field remains the authoritative value used for canonical identity",
+]

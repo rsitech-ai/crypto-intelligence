@@ -1,0 +1,32 @@
+{
+  "jsonrpc": "2.0",
+  "method": "subscription",
+  "params": {
+    "channel": "ticker.BTC-29JUN26.100ms",
+    "data": {
+      "instrument_name": "BTC-29JUN26",
+      "timestamp": 1760000000323,
+      "state": "settlement",
+      "index_price": 64500.25,
+      "min_price": 63000,
+      "max_price": 66000,
+      "mark_price": 64520.5,
+      "estimated_delivery_price": 64495.75,
+      "last_price": 64525,
+      "best_bid_price": null,
+      "best_bid_amount": 0,
+      "best_ask_price": null,
+      "best_ask_amount": 0,
+      "open_interest": 12500000,
+      "delivery_price": 64498.125,
+      "interest_value": 1.25,
+      "stats": {
+        "volume": 120.5,
+        "low": 64000,
+        "high": 65000,
+        "price_change": 0.4,
+        "volume_usd": 7772250
+      }
+    }
+  }
+}
