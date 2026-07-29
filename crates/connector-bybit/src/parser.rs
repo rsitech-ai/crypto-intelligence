@@ -50,6 +50,10 @@ pub struct DurableBybitMessage {
 }
 
 impl DurableBybitMessage {
+    pub const fn message(&self) -> &BybitMessage {
+        &self.message
+    }
+
     pub(crate) fn into_parts(self) -> (BybitMessage, [u8; 32]) {
         (self.message, self.raw_payload_hash)
     }

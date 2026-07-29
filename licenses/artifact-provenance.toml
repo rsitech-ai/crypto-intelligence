@@ -102,6 +102,14 @@ path = "fixtures/exchanges/bybit/documentation-review.toml"
 sha256 = "5c42ccdd487c4873cc69d0841c4b651731b8cf843c6e636381c344093a677d46"
 
 [[category.artifact]]
+path = "fixtures/exchanges/bybit/certification.json"
+sha256 = "d2cc84b53d14eef4cf72ba5c40f008ef73a3acfe11fb40065bf73bd828f853fb"
+
+[[category.artifact]]
+path = "fixtures/exchanges/bybit/certification.sha256"
+sha256 = "b27bf97fef57b388b4ec28c8f45e7113ff391b1e0412b573a9664fae3d7399ba"
+
+[[category.artifact]]
 path = "fixtures/exchanges/bybit/linear-all-liquidation.json"
 sha256 = "4e51771e3154c19a2c68d682c9d481cdb8bb67aa9620edbb9eac312c494d3c1a"
 

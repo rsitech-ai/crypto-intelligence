@@ -1,0 +1,166 @@
+{
+  "schema_version": 1,
+  "venue": "bybit",
+  "fixture_status": "pass",
+  "production_certification_status": "blocked",
+  "evidence_scope": "retained-fixture",
+  "live_exchange_acceptance": false,
+  "manifest_sha256": "4367b23069ecd8d4e80b05cb3a30c3a2349b6503cfdbc3ee8de2d732e5b48adf",
+  "connector_version": "1.0.0",
+  "trade_semantics": "individual",
+  "liquidation_completeness": "venue_reported_all_500ms_delivery_uncertainty_true",
+  "fixture_count": 11,
+  "fixtures": {
+    "fixtures/exchanges/bybit/linear-all-liquidation.json": "4e51771e3154c19a2c68d682c9d481cdb8bb67aa9620edbb9eac312c494d3c1a",
+    "fixtures/exchanges/bybit/linear-instruments-info.json": "8525b4e98a3a0ba03fcf260d3ffd5583957e1d65f0eba71651af46e2c602d8f3",
+    "fixtures/exchanges/bybit/linear-orderbook-delta.json": "973ae6c2ad04d1351ff1197e9103db3067fc32e1fb98f45210e5c4ea5fcc1ead",
+    "fixtures/exchanges/bybit/linear-orderbook-snapshot.json": "20f3eb7a27847ebf80712c3fbc2cb8044eb9cf1dc66ad84ffdb0d6beaaf3df6d",
+    "fixtures/exchanges/bybit/linear-public-trade.json": "33b0ee6a9f87cbe23ac6c4feb9c2c41c0863c671c0b5754eb4bfe56bc96fa99b",
+    "fixtures/exchanges/bybit/linear-ticker.json": "4055eb043d70a14bb0a22e5a437db0091eae4ce98f4858dd6b2ce66e5db01b63",
+    "fixtures/exchanges/bybit/spot-instruments-info.json": "c7581af9f8d1880e468e5f6dcad601b852c53b827017cbbd11571b6d273cc176",
+    "fixtures/exchanges/bybit/spot-orderbook-delta.json": "c8d7e5ffa089f15bf683a709076b16f28d0ae58416202d19a482a61c7576f199",
+    "fixtures/exchanges/bybit/spot-orderbook-reset.json": "60a1018cac1496c85f4a4f58dc631537d7b473d240de8e9bc438bd3c2256a4bc",
+    "fixtures/exchanges/bybit/spot-orderbook-snapshot.json": "47ba0b138c88d1965b72173dcbb59e7142fa51fd01bc084bbf1727a9e1b3112d",
+    "fixtures/exchanges/bybit/spot-public-trade.json": "8fdcbdc1cbb0bfdb9b7255325e5674abcc78343c70155dfeae7956e39e9a4570"
+  },
+  "checks": [
+    {
+      "name": "fixture_hashes",
+      "status": "pass"
+    },
+    {
+      "name": "all_supported_record_types",
+      "status": "pass"
+    },
+    {
+      "name": "spot_and_linear_instrument_filters",
+      "status": "pass"
+    },
+    {
+      "name": "field_reordering",
+      "status": "pass"
+    },
+    {
+      "name": "schema_drift_rejection",
+      "status": "pass"
+    },
+    {
+      "name": "payload_size_rejection",
+      "status": "pass"
+    },
+    {
+      "name": "snapshot_replacement",
+      "status": "pass"
+    },
+    {
+      "name": "delta_before_snapshot_suppression",
+      "status": "pass"
+    },
+    {
+      "name": "sequence_gap_suppression",
+      "status": "pass"
+    },
+    {
+      "name": "truthful_capabilities",
+      "status": "pass"
+    }
+  ],
+  "production_gates": [
+    {
+      "number": 1,
+      "name": "golden parser fixtures for every subscribed message type",
+      "status": "pass",
+      "evidence": "11 provenance-bound retained fixtures"
+    },
+    {
+      "number": 2,
+      "name": "unknown-field and field-reordering tests",
+      "status": "pass",
+      "evidence": "runner reorders every fixture and injects an undocumented field"
+    },
+    {
+      "number": 3,
+      "name": "numeric boundary tests and fixed-point round trips",
+      "status": "not_run",
+      "evidence": "focused crate tests are not executed by this runner"
+    },
+    {
+      "number": 4,
+      "name": "snapshot/delta reconstruction",
+      "status": "pass",
+      "evidence": "runner proves initial snapshot, exact-next delta, and full reset replacement"
+    },
+    {
+      "number": 5,
+      "name": "missing duplicated and reordered sequences",
+      "status": "partial",
+      "evidence": "runner suppresses delta-before-snapshot and detects an injected update-ID gap; duplicate and reordered cases remain focused-test evidence"
+    },
+    {
+      "number": 6,
+      "name": "checksum mismatch and forced resnapshot where supported",
+      "status": "not_applicable",
+      "evidence": "Bybit capability declares source checksums unsupported"
+    },
+    {
+      "number": 7,
+      "name": "heartbeat timeout and clean reconnect",
+      "status": "not_run",
+      "evidence": "focused session test is not executed by this runner"
+    },
+    {
+      "number": 8,
+      "name": "rate-limit and backoff",
+      "status": "blocked",
+      "evidence": "production transport and operational limiter are not implemented"
+    },
+    {
+      "number": 9,
+      "name": "schema-drift fail-safe",
+      "status": "pass",
+      "evidence": "runner injects and rejects an undocumented field"
+    },
+    {
+      "number": 10,
+      "name": "clock-skew and timestamp-unit",
+      "status": "not_run",
+      "evidence": "timestamp boundary tests are not executed by this runner"
+    },
+    {
+      "number": 11,
+      "name": "burst-load and bounded queue",
+      "status": "not_run",
+      "evidence": "focused session capacity tests are not executed by this runner"
+    },
+    {
+      "number": 12,
+      "name": "raw-WAL replay equivalence",
+      "status": "not_run",
+      "evidence": "focused verified-WAL replay test exists but is not executed or bound by this runner"
+    },
+    {
+      "number": 13,
+      "name": "kill-and-restart recovery",
+      "status": "blocked",
+      "evidence": "no supervised production transport restart path exists"
+    },
+    {
+      "number": 14,
+      "name": "data-completeness metadata",
+      "status": "pass",
+      "evidence": "capability is venue-reported-all at 500 ms with delivery uncertainty"
+    },
+    {
+      "number": 15,
+      "name": "terms and redistribution review",
+      "status": "pass",
+      "evidence": "manifest records reviewed-restricted terms and local synthetic fixture provenance"
+    }
+  ],
+  "limitations": [
+    "No authenticated endpoints, account data, order placement, or trading",
+    "This artifact validates retained parser and book fixtures, not live exchange acceptance",
+    "Production transport, operational rate enforcement, supervised reconnect, and canary evidence remain blocked or unrun",
+    "Raw-WAL replay equivalence is proven by focused connector tests but is not executed or commit-bound by this report runner"
+  ]
+}
