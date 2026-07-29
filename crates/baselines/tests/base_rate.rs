@@ -246,6 +246,7 @@ fn beta_posterior_interval_is_exact_finite_and_bounded() {
         beta_binomial_estimate(2, 1, 1.0, 1.0, 0.95),
         beta_binomial_estimate(0, 0, 0.0, 1.0, 0.95),
         beta_binomial_estimate(0, 0, 1.0, f64::NAN, 0.95),
+        beta_binomial_estimate(0, 0, 1.0, 1.0, 0.0),
         beta_binomial_estimate(0, 0, 1.0, 1.0, 1.0),
         beta_binomial_estimate(0, 1_000_001, 1.0, 1.0, 0.95),
     ] {
@@ -359,6 +360,10 @@ fn late_duplicate_and_invalid_inputs_fail_closed() {
 
     assert_eq!(
         BaseRateConfig::try_new(1.0, 1.0, 0.95, 0, 86_400, ["risk_on"]),
+        Err(BaselineError::InvalidConfiguration)
+    );
+    assert_eq!(
+        BaseRateConfig::try_new(1.0, 1.0, 0.0, 1, 86_400, ["risk_on"]),
         Err(BaselineError::InvalidConfiguration)
     );
     assert_eq!(

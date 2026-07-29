@@ -140,7 +140,8 @@ impl BaseRateConfig {
             || !beta.is_finite()
             || beta <= 0.0
             || !credible_mass.is_finite()
-            || !(0.0..1.0).contains(&credible_mass)
+            || credible_mass <= 0.0
+            || credible_mass >= 1.0
             || minimum_stratum_count == 0
             || usize::try_from(minimum_stratum_count)
                 .ok()
@@ -582,7 +583,8 @@ pub fn beta_binomial_estimate(
         || !beta.is_finite()
         || beta <= 0.0
         || !credible_mass.is_finite()
-        || !(0.0..1.0).contains(&credible_mass)
+        || credible_mass <= 0.0
+        || credible_mass >= 1.0
     {
         return Err(BaselineError::InvalidInput);
     }
