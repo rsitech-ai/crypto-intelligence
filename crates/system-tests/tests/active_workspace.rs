@@ -79,6 +79,7 @@ fn active_workspace_contains_only_implemented_packages() {
             "cryptoriskd",
             "domain",
             "event-envelope",
+            "feature-registry",
             "fixed-decimal",
             "instrument-registry",
             "local-api",
