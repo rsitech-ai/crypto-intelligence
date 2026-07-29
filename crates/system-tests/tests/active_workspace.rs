@@ -95,6 +95,7 @@ fn active_workspace_contains_only_implemented_packages() {
             "parquet-store",
             "quality",
             "raw-wal",
+            "regime",
             "replay-engine",
             "system-tests",
             "volatility",

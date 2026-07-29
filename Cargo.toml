@@ -32,6 +32,7 @@ members = [
   "crates/parquet-store",
   "crates/quality",
   "crates/raw-wal",
+  "crates/regime",
   "crates/replay-engine",
   "crates/system-tests",
   "crates/volatility",
