@@ -94,6 +94,7 @@ impl CatalogAuthority {
 /// Opaque evidence that remains attached to live normalized output.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DerivativeNormalizationReceipt {
+    raw: DurableRawReference,
     event: EventEnvelope,
     stream: DerivativeStream,
     completeness: Completeness,
@@ -155,6 +156,7 @@ impl DerivativeNormalizationReceipt {
             capabilities.completeness().get(stream.stream_class())
         };
         Ok(Self {
+            raw: raw.clone(),
             event,
             stream,
             completeness,
@@ -166,6 +168,10 @@ impl DerivativeNormalizationReceipt {
 
     pub const fn event(&self) -> &EventEnvelope {
         &self.event
+    }
+
+    pub(crate) fn matches_raw(&self, raw: &DurableRawReference) -> bool {
+        &self.raw == raw
     }
 
     pub const fn stream(&self) -> DerivativeStream {

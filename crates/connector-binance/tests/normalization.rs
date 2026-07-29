@@ -426,6 +426,15 @@ async fn derivative_observations_normalize_with_sampled_liquidation_lineage() {
         NormalizedOutput::try_new(mark_raw.clone(), mark_receipts[0].event().clone()),
         Err(ChannelError::DerivativeAuthorityRequired)
     );
+    let wrong_stream_raw = durable_reference(
+        USDM_MARK,
+        BinanceInput::UsdMLiquidationWebSocket.wal_stream_name(),
+    )
+    .await;
+    assert_eq!(
+        NormalizedOutput::try_new_derivative(wrong_stream_raw, mark_receipts[0].clone()),
+        Err(ChannelError::DerivativeRawAuthorityMismatch)
+    );
 
     let oi_raw = durable_reference(
         USDM_OI,

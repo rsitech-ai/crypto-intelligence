@@ -275,6 +275,9 @@ fn map_normalized_error(error: ChannelError) -> ConnectorTermination {
             ConnectorTermination::CapacityRejected(CapacityRejection::NormalizedOutput)
         }
         ChannelError::ReceiverClosed => ConnectorTermination::LocalOutputFailed,
+        ChannelError::DerivativeRawAuthorityMismatch => {
+            ConnectorTermination::Quarantined(QuarantineReason::IntegrityViolation)
+        }
         ChannelError::InvalidCapacity
         | ChannelError::CommandSequenceRegression
         | ChannelError::RawSourceMismatch

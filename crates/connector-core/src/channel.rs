@@ -407,6 +407,9 @@ impl NormalizedOutput {
         raw: DurableRawReference,
         receipt: DerivativeNormalizationReceipt,
     ) -> Result<Self, ChannelError> {
+        if !receipt.matches_raw(&raw) {
+            return Err(ChannelError::DerivativeRawAuthorityMismatch);
+        }
         Self::validate_raw_event(&raw, receipt.event())?;
         Ok(Self {
             raw,
@@ -1358,6 +1361,8 @@ pub enum ChannelError {
     RawReceiveMonotonicTimeMismatch,
     #[error("authority-bound derivative observations require a sealed derivative receipt")]
     DerivativeAuthorityRequired,
+    #[error("derivative normalization receipt does not match its exact durable raw record")]
+    DerivativeRawAuthorityMismatch,
     #[error("normalized event could not be encoded for byte accounting")]
     EventEncodingFailed,
     #[error("normalized channel invalidation state is poisoned")]
