@@ -1,0 +1,11 @@
+{
+  "feed": "trade",
+  "product_id": "PF_XBTUSD",
+  "uid": "caa9c653-420b-4c24-a9f1-462a054d86f1",
+  "side": "sell",
+  "type": "fill",
+  "seq": 655508,
+  "time": 1612269657781,
+  "qty": 440,
+  "price": 34893
+}

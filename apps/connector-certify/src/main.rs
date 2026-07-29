@@ -17,6 +17,11 @@ use connector_bybit::{
     parse_native_message as parse_bybit_message,
 };
 use connector_core::{Completeness, StreamClass, TradeSemantics};
+use connector_kraken::{
+    KrakenBookSynchronizer, KrakenInput, KrakenL3Policy, KrakenMessage,
+    NativeParseError as KrakenParseError, capabilities as kraken_capabilities,
+    parse_native_message as parse_kraken_message,
+};
 use domain::{InstrumentId, ProductType, VenueId};
 use fixed_decimal::{FixedDecimal, Price, Quantity};
 use orderbook::{ApplyResult, BookConfig, BookSession, ChecksumPolicy, SequencePolicy};
@@ -127,7 +132,8 @@ fn run(arguments: Arguments) -> Result<String, String> {
     match arguments.venue.as_str() {
         "binance" => run_binance(arguments),
         "bybit" => run_bybit(arguments),
-        _ => Err("supported venues are binance and bybit".to_owned()),
+        "kraken" => run_kraken(arguments),
+        _ => Err("supported venues are binance, bybit, and kraken".to_owned()),
     }
 }
 
@@ -354,6 +360,111 @@ fn run_bybit(arguments: Arguments) -> Result<String, String> {
     Ok(report_hash)
 }
 
+fn run_kraken(arguments: Arguments) -> Result<String, String> {
+    let workspace = workspace_root_for(&arguments.fixtures, "kraken")?;
+    let manifest_path = arguments.fixtures.join("manifest.toml");
+    let manifest_bytes = read_regular_bounded(&manifest_path, MAX_MANIFEST_BYTES)?;
+    let manifest: FixtureManifest = toml::from_str(
+        std::str::from_utf8(&manifest_bytes)
+            .map_err(|_| "fixture manifest is not UTF-8".to_owned())?,
+    )
+    .map_err(|error| format!("fixture manifest is invalid: {error}"))?;
+    validate_kraken_manifest_metadata(&manifest, &workspace)?;
+    validate_kraken_manifest_coverage(&manifest)?;
+    let mut fixture_hashes = BTreeMap::new();
+    for fixture in &manifest.fixture {
+        validate_kraken_safe_fixture_path(&fixture.path)?;
+        let path = workspace.join(&fixture.path);
+        let raw = read_regular_bounded(&path, MAX_FIXTURE_BYTES)?;
+        let actual_hash = sha256_hex(&raw);
+        if actual_hash != fixture.sha256 {
+            return Err(format!(
+                "fixture hash mismatch for {}: expected {}, got {actual_hash}",
+                fixture.path, fixture.sha256
+            ));
+        }
+        validate_kraken_fixture(fixture, &raw)?;
+        let reordered = serde_json::to_vec(
+            &serde_json::from_slice::<serde_json::Value>(&raw)
+                .map_err(|error| format!("fixture JSON is invalid: {error}"))?,
+        )
+        .map_err(|error| format!("could not reorder fixture JSON: {error}"))?;
+        validate_kraken_fixture(fixture, &reordered)?;
+        if fixture_hashes
+            .insert(fixture.path.clone(), actual_hash)
+            .is_some()
+        {
+            return Err(format!("duplicate fixture path: {}", fixture.path));
+        }
+    }
+    validate_kraken_injected_failures()?;
+    validate_kraken_book_integrity(&workspace)?;
+    let capabilities =
+        kraken_capabilities().map_err(|error| format!("capabilities invalid: {error}"))?;
+    if capabilities.trade_semantics() != TradeSemantics::Individual
+        || capabilities.liquidation_completeness() != Completeness::NotSupported
+    {
+        return Err("Kraken capability surface overstates the retained parser".to_owned());
+    }
+
+    let report = CertificationReport {
+        schema_version: 1,
+        venue: "kraken".to_owned(),
+        fixture_status: "pass".to_owned(),
+        production_certification_status: "blocked".to_owned(),
+        evidence_scope: "retained-fixture".to_owned(),
+        live_exchange_acceptance: false,
+        manifest_sha256: sha256_hex(&manifest_bytes),
+        connector_version: capabilities.connector_version().to_owned(),
+        trade_semantics: "individual".to_owned(),
+        liquidation_completeness: "not_supported".to_owned(),
+        fixture_count: fixture_hashes.len(),
+        fixtures: fixture_hashes,
+        checks: [
+            "fixture_hashes",
+            "all_retained_fixture_record_types",
+            "spot_v2_exact_decimal_checksum",
+            "selected_l3_queue_checksum",
+            "futures_sequence_fields",
+            "field_reordering",
+            "schema_drift_rejection",
+            "payload_size_rejection",
+            "truthful_capabilities",
+        ]
+        .into_iter()
+        .map(|name| CertificationCheck {
+            name: name.to_owned(),
+            status: "pass".to_owned(),
+        })
+        .collect(),
+        production_gates: kraken_production_gates(),
+        limitations: vec![
+            "No authenticated token acquisition, account data, order placement, or trading"
+                .to_owned(),
+            "L3 parser and integrity behavior use local fixtures; live authenticated L3 acceptance is not proven".to_owned(),
+            "This artifact validates retained parser and checksum fixtures, not live exchange acceptance".to_owned(),
+            "Production transport, operational rate enforcement, supervised reconnect, raw-WAL session replay, and canary evidence remain blocked or unrun".to_owned(),
+        ],
+    };
+    let mut encoded = serde_json::to_vec_pretty(&report)
+        .map_err(|error| format!("could not encode report: {error}"))?;
+    encoded.push(b'\n');
+    let report_hash = sha256_hex(&encoded);
+    let report_path = arguments.fixtures.join("certification.json");
+    let hash_path = arguments.fixtures.join("certification.sha256");
+    let hash_bytes = format!("{report_hash}  certification.json\n").into_bytes();
+    if arguments.check {
+        compare_exact(&report_path, &encoded)?;
+        compare_exact(&hash_path, &hash_bytes)?;
+    } else {
+        fs::write(&report_path, encoded)
+            .map_err(|error| format!("could not write {}: {error}", report_path.display()))?;
+        fs::write(&hash_path, hash_bytes)
+            .map_err(|error| format!("could not write {}: {error}", hash_path.display()))?;
+    }
+    Ok(report_hash)
+}
+
 fn validate_manifest_metadata(manifest: &FixtureManifest, workspace: &Path) -> Result<(), String> {
     if manifest.schema_version != 1
         || manifest.artifact_id != "fixtures/exchanges/binance/manifest.toml"
@@ -439,6 +550,50 @@ fn validate_bybit_manifest_metadata(
     Ok(())
 }
 
+fn validate_kraken_manifest_metadata(
+    manifest: &FixtureManifest,
+    workspace: &Path,
+) -> Result<(), String> {
+    if manifest.schema_version != 1
+        || manifest.artifact_id != "fixtures/exchanges/kraken/manifest.toml"
+        || manifest.status != "tracked"
+        || manifest.certification_status != "fixture_parser_pass"
+        || !manifest.local_only
+        || manifest.captured_exchange_traffic
+        || manifest.contains_credentials
+        || manifest.redistribution != "MIT OR Apache-2.0"
+        || manifest.fixture_origin.is_empty()
+        || manifest.reviewed_on.is_empty()
+        || manifest.source.is_empty()
+        || manifest.fixture.is_empty()
+    {
+        return Err("Kraken fixture manifest metadata is not certification-ready".to_owned());
+    }
+    for source in &manifest.source {
+        if source.id.is_empty()
+            || !source.url.starts_with("https://docs.kraken.com/")
+            || source.scope.is_empty()
+            || validate_kraken_safe_fixture_path(&source.snapshot).is_err()
+            || source.snapshot_sha256.len() != 64
+            || !source
+                .snapshot_sha256
+                .bytes()
+                .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+        {
+            return Err("Kraken fixture documentation source is invalid".to_owned());
+        }
+        let snapshot_path = workspace.join(&source.snapshot);
+        let snapshot = read_regular_bounded(&snapshot_path, MAX_DOCUMENTATION_REVIEW_BYTES)?;
+        if sha256_hex(&snapshot) != source.snapshot_sha256 {
+            return Err(format!(
+                "documentation snapshot hash mismatch: {}",
+                source.snapshot
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn validate_manifest_coverage(manifest: &FixtureManifest) -> Result<(), String> {
     let actual = manifest
         .fixture
@@ -511,6 +666,37 @@ fn validate_bybit_manifest_coverage(manifest: &FixtureManifest) -> Result<(), St
     Ok(())
 }
 
+fn validate_kraken_manifest_coverage(manifest: &FixtureManifest) -> Result<(), String> {
+    let actual = manifest
+        .fixture
+        .iter()
+        .map(|fixture| {
+            (
+                fixture.market.as_str(),
+                fixture.route.as_str(),
+                fixture.record_type.as_str(),
+            )
+        })
+        .collect::<BTreeSet<_>>();
+    let expected = BTreeSet::from([
+        ("futures", "websocket", "book_snapshot"),
+        ("futures", "websocket", "book_update"),
+        ("futures", "websocket", "trade"),
+        ("spot", "websocket_v2", "book_snapshot"),
+        ("spot", "websocket_v2", "heartbeat"),
+        ("spot", "websocket_v2", "instrument"),
+        ("spot", "websocket_v2", "level3_snapshot"),
+        ("spot", "websocket_v2", "status"),
+        ("spot", "websocket_v2", "trade"),
+    ]);
+    if actual != expected || manifest.fixture.len() != expected.len() {
+        return Err(format!(
+            "Kraken fixture coverage must be exact: expected {expected:?}, got {actual:?}"
+        ));
+    }
+    Ok(())
+}
+
 fn validate_safe_fixture_path(path: &str) -> Result<(), String> {
     let path = Path::new(path);
     if path.as_os_str().is_empty()
@@ -543,6 +729,24 @@ fn validate_bybit_safe_fixture_path(path: &str) -> Result<(), String> {
             .any(|component| !matches!(component, Component::Normal(_)))
     {
         return Err(format!("unsafe fixture path: {}", path.display()));
+    }
+    Ok(())
+}
+
+fn validate_kraken_safe_fixture_path(path: &str) -> Result<(), String> {
+    let path = Path::new(path);
+    if path.as_os_str().is_empty()
+        || path
+            .as_os_str()
+            .to_string_lossy()
+            .chars()
+            .any(char::is_control)
+        || !path.starts_with("fixtures/exchanges/kraken")
+        || path
+            .components()
+            .any(|component| !matches!(component, Component::Normal(_)))
+    {
+        return Err(format!("unsafe Kraken fixture path: {}", path.display()));
     }
     Ok(())
 }
@@ -651,6 +855,49 @@ fn validate_bybit_fixture(fixture: &ManifestFixture, raw: &[u8]) -> Result<(), S
             fixture.path, fixture.record_type, fixture.route
         )
     })
+}
+
+fn validate_kraken_fixture(fixture: &ManifestFixture, raw: &[u8]) -> Result<(), String> {
+    let input = match fixture.route.as_str() {
+        "websocket_v2" => KrakenInput::SpotWebSocketV2,
+        "websocket" => KrakenInput::FuturesWebSocket,
+        other => return Err(format!("unsupported Kraken fixture route: {other}")),
+    };
+    let message = parse_kraken_message(input, raw).map_err(|error| error.to_string())?;
+    let matches = matches!(
+        (fixture.record_type.as_str(), &message),
+        ("book_snapshot", KrakenMessage::SpotBook(value))
+            if value.kind == connector_kraken::BookMessageKind::Snapshot
+    ) || matches!(
+        (fixture.record_type.as_str(), &message),
+        ("level3_snapshot", KrakenMessage::SpotLevel3(value))
+            if value.kind == connector_kraken::BookMessageKind::Snapshot
+    ) || matches!(
+        (fixture.record_type.as_str(), &message),
+        ("trade", KrakenMessage::SpotTrades { .. })
+            | ("instrument", KrakenMessage::SpotInstrument(_))
+            | ("status", KrakenMessage::SpotStatus { .. })
+            | ("heartbeat", KrakenMessage::Heartbeat)
+    ) || matches!(
+        (fixture.record_type.as_str(), &message),
+        ("book_snapshot", KrakenMessage::FuturesBook(value))
+            if value.kind == connector_kraken::BookMessageKind::Snapshot
+    ) || matches!(
+        (fixture.record_type.as_str(), &message),
+        ("book_update", KrakenMessage::FuturesBook(value))
+            if value.kind == connector_kraken::BookMessageKind::Update
+    ) || matches!(
+        (fixture.record_type.as_str(), &message),
+        ("trade", KrakenMessage::FuturesTrades(_))
+    );
+    if matches {
+        Ok(())
+    } else {
+        Err(format!(
+            "fixture {} did not parse as {}",
+            fixture.path, fixture.record_type
+        ))
+    }
 }
 
 fn require_bybit_message(market: BybitMarket, raw: &[u8], expected: &str) -> Result<(), String> {
@@ -768,6 +1015,126 @@ fn validate_bybit_injected_failures(workspace: &Path) -> Result<(), String> {
         return Err("oversized-payload injection did not fail closed".to_owned());
     }
     Ok(())
+}
+
+fn validate_kraken_injected_failures() -> Result<(), String> {
+    let drift = br#"{"channel":"heartbeat","undocumented":true}"#;
+    if parse_kraken_message(KrakenInput::SpotWebSocketV2, drift)
+        != Err(KrakenParseError::SchemaDrift)
+    {
+        return Err("Kraken unknown-field injection did not fail closed".to_owned());
+    }
+    let duplicate = br#"{"channel":"heartbeat","channel":"heartbeat"}"#;
+    if parse_kraken_message(KrakenInput::SpotWebSocketV2, duplicate)
+        != Err(KrakenParseError::MalformedJson)
+    {
+        return Err("Kraken duplicate-field injection did not fail closed".to_owned());
+    }
+    let oversized = vec![b' '; connector_kraken::MAX_NATIVE_PAYLOAD_BYTES + 1];
+    if parse_kraken_message(KrakenInput::SpotWebSocketV2, &oversized)
+        != Err(KrakenParseError::PayloadTooLarge)
+    {
+        return Err("Kraken oversized-payload injection did not fail closed".to_owned());
+    }
+    Ok(())
+}
+
+fn validate_kraken_book_integrity(workspace: &Path) -> Result<(), String> {
+    let read_spot = |name: &str| -> Result<KrakenMessage, String> {
+        let raw = read_regular_bounded(
+            &workspace.join(format!("fixtures/exchanges/kraken/{name}")),
+            MAX_FIXTURE_BYTES,
+        )?;
+        parse_kraken_message(KrakenInput::SpotWebSocketV2, &raw).map_err(|error| error.to_string())
+    };
+    let KrakenMessage::SpotBook(snapshot) = read_spot("spot-book-snapshot.json")? else {
+        return Err("Kraken Spot fixture did not parse as an L2 snapshot".to_owned());
+    };
+    let KrakenMessage::SpotLevel3(l3_snapshot) = read_spot("spot-level3-snapshot.json")? else {
+        return Err("Kraken Spot fixture did not parse as an L3 snapshot".to_owned());
+    };
+    let policy = KrakenL3Policy::try_new(["BTC/USD".to_owned()], 10, 5_000)
+        .map_err(|error| error.to_string())?;
+    let mut synchronizer =
+        KrakenBookSynchronizer::try_new_with_l3(kraken_spot_book_config()?, policy)
+            .map_err(|error| error.to_string())?;
+    let session = BookSession {
+        connection_epoch: 1,
+        subscription_epoch: 1,
+        instrument_generation: 1,
+    };
+    synchronizer
+        .start_session(session)
+        .map_err(|error| error.to_string())?;
+    if synchronizer
+        .apply_spot(&snapshot, 1, 1)
+        .map_err(|error| error.to_string())?
+        != ApplyResult::Applied
+        || synchronizer
+            .apply_level3(&l3_snapshot, 2, 1)
+            .map_err(|error| error.to_string())?
+            != ApplyResult::Applied
+    {
+        return Err("Kraken L2/L3 reference checksums did not synchronize".to_owned());
+    }
+    let mut invalid_l2 = snapshot.clone();
+    invalid_l2.checksum = invalid_l2.checksum.wrapping_add(1);
+    if synchronizer
+        .apply_spot(&invalid_l2, 3, 1)
+        .map_err(|error| error.to_string())?
+        != ApplyResult::ChecksumMismatch
+        || synchronizer.snapshot().is_ok()
+    {
+        return Err("Kraken L2 checksum mismatch did not suppress publication".to_owned());
+    }
+    if synchronizer
+        .apply_spot(&snapshot, 4, 1)
+        .map_err(|error| error.to_string())?
+        != ApplyResult::Applied
+    {
+        return Err("Kraken L2 did not recover from a fresh snapshot".to_owned());
+    }
+    synchronizer.disconnect();
+    synchronizer
+        .start_session(BookSession {
+            connection_epoch: 2,
+            subscription_epoch: 2,
+            instrument_generation: 1,
+        })
+        .map_err(|error| error.to_string())?;
+    if synchronizer
+        .apply_spot(&snapshot, 5, 1)
+        .map_err(|error| error.to_string())?
+        != ApplyResult::Applied
+    {
+        return Err("Kraken reconnect did not require and accept a fresh snapshot".to_owned());
+    }
+    Ok(())
+}
+
+fn kraken_spot_book_config() -> Result<BookConfig, String> {
+    let decimal = |value: &str| {
+        FixedDecimal::parse_canonical(value)
+            .map_err(|error| format!("invalid certification decimal: {error}"))
+    };
+    Ok(BookConfig {
+        instrument: InstrumentId::new_for_product(
+            VenueId::new("kraken").map_err(|error| error.to_string())?,
+            "BTCUSD",
+            ProductType::Spot,
+            1,
+        )
+        .map_err(|error| error.to_string())?,
+        price_tick: Price::new(decimal("0.1")?).map_err(|error| error.to_string())?,
+        quantity_step: Quantity::new(decimal("0.00000001")?).map_err(|error| error.to_string())?,
+        max_levels_per_side: 10,
+        max_buffered_deltas: 8,
+        max_buffered_level_updates: 32,
+        sequence_policy: SequencePolicy::ExactNext,
+        checksum_policy: ChecksumPolicy::Required,
+        max_l3_orders: Some(5_000),
+        max_l3_levels_per_side: Some(10),
+    })
 }
 
 fn validate_bybit_snapshot_reset(workspace: &Path) -> Result<(), String> {
@@ -1078,12 +1445,115 @@ fn bybit_production_gates() -> Vec<CertificationGate> {
     .collect()
 }
 
+fn kraken_production_gates() -> Vec<CertificationGate> {
+    [
+        (
+            1,
+            "golden parser fixtures for every subscribed message type",
+            "partial",
+            "9 provenance-bound retained fixtures cover the certified parser subset; no production subscription inventory exists",
+        ),
+        (
+            2,
+            "unknown-field and field-reordering tests",
+            "pass",
+            "runner reorders every fixture and rejects injected undocumented and duplicate fields",
+        ),
+        (
+            3,
+            "numeric boundary tests and fixed-point round trips",
+            "partial",
+            "source decimal lexemes and official CRC32 vector pass; wider property tests remain focused-test work",
+        ),
+        (
+            4,
+            "snapshot/delta reconstruction",
+            "partial",
+            "Spot L2/L3 snapshots are reconstructed and checksum-gated; retained Spot update and Futures engine reconstruction are not yet certified",
+        ),
+        (
+            5,
+            "missing duplicated and reordered sequences",
+            "partial",
+            "Futures sequence fields are retained; transport-session discontinuity tests are not run by this runner",
+        ),
+        (
+            6,
+            "checksum mismatch and forced resnapshot where supported",
+            "pass",
+            "focused connector tests prove Spot L2 and selected L3 mismatch suppression and snapshot recovery",
+        ),
+        (
+            7,
+            "heartbeat timeout and clean reconnect",
+            "partial",
+            "fixture book state is cleared and resnapshotted across a synthetic reconnect; heartbeat timeout supervision is not implemented",
+        ),
+        (
+            8,
+            "rate-limit and backoff",
+            "blocked",
+            "L3 subscription capacity is declared, but production transport enforcement is not implemented",
+        ),
+        (
+            9,
+            "schema-drift fail-safe",
+            "pass",
+            "runner injects and rejects an undocumented field and duplicate key",
+        ),
+        (
+            10,
+            "clock-skew and timestamp-unit",
+            "partial",
+            "Spot RFC3339 and Futures millisecond shapes are retained; clock-skew policy is not implemented",
+        ),
+        (
+            11,
+            "burst-load and bounded queue",
+            "partial",
+            "payload and collection bounds exist; production session queue evidence is not available",
+        ),
+        (
+            12,
+            "raw-WAL replay equivalence",
+            "not_run",
+            "durable parser binding exists, but a Kraken session replay test is not yet executed",
+        ),
+        (
+            13,
+            "kill-and-restart recovery",
+            "blocked",
+            "no supervised production Kraken transport restart path exists",
+        ),
+        (
+            14,
+            "data-completeness metadata",
+            "pass",
+            "unsupported liquidations and delivery uncertainty are declared without overstatement",
+        ),
+        (
+            15,
+            "terms and redistribution review",
+            "pass",
+            "manifest records reviewed-restricted terms and local synthetic fixture provenance",
+        ),
+    ]
+    .into_iter()
+    .map(|(number, name, status, evidence)| CertificationGate {
+        number,
+        name: name.to_owned(),
+        status: status.to_owned(),
+        evidence: evidence.to_owned(),
+    })
+    .collect()
+}
+
 fn workspace_root(fixtures: &Path) -> Result<PathBuf, String> {
     workspace_root_for(fixtures, "binance")
 }
 
 fn workspace_root_for(fixtures: &Path, venue: &str) -> Result<PathBuf, String> {
-    if !matches!(venue, "binance" | "bybit") {
+    if !matches!(venue, "binance" | "bybit" | "kraken") {
         return Err("unsupported fixture venue".to_owned());
     }
     let workspace = Path::new(env!("CARGO_MANIFEST_DIR"))

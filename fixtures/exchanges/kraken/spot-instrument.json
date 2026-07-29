@@ -1,0 +1,47 @@
+{
+  "channel": "instrument",
+  "type": "snapshot",
+  "data": {
+    "assets": [
+      {
+        "borrowable": true,
+        "collateral_value": "1.0",
+        "id": "BTC",
+        "margin_rate": "0.01",
+        "precision": 10,
+        "precision_display": 8,
+        "class": "currency",
+        "status": "enabled"
+      },
+      {
+        "borrowable": true,
+        "collateral_value": "1.0",
+        "id": "USD",
+        "margin_rate": "0.01",
+        "precision": 4,
+        "precision_display": 2,
+        "class": "currency",
+        "status": "enabled"
+      }
+    ],
+    "pairs": [
+      {
+        "base": "BTC",
+        "quote": "USD",
+        "cost_min": "0.5",
+        "cost_precision": 5,
+        "has_index": true,
+        "marginable": false,
+        "price_increment": "0.1",
+        "price_precision": 1,
+        "qty_increment": "0.00000001",
+        "qty_min": "0.0001",
+        "qty_precision": 8,
+        "ws_display_price_precision": 1,
+        "status": "online",
+        "symbol": "BTC/USD",
+        "tick_size": "0.1"
+      }
+    ]
+  }
+}

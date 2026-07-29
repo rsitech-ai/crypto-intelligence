@@ -42,6 +42,7 @@ pub enum TradeSemantics {
 #[serde(rename_all = "snake_case")]
 pub enum SequenceSemantics {
     None,
+    ChecksumValidatedNoSequence,
     MonotonicUpdateId,
     InclusiveRange,
     InclusiveRangeWithPreviousFinal,

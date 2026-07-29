@@ -1,0 +1,83 @@
+schema_version = 1
+venue = "kraken"
+reviewed_on = "2026-07-29"
+evidence_kind = "maintainer-authored-factual-review"
+copyright_policy = "No provider documentation text is copied. This file retains only reviewed protocol facts and source URLs."
+
+[[source]]
+id = "spot_book_v2"
+url = "https://docs.kraken.com/exchange/api-reference/spot-websocket-v2/book"
+facts = [
+  "The Spot v2 book channel carries aggregated L2 snapshots and updates.",
+  "A zero quantity removes a level and updates are processed as a whole before checksum validation.",
+  "One update message may contain repeated changes to the same price and they are applied in message order.",
+  "The checksum always covers the top ten asks followed by the top ten bids.",
+]
+
+[[source]]
+id = "spot_book_checksum_v2"
+url = "https://docs.kraken.com/exchange/guides/websockets/book-checksum-v2"
+facts = [
+  "Checksum input preserves decimal precision, removes decimal points and leading zeros, and uses IEEE CRC32.",
+  "Asks are ordered low to high and bids high to low.",
+  "The documented reference checksum is 3310070434.",
+]
+
+[[source]]
+id = "spot_level3_v2"
+url = "https://docs.kraken.com/exchange/api-reference/spot-websocket-v2/level3"
+facts = [
+  "Level3 exposes individual source-scoped orders and add, modify, and delete events.",
+  "Level3 requires authentication and supports depths 10, 100, and 1000.",
+  "The standard subscription counter permits 200 units per second and depth costs are 5, 25, and 100.",
+  "The client truncates price levels beyond subscribed depth.",
+]
+
+[[source]]
+id = "spot_level3_checksum_v2"
+url = "https://docs.kraken.com/exchange/guides/websockets/l3-checksum-v2"
+facts = [
+  "The Level3 checksum includes every order in queue order within each of the top ten price levels.",
+  "All order events in one message are applied before checksum validation.",
+]
+
+[[source]]
+id = "spot_trade"
+url = "https://docs.kraken.com/exchange/api-reference/spot-websocket-v2/trade"
+facts = [
+  "Spot trade identifiers are sequence numbers unique per book.",
+  "Trade side describes the taker side and snapshots contain the most recent trades.",
+]
+
+[[source]]
+id = "spot_instrument"
+url = "https://docs.kraken.com/exchange/api-reference/spot-websocket-v2/instrument"
+facts = [
+  "The instrument channel publishes reference data for active assets and tradeable pairs.",
+  "Pair metadata includes lifecycle status, price and quantity increments, minimums, and precision.",
+]
+
+[[source]]
+id = "spot_connection_channels"
+url = "https://docs.kraken.com/exchange/api-reference/spot-websocket-v2/status"
+facts = [
+  "Status is emitted on connection and when the trading-engine state changes.",
+  "Documented system states are online, cancel_only, maintenance, and post_only.",
+  "Heartbeat messages are automatic during otherwise idle subscriptions.",
+]
+
+[[source]]
+id = "futures_book"
+url = "https://docs.kraken.com/exchange/api-reference/futures-websocket/book"
+facts = [
+  "Futures book snapshots and deltas carry positive message sequence numbers and millisecond timestamps.",
+  "A zero delta quantity removes a price level.",
+]
+
+[[source]]
+id = "futures_trade"
+url = "https://docs.kraken.com/exchange/api-reference/futures-websocket/trade"
+facts = [
+  "Futures trades carry source UID, sequence, taker side, type, millisecond time, quantity, and price.",
+  "Documented trade classifications include fill, liquidation, termination, and block.",
+]
