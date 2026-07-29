@@ -24,6 +24,8 @@ pub enum FeatureEntity {
     Instrument(InstrumentId),
     Asset(AssetId),
     AssetPair(AssetId, AssetId),
+    AssetSource(AssetId, SourceId),
+    AssetSourcePair(AssetId, SourceId, SourceId),
     Venue(VenueId),
     Source(SourceId),
     Global,
@@ -415,6 +417,11 @@ impl FeatureObservation {
         }
         if let FeatureEntity::AssetPair(left, right) = &input.entity
             && (left == right || compare_asset(left, right) != Ordering::Less)
+        {
+            return Err(RegistryError::InvalidObservationEntity);
+        }
+        if let FeatureEntity::AssetSourcePair(_, left, right) = &input.entity
+            && left == right
         {
             return Err(RegistryError::InvalidObservationEntity);
         }

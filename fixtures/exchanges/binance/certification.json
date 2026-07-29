@@ -5,10 +5,10 @@
   "production_certification_status": "blocked",
   "evidence_scope": "retained-fixture",
   "live_exchange_acceptance": false,
-  "manifest_sha256": "24418fcb639dc04891951aa56fe3b67eb36af3f5d6b1f3df0b7d29a0d6f289b3",
+  "manifest_sha256": "ddbf08cc06d28e042dd7809a33cef5b1690d753864844d4acc3621d99bdab760",
   "connector_version": "1.0.0",
   "trade_semantics": "aggregate",
-  "liquidation_completeness": "sampled_latest_per_symbol_window_1000ms",
+  "liquidation_completeness": "sampled_largest_per_symbol_window_1000ms",
   "fixture_count": 13,
   "fixtures": {
     "fixtures/exchanges/binance/spot-aggregate-trade.json": "61fae1213183e6afd376d19bc53e1bfc0c70948b4422f61679681e6c5badf8a3",
@@ -142,7 +142,7 @@
       "number": 14,
       "name": "data-completeness metadata",
       "status": "pass",
-      "evidence": "capability is sampled-latest-per-symbol-window at 1000 ms"
+      "evidence": "capability is sampled-largest-per-symbol-window at 1000 ms"
     },
     {
       "number": 15,

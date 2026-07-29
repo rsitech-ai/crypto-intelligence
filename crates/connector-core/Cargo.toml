@@ -10,6 +10,7 @@ publish.workspace = true
 blake3.workspace = true
 domain = { path = "../domain" }
 event-envelope = { path = "../event-envelope" }
+instrument-registry = { path = "../instrument-registry" }
 raw-wal = { path = "../raw-wal" }
 serde.workspace = true
 serde_json.workspace = true

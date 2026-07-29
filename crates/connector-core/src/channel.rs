@@ -17,7 +17,8 @@ use tokio::sync::{
 };
 
 use crate::{
-    lifecycle::LifecycleEvent, raw_capture::DurableRawReference, termination::QuarantineReason,
+    DerivativeNormalizationReceipt, lifecycle::LifecycleEvent, raw_capture::DurableRawReference,
+    termination::QuarantineReason,
 };
 
 pub const MAX_LOSS_SAMPLING_STREAMS: usize = 4_096;
@@ -370,11 +371,53 @@ impl CancellationReceiver {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NormalizedOutput {
     raw: DurableRawReference,
-    event: EventEnvelope,
+    payload: NormalizedPayload,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+// Plain market events are the hot path and remain inline. The larger,
+// authority-bearing derivative receipt is boxed so it cannot inflate every
+// queue item; boxing both variants would add an allocation to every plain
+// event solely to make the enum variants similar in size.
+#[allow(clippy::large_enum_variant)]
+enum NormalizedPayload {
+    Plain(EventEnvelope),
+    Derivative(Box<DerivativeNormalizationReceipt>),
 }
 
 impl NormalizedOutput {
     pub fn try_new(raw: DurableRawReference, event: EventEnvelope) -> Result<Self, ChannelError> {
+        if matches!(
+            event.event_type(),
+            EventType::FundingObservation
+                | EventType::OpenInterestObservation
+                | EventType::MarkIndexObservation
+                | EventType::LiquidationObservation
+        ) {
+            return Err(ChannelError::DerivativeAuthorityRequired);
+        }
+        Self::validate_raw_event(&raw, &event)?;
+        Ok(Self {
+            raw,
+            payload: NormalizedPayload::Plain(event),
+        })
+    }
+
+    pub fn try_new_derivative(
+        raw: DurableRawReference,
+        receipt: DerivativeNormalizationReceipt,
+    ) -> Result<Self, ChannelError> {
+        Self::validate_raw_event(&raw, receipt.event())?;
+        Ok(Self {
+            raw,
+            payload: NormalizedPayload::Derivative(Box::new(receipt)),
+        })
+    }
+
+    fn validate_raw_event(
+        raw: &DurableRawReference,
+        event: &EventEnvelope,
+    ) -> Result<(), ChannelError> {
         let metadata = event.metadata().as_unchecked();
         if &metadata.source != raw.source() {
             return Err(ChannelError::RawSourceMismatch);
@@ -391,15 +434,25 @@ impl NormalizedOutput {
         if metadata.receive_monotonic_ns != raw.receive_monotonic_ns() {
             return Err(ChannelError::RawReceiveMonotonicTimeMismatch);
         }
-        Ok(Self { raw, event })
+        Ok(())
     }
 
     pub const fn raw(&self) -> &DurableRawReference {
         &self.raw
     }
 
-    pub const fn event(&self) -> &EventEnvelope {
-        &self.event
+    pub fn event(&self) -> &EventEnvelope {
+        match &self.payload {
+            NormalizedPayload::Plain(event) => event,
+            NormalizedPayload::Derivative(receipt) => receipt.event(),
+        }
+    }
+
+    pub fn derivative_receipt(&self) -> Option<&DerivativeNormalizationReceipt> {
+        match &self.payload {
+            NormalizedPayload::Plain(_) => None,
+            NormalizedPayload::Derivative(receipt) => Some(receipt),
+        }
     }
 }
 
@@ -540,12 +593,12 @@ pub struct BoundedNormalizedSink {
 
 impl BoundedNormalizedSink {
     pub async fn send(&self, output: NormalizedOutput) -> Result<(), ChannelError> {
-        let priority = output.event.event_type().priority();
+        let priority = output.event().event_type().priority();
         let required = required_book_stream(&output);
         if let Some((key, _)) = &required {
             self.ensure_registered(key)?;
         }
-        if output.event.event_type() == EventType::BookDelta
+        if output.event().event_type() == EventType::BookDelta
             && let Some((key, _)) = &required
             && self.is_invalidated(key)?
         {
@@ -685,12 +738,12 @@ impl BoundedNormalizedSink {
     }
 
     fn try_send_inner(&self, output: NormalizedOutput) -> Result<(), ChannelError> {
-        let priority = output.event.event_type().priority();
+        let priority = output.event().event_type().priority();
         let required = required_book_stream(&output);
         if let Some((key, _)) = &required {
             self.ensure_registered(key)?;
         }
-        if output.event.event_type() == EventType::BookDelta
+        if output.event().event_type() == EventType::BookDelta
             && let Some((key, _)) = &required
             && self.is_invalidated(key)?
         {
@@ -1303,6 +1356,8 @@ pub enum ChannelError {
     RawReceiveWallTimeMismatch,
     #[error("normalized event receive monotonic time does not match its durable receipt")]
     RawReceiveMonotonicTimeMismatch,
+    #[error("authority-bound derivative observations require a sealed derivative receipt")]
+    DerivativeAuthorityRequired,
     #[error("normalized event could not be encoded for byte accounting")]
     EventEncodingFailed,
     #[error("normalized channel invalidation state is poisoned")]

@@ -498,10 +498,13 @@ checksum = "c8d4a3bb8b1e0c1050499d1815f5ab16d04f0959b233085fb31653fbfc9d98f9"
 name = "collector-runtime"
 version = "0.1.0"
 dependencies = [
+ "connector-binance",
  "connector-core",
  "domain",
  "quality",
+ "rustix",
  "serde",
+ "tempfile",
  "thiserror",
  "tokio",
 ]
@@ -593,6 +596,7 @@ dependencies = [
  "blake3",
  "domain",
  "event-envelope",
+ "instrument-registry",
  "raw-wal",
  "serde",
  "serde_json",
@@ -874,6 +878,7 @@ name = "feature-engine"
 version = "0.1.0"
 dependencies = [
  "blake3",
+ "collector-runtime",
  "connector-binance",
  "connector-core",
  "consolidated-market",

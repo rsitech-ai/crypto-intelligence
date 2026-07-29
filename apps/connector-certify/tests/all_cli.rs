@@ -48,7 +48,7 @@ fn all_check_is_stable_and_covers_every_v1_venue() {
     let hash = line.strip_prefix(prefix).expect("stable aggregate summary");
     assert_eq!(
         hash,
-        "30b94376709566177bf9b7d4a10866add7cf4b8f5adbe46af70b412fcc0bd3b7"
+        "82759a1cacacdd23ca4282236139552fcc472c30dccd06bb0b326c76464fe9a1"
     );
 }
 

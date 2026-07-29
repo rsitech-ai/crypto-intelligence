@@ -692,6 +692,7 @@ fn map_parse_error(error: NativeParseError) -> MetadataError {
         | NativeParseError::InvalidSequence
         | NativeParseError::TooManyLevels
         | NativeParseError::InvalidValue
-        | NativeParseError::RawPayloadMismatch => MetadataError::MalformedJson,
+        | NativeParseError::RawPayloadMismatch
+        | NativeParseError::RawStreamMismatch => MetadataError::MalformedJson,
     }
 }

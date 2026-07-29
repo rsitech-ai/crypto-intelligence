@@ -1,12 +1,13 @@
 use std::num::{NonZeroU32, NonZeroU64};
 
 use connector_binance::{
-    BinanceInput, BinanceMarket, NormalizationContext, NormalizationError,
-    normalize_depth_snapshot, normalize_native_message, normalize_trade_with_receipt,
-    parse_durable_depth_snapshot, parse_durable_native_message,
+    BinanceDerivativeStream, BinanceInput, BinanceMarket, NormalizationContext, NormalizationError,
+    normalize_depth_snapshot, normalize_derivative_with_receipts, normalize_native_message,
+    normalize_trade_with_receipt, parse_durable_depth_snapshot, parse_durable_native_message,
 };
 use connector_core::{
-    DurableRawCaptureChannel, DurableRawReference, RawCapture, wal_stream_source_identity,
+    ChannelError, Completeness, DurableRawCaptureChannel, DurableRawReference, NormalizedOutput,
+    RawCapture, wal_stream_source_identity,
 };
 use domain::{
     AssetId, AssetNamespace, ContractKind, ContractValueUnit, InstrumentDefinition,
@@ -82,23 +83,53 @@ fn definition(product_type: ProductType) -> InstrumentDefinition {
 }
 
 fn catalog() -> std::sync::Arc<instrument_registry::CatalogSnapshot> {
+    catalog_known_at(UnixNanos::new(1))
+}
+
+fn catalog_known_at(
+    as_known_at: UnixNanos,
+) -> std::sync::Arc<instrument_registry::CatalogSnapshot> {
     let mut registry = InstrumentRegistry::new();
     registry
         .append_definition(
             definition(ProductType::Spot),
-            RevisionMetadata::try_new(UnixNanos::new(1), "fixture:spot").expect("metadata"),
+            RevisionMetadata::try_new(as_known_at, "fixture:spot").expect("metadata"),
         )
         .expect("spot");
     registry
         .append_definition(
             definition(ProductType::Perpetual),
-            RevisionMetadata::try_new(UnixNanos::new(1), "fixture:perpetual").expect("metadata"),
+            RevisionMetadata::try_new(as_known_at, "fixture:perpetual").expect("metadata"),
         )
         .expect("perpetual");
     registry.snapshot().expect("catalog")
 }
 
-async fn durable_reference(payload: &[u8]) -> DurableRawReference {
+#[tokio::test]
+async fn normalization_rejects_catalog_knowledge_from_after_processing_time() {
+    let raw = durable_reference(
+        USDM_MARK,
+        BinanceInput::UsdMMarkPriceWebSocket.wal_stream_name(),
+    )
+    .await;
+    let future_catalog = catalog_known_at(UnixNanos::new(NORMALIZATION_TIME.value() + 1));
+
+    assert!(matches!(
+        NormalizationContext::try_new(
+            &future_catalog,
+            &raw,
+            NORMALIZATION_TIME,
+            CONNECTION_START,
+            NonZeroU64::new(11).expect("subscription"),
+            "normalization-test",
+        ),
+        Err(NormalizationError::InvalidContext(
+            "catalog knowledge ordering"
+        ))
+    ));
+}
+
+async fn durable_reference(payload: &[u8], stream_name: &str) -> DurableRawReference {
     let directory = tempfile::tempdir().expect("temporary WAL");
     let mut segment_id = [0_u8; 16];
     segment_id.copy_from_slice(&blake3::hash(payload).as_bytes()[..16]);
@@ -109,7 +140,7 @@ async fn durable_reference(payload: &[u8]) -> DurableRawReference {
         "installation",
         "build",
         vec![
-            StreamDescriptor::new(7, wal_stream_source_identity(&source()), "fixture")
+            StreamDescriptor::new(7, wal_stream_source_identity(&source()), stream_name)
                 .expect("stream"),
         ],
     )
@@ -170,11 +201,25 @@ async fn durable_reference(payload: &[u8]) -> DurableRawReference {
 
 #[tokio::test]
 async fn durable_parser_rejects_bytes_from_a_different_raw_receipt() {
-    let raw = durable_reference(SPOT_TRADE).await;
+    let raw = durable_reference(SPOT_TRADE, BinanceInput::SpotWebSocket.wal_stream_name()).await;
 
     assert_eq!(
         parse_durable_native_message(BinanceInput::UsdMOpenInterestRest, USDM_OI, &raw),
         Err(connector_binance::NativeParseError::RawPayloadMismatch)
+    );
+}
+
+#[tokio::test]
+async fn durable_parser_rejects_identical_bytes_from_the_wrong_wal_stream_contract() {
+    let raw = durable_reference(
+        SPOT_TRADE,
+        BinanceInput::UsdMMarkPriceWebSocket.wal_stream_name(),
+    )
+    .await;
+
+    assert_eq!(
+        parse_durable_native_message(BinanceInput::SpotWebSocket, SPOT_TRADE, &raw),
+        Err(connector_binance::NativeParseError::RawStreamMismatch)
     );
 }
 
@@ -197,7 +242,8 @@ fn context<'a>(
 async fn spot_and_perpetual_same_symbol_bind_to_distinct_product_identities() {
     let catalog = catalog();
 
-    let spot_raw = durable_reference(SPOT_TRADE).await;
+    let spot_raw =
+        durable_reference(SPOT_TRADE, BinanceInput::SpotWebSocket.wal_stream_name()).await;
     let spot = parse_durable_native_message(BinanceInput::SpotWebSocket, SPOT_TRADE, &spot_raw)
         .expect("spot parse");
     let spot_events =
@@ -218,9 +264,13 @@ async fn spot_and_perpetual_same_symbol_bind_to_distinct_product_identities() {
     };
     assert_eq!(trade.side, Side::Sell);
 
-    let futures_raw = durable_reference(USDM_DEPTH).await;
+    let futures_raw = durable_reference(
+        USDM_DEPTH,
+        BinanceInput::UsdMDepthWebSocket.wal_stream_name(),
+    )
+    .await;
     let futures =
-        parse_durable_native_message(BinanceInput::UsdMPublicWebSocket, USDM_DEPTH, &futures_raw)
+        parse_durable_native_message(BinanceInput::UsdMDepthWebSocket, USDM_DEPTH, &futures_raw)
             .expect("depth parse");
     let futures_events =
         normalize_native_message(futures, &context(&catalog, &futures_raw)).expect("normalize");
@@ -244,7 +294,7 @@ async fn spot_and_perpetual_same_symbol_bind_to_distinct_product_identities() {
 #[tokio::test]
 async fn authoritative_trade_receipt_is_minted_from_the_sealed_durable_parser_output() {
     let catalog = catalog();
-    let raw = durable_reference(SPOT_TRADE).await;
+    let raw = durable_reference(SPOT_TRADE, BinanceInput::SpotWebSocket.wal_stream_name()).await;
     let parsed = parse_durable_native_message(BinanceInput::SpotWebSocket, SPOT_TRADE, &raw)
         .expect("durable trade parse");
     let receipt = normalize_trade_with_receipt(parsed, &context(&catalog, &raw))
@@ -257,9 +307,13 @@ async fn authoritative_trade_receipt_is_minted_from_the_sealed_durable_parser_ou
     };
     assert_eq!(trade.side, Side::Sell);
 
-    let depth_raw = durable_reference(USDM_DEPTH).await;
+    let depth_raw = durable_reference(
+        USDM_DEPTH,
+        BinanceInput::UsdMDepthWebSocket.wal_stream_name(),
+    )
+    .await;
     let depth =
-        parse_durable_native_message(BinanceInput::UsdMPublicWebSocket, USDM_DEPTH, &depth_raw)
+        parse_durable_native_message(BinanceInput::UsdMDepthWebSocket, USDM_DEPTH, &depth_raw)
             .expect("durable depth parse");
     assert_eq!(
         normalize_trade_with_receipt(depth, &context(&catalog, &depth_raw)),
@@ -270,7 +324,11 @@ async fn authoritative_trade_receipt_is_minted_from_the_sealed_durable_parser_ou
 #[tokio::test]
 async fn durable_snapshot_normalizes_to_a_canonical_product_aware_event() {
     let catalog = catalog();
-    let raw = durable_reference(SPOT_SNAPSHOT).await;
+    let raw = durable_reference(
+        SPOT_SNAPSHOT,
+        BinanceMarket::Spot.snapshot_wal_stream_name(),
+    )
+    .await;
     let snapshot =
         parse_durable_depth_snapshot(BinanceMarket::Spot, "BTCUSDT", SPOT_SNAPSHOT, &raw)
             .expect("durable snapshot");
@@ -301,57 +359,157 @@ async fn durable_snapshot_normalizes_to_a_canonical_product_aware_event() {
 async fn derivative_observations_normalize_with_sampled_liquidation_lineage() {
     let catalog = catalog();
 
-    let mark_raw = durable_reference(USDM_MARK).await;
+    let mark_raw = durable_reference(
+        USDM_MARK,
+        BinanceInput::UsdMMarkPriceWebSocket.wal_stream_name(),
+    )
+    .await;
     let mark =
-        parse_durable_native_message(BinanceInput::UsdMMarketWebSocket, USDM_MARK, &mark_raw)
+        parse_durable_native_message(BinanceInput::UsdMMarkPriceWebSocket, USDM_MARK, &mark_raw)
             .expect("mark");
-    let mark_events =
-        normalize_native_message(mark, &context(&catalog, &mark_raw)).expect("mark normalize");
+    let mark_receipts =
+        normalize_derivative_with_receipts(mark.clone(), &context(&catalog, &mark_raw))
+            .expect("mark receipts");
+    assert_eq!(mark_receipts.len(), 2);
     assert_eq!(
-        mark_events
+        mark_receipts
             .iter()
-            .map(|event| event.event_type())
+            .map(|receipt| receipt.stream())
+            .collect::<Vec<_>>(),
+        vec![
+            BinanceDerivativeStream::MarkIndex,
+            BinanceDerivativeStream::Funding
+        ]
+    );
+    assert!(mark_receipts.iter().all(|receipt| matches!(
+        receipt.completeness(),
+        Completeness::VenueReportedComplete {
+            delivery_uncertainty: true
+        }
+    )));
+    assert!(
+        mark_receipts
+            .iter()
+            .all(|receipt| receipt.connector_version() == "1.0.0")
+    );
+    assert!(mark_receipts.iter().all(|receipt| {
+        receipt.catalog_as_known_at() == UnixNanos::new(1)
+            && receipt.catalog_digest() == catalog.catalog_digest()
+            && receipt.definition_hash() != &[0; 32]
+    }));
+    assert!(
+        mark_receipts
+            .iter()
+            .all(|receipt| receipt.instrument_definition() == &definition(ProductType::Perpetual))
+    );
+    assert!(
+        mark_receipts
+            .iter()
+            .all(|receipt| receipt.catalog_digest() == catalog.catalog_digest())
+    );
+    assert_eq!(
+        normalize_native_message(mark, &context(&catalog, &mark_raw)),
+        Err(NormalizationError::ExpectedDerivativeObservation)
+    );
+    assert_eq!(
+        mark_receipts
+            .iter()
+            .map(|receipt| receipt.event().event_type())
             .collect::<Vec<_>>(),
         vec![
             EventType::MarkIndexObservation,
             EventType::FundingObservation
         ]
     );
-    assert_ne!(mark_events[0].id(), mark_events[1].id());
+    assert_ne!(mark_receipts[0].event().id(), mark_receipts[1].event().id());
+    assert_eq!(
+        NormalizedOutput::try_new(mark_raw.clone(), mark_receipts[0].event().clone()),
+        Err(ChannelError::DerivativeAuthorityRequired)
+    );
 
-    let oi_raw = durable_reference(USDM_OI).await;
+    let oi_raw = durable_reference(
+        USDM_OI,
+        BinanceInput::UsdMOpenInterestRest.wal_stream_name(),
+    )
+    .await;
     let oi = parse_durable_native_message(BinanceInput::UsdMOpenInterestRest, USDM_OI, &oi_raw)
         .expect("OI");
-    let oi_events =
-        normalize_native_message(oi, &context(&catalog, &oi_raw)).expect("OI normalize");
+    let oi_receipts = normalize_derivative_with_receipts(oi.clone(), &context(&catalog, &oi_raw))
+        .expect("OI receipts");
+    assert_eq!(oi_receipts.len(), 1);
     assert_eq!(
-        oi_events[0].event_type(),
+        oi_receipts[0].stream(),
+        BinanceDerivativeStream::OpenInterest
+    );
+    assert_eq!(
+        normalize_native_message(oi, &context(&catalog, &oi_raw)),
+        Err(NormalizationError::ExpectedDerivativeObservation)
+    );
+    assert_eq!(
+        oi_receipts[0].event().event_type(),
         EventType::OpenInterestObservation
     );
-    let oi_metadata = oi_events[0].metadata().as_unchecked();
+    let oi_metadata = oi_receipts[0].event().metadata().as_unchecked();
     assert_eq!(oi_metadata.exchange_timestamp, None);
     assert_eq!(
         oi_metadata.exchange_transaction_timestamp,
         Some(UnixNanos::new(1_672_515_782_136_000_000))
     );
 
-    let liquidation_raw = durable_reference(USDM_LIQUIDATION).await;
+    let liquidation_raw = durable_reference(
+        USDM_LIQUIDATION,
+        BinanceInput::UsdMLiquidationWebSocket.wal_stream_name(),
+    )
+    .await;
     let liquidation = parse_durable_native_message(
-        BinanceInput::UsdMMarketWebSocket,
+        BinanceInput::UsdMLiquidationWebSocket,
         USDM_LIQUIDATION,
         &liquidation_raw,
     )
     .expect("liquidation");
-    let first = normalize_native_message(liquidation.clone(), &context(&catalog, &liquidation_raw))
-        .expect("liquidation normalize");
-    let second = normalize_native_message(liquidation, &context(&catalog, &liquidation_raw))
-        .expect("deterministic normalize");
-    assert_eq!(first, second);
+    let liquidation_receipts = normalize_derivative_with_receipts(
+        liquidation.clone(),
+        &context(&catalog, &liquidation_raw),
+    )
+    .expect("liquidation receipt");
+    assert_eq!(liquidation_receipts.len(), 1);
     assert_eq!(
-        first[0].metadata().as_unchecked().quality_flags,
+        liquidation_receipts[0].stream(),
+        BinanceDerivativeStream::Liquidation
+    );
+    assert_eq!(
+        liquidation_receipts[0].completeness(),
+        Completeness::SampledLargestPerSymbolWindow {
+            window_ms: NonZeroU32::new(1_000).expect("window")
+        }
+    );
+    assert_eq!(
+        liquidation_receipts[0]
+            .event()
+            .metadata()
+            .as_unchecked()
+            .quality_flags,
         QualityFlags::PARTIAL
     );
-    let UncheckedEventPayload::LiquidationObservation(value) = first[0].payload().as_unchecked()
+    assert_eq!(
+        normalize_native_message(liquidation.clone(), &context(&catalog, &liquidation_raw)),
+        Err(NormalizationError::ExpectedDerivativeObservation)
+    );
+    let first = normalize_derivative_with_receipts(
+        liquidation.clone(),
+        &context(&catalog, &liquidation_raw),
+    )
+    .expect("liquidation normalize");
+    let second =
+        normalize_derivative_with_receipts(liquidation, &context(&catalog, &liquidation_raw))
+            .expect("deterministic normalize");
+    assert_eq!(first, second);
+    assert_eq!(
+        first[0].event().metadata().as_unchecked().quality_flags,
+        QualityFlags::PARTIAL
+    );
+    let UncheckedEventPayload::LiquidationObservation(value) =
+        first[0].event().payload().as_unchecked()
     else {
         panic!("liquidation payload");
     };
@@ -364,7 +522,11 @@ async fn unresolved_instruments_fail_closed_without_guessing_a_generation() {
     let unknown_symbol = String::from_utf8(SPOT_TRADE.to_vec())
         .expect("utf8 fixture")
         .replace("BTCUSDT", "ETHUSDT");
-    let raw = durable_reference(unknown_symbol.as_bytes()).await;
+    let raw = durable_reference(
+        unknown_symbol.as_bytes(),
+        BinanceInput::SpotWebSocket.wal_stream_name(),
+    )
+    .await;
     let message =
         parse_durable_native_message(BinanceInput::SpotWebSocket, unknown_symbol.as_bytes(), &raw)
             .expect("trade parse");

@@ -2191,8 +2191,12 @@ async fn authenticated_binance_flow_trade(
         "installation",
         "build",
         vec![
-            StreamDescriptor::new(7, wal_stream_source_identity(&source), "fixture")
-                .expect("stream descriptor"),
+            StreamDescriptor::new(
+                7,
+                wal_stream_source_identity(&source),
+                BinanceInput::SpotWebSocket.wal_stream_name(),
+            )
+            .expect("stream descriptor"),
         ],
     )
     .expect("segment metadata");

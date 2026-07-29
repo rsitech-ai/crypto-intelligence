@@ -1,12 +1,12 @@
 use domain::{AssetId, AssetNamespace, InstrumentId, SourceId, SourceKind, UnixNanos, VenueId};
 use feature_registry::{
-    CodeRevision, DurationNanos, EntityScope, EventTimePolicy, FeatureDatum, FeatureDefinition,
-    FeatureDefinitionInput, FeatureDocumentation, FeatureEntity, FeatureId, FeatureObservation,
-    FeatureObservationInput, FeatureRegistry, FeatureStatus, FeatureValue, FeatureValueType,
-    FinalityState, FixedDecimalMap, FormulaHash, InputRequirement, LineageHash, MissingnessPolicy,
-    MissingnessReason, NormalizationKind, NormalizationPolicy, ObservationRevision,
-    QualityRequirement, QualityScore, RegistryError, SourceCoverage, SourceCoverageEntry,
-    WindowDefinition, WindowId, WindowKind,
+    CodeRevision, DurationNanos, EntityScope, EventTimePolicy, FeatureConsumptionRole,
+    FeatureDatum, FeatureDefinition, FeatureDefinitionInput, FeatureDocumentation, FeatureEntity,
+    FeatureId, FeatureObservation, FeatureObservationInput, FeatureRegistry, FeatureStatus,
+    FeatureValue, FeatureValueType, FinalityState, FixedDecimalMap, FormulaHash, InputRequirement,
+    LineageHash, MissingnessPolicy, MissingnessReason, NormalizationKind, NormalizationPolicy,
+    ObservationRevision, QualityRequirement, QualityScore, RegistryError, SourceCoverage,
+    SourceCoverageEntry, WindowDefinition, WindowId, WindowKind,
 };
 use fixed_decimal::FixedDecimal;
 use quality::SourceHealthState;
@@ -43,6 +43,7 @@ fn definition_input(id: &str, feature_version: &str) -> FeatureDefinitionInput {
         id: FeatureId::new(id).expect("test feature ID should be valid"),
         version: version(feature_version),
         status: FeatureStatus::Required,
+        consumption_role: FeatureConsumptionRole::ModelEligible,
         value_type: FeatureValueType::FixedDecimal,
         entities: EntityScope::Instrument,
         required_inputs: vec![
@@ -214,6 +215,37 @@ fn registry_snapshot_and_digest_are_insertion_order_independent() {
 }
 
 #[test]
+fn gating_only_definitions_are_machine_rejected_as_model_inputs() {
+    let mut input = definition_input("source_outage_gate", "1.0.0");
+    input.consumption_role = FeatureConsumptionRole::GatingOnly;
+    let definition = FeatureDefinition::try_new(input).expect("gating definition");
+    assert_eq!(
+        definition.consumption_role(),
+        FeatureConsumptionRole::GatingOnly
+    );
+    let mut registry = FeatureRegistry::new();
+    registry
+        .register(definition)
+        .expect("register gating definition");
+
+    assert_eq!(
+        registry.ensure_model_input(
+            &FeatureId::new("source_outage_gate").expect("id"),
+            &version("1.0.0")
+        ),
+        Err(RegistryError::DefinitionNotModelEligible)
+    );
+    let mut gating_observation = observation().into_input();
+    gating_observation.feature_id = FeatureId::new("source_outage_gate").expect("id");
+    let gating_observation =
+        FeatureObservation::try_new(gating_observation).expect("shaped observation");
+    assert_eq!(
+        registry.validate_model_input_observation(&gating_observation),
+        Err(RegistryError::DefinitionNotModelEligible)
+    );
+}
+
+#[test]
 fn observation_is_validated_against_the_registered_definition() {
     let mut registry = FeatureRegistry::new();
     registry
@@ -290,6 +322,40 @@ fn observation_rejects_noncanonical_asset_pairs() {
         FeatureObservation::try_new(reversed),
         Err(RegistryError::InvalidObservationEntity)
     );
+}
+
+#[test]
+fn source_scoped_asset_entities_preserve_single_and_pair_identity() {
+    let btc = asset("bitcoin", "BTC");
+    let binance = source("binance");
+    let bybit = source("bybit");
+    let mut registry = FeatureRegistry::new();
+    let mut definition = definition_input("venue_depth_share", "1.0.0");
+    definition.entities = EntityScope::AssetSource;
+    registry
+        .register(FeatureDefinition::try_new(definition).expect("definition"))
+        .expect("register");
+
+    let mut observation_input = observation().into_input();
+    observation_input.feature_id = FeatureId::new("venue_depth_share").expect("feature");
+    observation_input.entity = FeatureEntity::AssetSource(btc.clone(), binance.clone());
+    let scoped_observation =
+        FeatureObservation::try_new(observation_input).expect("source-scoped entity");
+    registry
+        .validate_observation(&scoped_observation)
+        .expect("scope must match");
+
+    let mut duplicate_pair = scoped_observation.into_input();
+    duplicate_pair.entity =
+        FeatureEntity::AssetSourcePair(btc.clone(), binance.clone(), binance.clone());
+    assert_eq!(
+        FeatureObservation::try_new(duplicate_pair),
+        Err(RegistryError::InvalidObservationEntity)
+    );
+
+    let mut directional_pair = observation().into_input();
+    directional_pair.entity = FeatureEntity::AssetSourcePair(btc, binance, bybit);
+    assert!(FeatureObservation::try_new(directional_pair).is_ok());
 }
 
 #[test]
@@ -581,7 +647,7 @@ fn machine_snapshot_is_canonical_json_with_no_runtime_capacity() {
     )
     .expect("snapshot should be JSON");
 
-    assert_eq!(snapshot["schema_version"], 2);
+    assert_eq!(snapshot["schema_version"], 3);
     assert_eq!(snapshot["definitions"][0]["id"], "realized_volatility");
     assert!(snapshot.get("capacity").is_none());
 }
@@ -636,8 +702,8 @@ fn registry_snapshot_digest_is_schema_pinned() {
     assert_eq!(
         registry.snapshot_digest().expect("snapshot should hash"),
         [
-            31, 214, 231, 115, 153, 150, 54, 160, 48, 31, 162, 3, 249, 69, 70, 50, 100, 148, 88,
-            235, 161, 178, 71, 6, 55, 199, 123, 72, 79, 240, 55, 111,
+            242, 253, 90, 145, 31, 18, 43, 150, 92, 118, 162, 128, 61, 81, 159, 26, 226, 41, 91,
+            245, 174, 247, 124, 86, 225, 219, 22, 163, 20, 64, 106, 60,
         ],
         "update this golden only with an intentional snapshot schema version change"
     );
@@ -738,6 +804,7 @@ fn data_dictionary_covers_the_normative_contract_and_fixture() {
         "`missingness_reason`",
         "`lineage_hash`",
         "## Feature definition contract",
+        "`consumption_role`",
         "## realized-volatility",
         "## trade-imbalance",
         "No-leakage rule",

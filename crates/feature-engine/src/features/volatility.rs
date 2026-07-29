@@ -2,9 +2,9 @@
 
 use blake3::Hasher;
 use feature_registry::{
-    DurationNanos, EntityScope, EventTimePolicy, FeatureDefinition, FeatureDefinitionInput,
-    FeatureDocumentation, FeatureEntity, FeatureId, FeatureObservation, FeatureStatus,
-    FeatureValue, FeatureValueType, FinalityState, FormulaHash, InputRequirement,
+    DurationNanos, EntityScope, EventTimePolicy, FeatureConsumptionRole, FeatureDefinition,
+    FeatureDefinitionInput, FeatureDocumentation, FeatureEntity, FeatureId, FeatureObservation,
+    FeatureStatus, FeatureValue, FeatureValueType, FinalityState, FormulaHash, InputRequirement,
     MissingnessPolicy, NormalizationKind, NormalizationPolicy, QualityRequirement, QualityScore,
     RegistryError, WindowDefinition, WindowId, WindowKind,
 };
@@ -45,6 +45,7 @@ pub fn realized_volatility_v2_definition() -> Result<FeatureDefinition, Registry
         id: FeatureId::new("realized_volatility")?,
         version: version.clone(),
         status: FeatureStatus::Required,
+        consumption_role: FeatureConsumptionRole::ModelEligible,
         value_type: FeatureValueType::Float64,
         entities: EntityScope::Asset,
         required_inputs: vec![InputRequirement::new("consolidated.fair_price")?],

@@ -204,6 +204,7 @@ impl CatalogSnapshot {
         ResolvedInstrument {
             definition: entry.definition(),
             definition_revision: entry.definition_revision(),
+            definition_hash: entry.definition_hash(),
             catalog_revision: self.catalog_revision,
             as_known_at: self.as_known_at,
             catalog_digest: &self.catalog_digest,
@@ -215,6 +216,7 @@ impl CatalogSnapshot {
 pub struct ResolvedInstrument<'a> {
     definition: &'a InstrumentDefinition,
     definition_revision: CatalogRevision,
+    definition_hash: &'a [u8; 32],
     catalog_revision: CatalogRevision,
     as_known_at: UnixNanos,
     catalog_digest: &'a [u8; 32],
@@ -227,6 +229,10 @@ impl<'a> ResolvedInstrument<'a> {
 
     pub const fn definition_revision(self) -> CatalogRevision {
         self.definition_revision
+    }
+
+    pub const fn definition_hash(self) -> &'a [u8; 32] {
+        self.definition_hash
     }
 
     pub const fn catalog_revision(self) -> CatalogRevision {

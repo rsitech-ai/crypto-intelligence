@@ -30,7 +30,7 @@ logical_elapsed_ns = 20
 
 [[record]]
 stream_id = 7
-stream_name = "binance-spot-foundation"
+stream_name = "binance-spot-market-v1"
 kind = "spot_depth_snapshot"
 path = "fixtures/exchanges/binance/spot-depth-snapshot.json"
 sha256 = "dd7a81159bb4171a2e2c3de4957a9f9d71c80f282f15cd6d8d3ef566a315ba5c"
@@ -40,7 +40,7 @@ receive_monotonic_ns = 10
 
 [[record]]
 stream_id = 7
-stream_name = "binance-spot-foundation"
+stream_name = "binance-spot-market-v1"
 kind = "spot_web_socket"
 path = "fixtures/exchanges/binance/spot-depth-update.json"
 sha256 = "0cf55a8e418b5886fd25d6aeefe56e0effb0f076d73745fcf43c74138adc1e27"
@@ -50,7 +50,7 @@ receive_monotonic_ns = 20
 
 [[record]]
 stream_id = 7
-stream_name = "binance-spot-foundation"
+stream_name = "binance-spot-market-v1"
 kind = "spot_web_socket"
 path = "fixtures/exchanges/binance/spot-aggregate-trade.json"
 sha256 = "61fae1213183e6afd376d19bc53e1bfc0c70948b4422f61679681e6c5badf8a3"

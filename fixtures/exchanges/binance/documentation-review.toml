@@ -3,7 +3,7 @@ venue = "binance"
 reviewed_on = "2026-07-29"
 evidence_kind = "maintainer-authored-factual-review"
 copyright_policy = "No provider documentation text is copied. This file retains only reviewed protocol facts and source URLs."
-retrieval_note = "The Binance documentation CDN challenged non-browser retrieval, so immutable repository documentation is preferred where available and the reviewed facts are retained locally."
+retrieval_note = "Official Binance API reference, change-log, and repository documentation were reviewed; only paraphrased protocol facts are retained locally."
 
 [[source]]
 id = "spot_websocket_streams"
@@ -19,7 +19,13 @@ id = "usd_m_market_streams"
 url = "https://developers.binance.com/en/docs/catalog/core-trading-derivatives-trading-usd-s-m-futures/api/ws-streams/market"
 facts = [
   "USD-M market streams include aggregate trade, mark/index/funding, and liquidation snapshots.",
-  "The all-market liquidation stream reports only the latest liquidation per symbol within a 1000-millisecond window.",
+]
+
+[[source]]
+id = "usd_m_change_log"
+url = "https://developers.binance.com/en/docs/derivatives/change-log"
+facts = [
+  "Effective 2026-04-14, each USD-M liquidation stream window represents the largest liquidation order per symbol within 1000 milliseconds.",
 ]
 
 [[source]]

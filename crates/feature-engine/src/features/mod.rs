@@ -22,9 +22,21 @@ pub mod orderbook;
 pub mod orderflow;
 pub mod price;
 pub mod quality;
+pub mod task6_catalog;
+pub mod task6_emission;
 pub mod volatility;
 
 pub use catalog::{Task4FeatureKind, task_four_definitions};
+pub use cross_venue::{
+    CrossVenueSnapshot, DispersionClassification, IndicativePriceDispersion,
+    MAX_CROSS_VENUE_OBSERVATIONS, VenueDeviation, indicative_price_dispersion,
+    venue_depth_concentration,
+};
+pub use derivatives::{
+    LiquidationCoverage, LiquidationNotionalInterpretation, LiquidationVelocity,
+    MAX_DERIVATIVE_WINDOW_OBSERVATIONS, OpenInterestChange, PredictedFundingRate, funding_change,
+    liquidation_velocity, mark_index_divergence, open_interest_change, predicted_funding_rate,
+};
 pub use microstructure_catalog::{Task5FeatureRecipe, task_five_definitions, task_five_recipes};
 pub use microstructure_emission::{
     Task5EmissionError, Task5FeatureEmissionInput, emit_book_snapshot_core_features,
@@ -56,6 +68,22 @@ pub use orderflow::{
     top_of_book_ofi, top_of_book_side_staleness, top_of_book_staleness_for_side,
     trade_cluster_statistics, trade_intensity_per_second, trade_print_sweep_direction,
     trade_shock_response,
+};
+pub use quality::{
+    OperationalGatingFields, OperationalQualitySnapshot, OperationalUncertaintyFields,
+    operational_quality_snapshot,
+};
+pub use task6_catalog::{
+    Task6ComputationAvailability, Task6FeatureRecipe, task_six_definitions, task_six_recipe,
+    task_six_recipes,
+};
+pub use task6_emission::{
+    Task6EmissionError, Task6FeatureEmissionInput, Task6MissingEmissionInput,
+    emit_cascade_eligibility_gate, emit_cross_venue_aggregate_features,
+    emit_cross_venue_source_features, emit_derivative_change_features,
+    emit_derivative_snapshot_features, emit_liquidation_completeness_feature,
+    emit_liquidation_features, emit_operational_source_features, emit_storage_pressure_feature,
+    emit_unavailable_task_six_feature,
 };
 
 pub use price::{
@@ -854,6 +882,17 @@ pub(crate) fn hash_entity(hasher: &mut Hasher, entity: &FeatureEntity) {
             hasher.update(&[6]);
             hash_asset(hasher, left);
             hash_asset(hasher, right);
+        }
+        FeatureEntity::AssetSource(asset, source) => {
+            hasher.update(&[7]);
+            hash_asset(hasher, asset);
+            hash_source(hasher, source);
+        }
+        FeatureEntity::AssetSourcePair(asset, left, right) => {
+            hasher.update(&[8]);
+            hash_asset(hasher, asset);
+            hash_source(hasher, left);
+            hash_source(hasher, right);
         }
         FeatureEntity::Venue(venue) => {
             hasher.update(&[3]);

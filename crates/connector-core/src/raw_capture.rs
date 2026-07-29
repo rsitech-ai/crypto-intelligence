@@ -119,6 +119,7 @@ pub struct DurableRawReference {
     payload_hash: [u8; 32],
     source: SourceId,
     stream_id: NonZeroU32,
+    stream_name: String,
     connection_epoch: NonZeroU64,
     record_sequence: NonZeroU64,
     receive_wall_time: UnixNanos,
@@ -151,6 +152,7 @@ impl DurableRawReference {
             payload_hash: *record.payload_hash(),
             source,
             stream_id,
+            stream_name: record.stream_name().to_owned(),
             connection_epoch,
             record_sequence,
             receive_wall_time: UnixNanos::new(metadata.receive_wall_time_ns),
@@ -176,6 +178,10 @@ impl DurableRawReference {
 
     pub const fn stream_id(&self) -> NonZeroU32 {
         self.stream_id
+    }
+
+    pub fn stream_name(&self) -> &str {
+        &self.stream_name
     }
 
     pub const fn connection_epoch(&self) -> NonZeroU64 {
@@ -373,6 +379,7 @@ impl PendingRawCapture {
             payload_hash,
             source: self.capture.source,
             stream_id: self.capture.stream_id,
+            stream_name: proof.stream_name().to_owned(),
             connection_epoch: self.capture.connection_epoch,
             record_sequence: self.capture.record_sequence,
             receive_wall_time: self.capture.receive_wall_time,

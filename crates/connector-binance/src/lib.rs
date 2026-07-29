@@ -10,6 +10,10 @@ mod session;
 
 pub use book_sync::{BinanceBookSyncError, BinanceBookSynchronizer};
 pub use capabilities::binance_capabilities;
+pub use connector_core::{
+    DerivativeNormalizationReceipt as BinanceDerivativeNormalizationReceipt,
+    DerivativeStream as BinanceDerivativeStream,
+};
 pub use metadata::{
     BinanceInstrumentLifecycle, BinanceInstrumentLifecycleKind, BinanceInstrumentMetadata,
     ExchangeInfoReport, InstrumentMetadataBinding, MetadataError, parse_exchange_info_report,
@@ -22,13 +26,14 @@ pub use native::{
     parse_native_message,
 };
 pub use normalizer::{
-    BinanceTradeNormalizationReceipt, NormalizationContext, NormalizationError,
-    normalize_depth_snapshot, normalize_native_message, normalize_trade_with_receipt,
+    BinanceNormalizedEvent, BinanceTradeNormalizationReceipt, NormalizationContext,
+    NormalizationError, normalize_depth_snapshot, normalize_derivative_with_receipts,
+    normalize_native_message, normalize_native_with_authority, normalize_trade_with_receipt,
 };
 pub use parser::{
     EXPECTED_GENERATION, EXPECTED_SOURCE, EXPECTED_SYMBOL, ParseError, parse_fixture_line,
 };
 pub use session::{
     BinanceConfig, BinanceConnector, BinanceSessionError, BinanceSessionRecord,
-    BinanceSessionRoute, BinanceSessionSender, bounded_session_channel,
+    BinanceSessionRoute, BinanceSessionSender, BinanceStreamContract, bounded_session_channel,
 };

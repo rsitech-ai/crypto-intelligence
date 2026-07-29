@@ -11,6 +11,8 @@ Every production or research feature must have:
 - one section in this file whose anchor is stored by that definition;
 - a nonzero formula hash and an explicit normalization version;
 - point-in-time observations with source quality and lineage;
+- an explicit `model_eligible`, `uncertainty_only`, or `gating_only`
+  consumption role;
 - an explicit required, optional, or experimental status.
 
 The canonical JSON snapshot is emitted by
@@ -25,6 +27,7 @@ runtime capacity do not affect either artifact.
 | `id` | Canonical lower-case feature identifier. |
 | `version` | Semantic version of the complete feature contract. |
 | `status` | `required`, `optional`, or `experimental`. |
+| `consumption_role` | Machine-enforced `model_eligible`, `uncertainty_only`, or `gating_only` boundary. |
 | `value_type` | `fixed_decimal`, bounded canonical `fixed_decimal_map`, finite `float64`, `integer`, or `boolean`. |
 | `entities` | One canonical scope: instrument, asset, venue, source, or global. |
 | `required_inputs` | Bounded, nonempty, unique, auditable required input identifiers; no hidden dependency is permitted. |
@@ -775,9 +778,204 @@ representation limits.
 | <a id="clustered-large-trade-notional"></a>`clustered_large_trade_notional` | `sum-exact-quote-notional-in-qualifying-large-trade-clusters` | quote notional, `>= 0` | Flow; spot instrument contract, threshold, and max gap | Flow |
 | <a id="large-trade-cluster-activity-rate"></a>`large_trade_cluster_activity_rate` | `qualifying-large-trade-cluster-count/window-seconds` | clusters per second, `>= 0` | Flow; exact 60-second window, threshold, and max gap | Flow |
 
-These anchors now target the feature's own formula, units, range, parameters,
-and absence policy. A semantic or configuration change requires a new feature
-version and formula hash; it must not reinterpret an existing ID/version pair.
+### Task 6 cross-venue, derivatives, and operational-quality catalogue
+
+These contracts form a closed 63-feature inventory. `model_eligible`,
+`uncertainty_only`, and `gating_only` are explicit registry contracts; the
+registry's model-input admission API rejects both non-model roles. Catalogue
+presence does not imply present-value availability. Typed Task 6 emitters may
+publish present values only for the 35 recipes listed in the availability
+contract below. Every other recipe can produce only explicit final
+`model_not_applicable` missingness until its required authority and fully
+parameterized computation are implemented. Optional insurance/ADL state
+remains absent unless a certified public source exists. Liquidation outputs
+retain connector and finalized-window authority; Binance observations represent
+the largest reported liquidation per symbol in each 1000 ms sampling window
+and remain lower bounds. Operational outputs require collector-supervisor
+receipts that seal source identity, connection epoch, health, and knowledge
+time. Gap, checksum, reconnect, recovery, correction, revision, and rejection
+counts are derived from the supervisor's bounded timestamped event ledger over
+the exact half-open feature window; receipt callers cannot provide those
+counts. After downstream windows are durably finalized, the supervisor advances
+a monotonic retirement watermark; older receipts and late events are rejected
+instead of silently undercounting, while events exactly at the watermark remain
+available for the next half-open window. Disk pressure comes from a physical
+filesystem probe bound once to the configured data-volume descriptor; receipt
+issuance cannot be redirected to a caller-selected filesystem. Stream
+completeness is derived from the validated connector capability record, must
+match the admitted venue, is bound once to the source generation, and is sealed
+with the exact stream class into every quality receipt and lineage hash.
+Per-window callers cannot upgrade a sampled or partial source to complete, and
+the cascade completeness gate can be true only for a gap-free liquidation
+stream whose connector contract is complete.
+
+| Feature | Exact formula identity | Role | Required authority |
+|---|---|---|---|
+| <a id="venue-midprice-deviation"></a>`venue_midprice_deviation` | `venue-adjusted-price/consolidated-fair-price-1` | `model_eligible` | Catalog-bound consolidated books |
+| <a id="cross-venue-median-absolute-dispersion"></a>`cross_venue_median_absolute_dispersion` | `median(abs(venue-relative-to-fair));healthy-catalog-bound-books` | `model_eligible` | Catalog-bound consolidated books |
+| <a id="indicative-cross-venue-price-range"></a>`indicative_cross_venue_price_range` | `(max-adjusted-price-min-adjusted-price)/median-adjusted-price;non-executable` | `model_eligible` | Catalog-bound consolidated books |
+| <a id="executable-price-dispersion"></a>`executable_price_dispersion` | `max-net-sell-minus-min-net-buy-after-fees-conversion-settlement-lot-depth-latency` | `model_eligible` | Authenticated depth, fees, conversion, settlement, lot/tick, latency |
+| <a id="spot-perpetual-disagreement"></a>`spot_perpetual_disagreement` | `aligned-perpetual-fair/spot-fair-1;same-base-reference-asof` | `model_eligible` | Catalog-bound consolidated books |
+| <a id="venue-lead-lag"></a>`venue_lead_lag` | `point-in-time-lagged-correlation-of-aligned-venue-returns` | `model_eligible` | Finalized aligned history |
+| <a id="venue-volume-share"></a>`venue_volume_share` | `venue-observed-volume/sum-eligible-venue-observed-volume` | `model_eligible` | Eligible-source universe and observed flow |
+| <a id="venue-depth-share"></a>`venue_depth_share` | `venue-adjusted-reference-depth/sum-included-adjusted-reference-depth` | `model_eligible` | Catalog-bound consolidated books |
+| <a id="venue-concentration-index"></a>`venue_concentration_index` | `sum(square(venue-depth-share))` | `model_eligible` | Catalog-bound consolidated books |
+| <a id="stale-quote-indicator"></a>`stale_quote_indicator` | `collector-stale-quote-decision` | `uncertainty_only` | Collector quality receipt |
+| <a id="crossed-market-indicator"></a>`crossed_market_indicator` | `trusted-book-crossed-or-locked-classification` | `uncertainty_only` | Collector quality receipt |
+| <a id="cross-venue-liquidity-synchronization"></a>`cross_venue_liquidity_synchronization` | `correlation-of-aligned-venue-depth-changes` | `model_eligible` | Finalized aligned history |
+| <a id="healthy-venue-fraction"></a>`healthy_venue_fraction` | `healthy-included-venues/point-in-time-eligible-venues` | `uncertainty_only` | Eligible-source universe |
+| <a id="local-move-classifier-input"></a>`local_move_classifier_input` | `venue-return-minus-cross-venue-robust-return` | `model_eligible` | Aligned venue returns |
+| <a id="systemic-move-classifier-input"></a>`systemic_move_classifier_input` | `healthy-venue-confirmation-fraction-for-common-direction` | `model_eligible` | Aligned healthy venue returns |
+| <a id="transfer-friction-flag"></a>`transfer_friction_flag` | `settlement-or-transfer-constraint-prevents-cross-venue-execution` | `gating_only` | Settlement and transfer constraints |
+| <a id="predicted-funding-rate"></a>`predicted_funding_rate` | `connector-reported-predicted-funding-rate-for-next-funding-time;not-realized` | `model_eligible` | Sealed derivative receipt |
+| <a id="realized-funding-rate"></a>`realized_funding_rate` | `settled-funding-payment-rate-at-event-time` | `model_eligible` | Sealed realized-funding history |
+| <a id="funding-rate-change"></a>`funding_rate_change` | `current-funding-rate-minus-prior-funding-rate` | `model_eligible` | Sealed finalized history |
+| <a id="funding-rate-percentile"></a>`funding_rate_percentile` | `point-in-time-empirical-cdf-of-funding-rate` | `model_eligible` | Sealed finalized history |
+| <a id="funding-rate-robust-zscore"></a>`funding_rate_robust_zscore` | `(funding-median)/(1.4826*mad);zero-mad-missing` | `model_eligible` | Sealed finalized history |
+| <a id="funding-rate-mad"></a>`funding_rate_mad` | `median(abs(funding-median-funding))` | `model_eligible` | Sealed finalized history |
+| <a id="cross-venue-funding-dispersion"></a>`cross_venue_funding_dispersion` | `median(abs(venue-funding-median-funding))` | `model_eligible` | Sealed aligned venue history |
+| <a id="open-interest-native"></a>`open_interest_native` | `connector-reported-native-open-interest` | `model_eligible` | Sealed derivative receipt |
+| <a id="open-interest-usd-notional"></a>`open_interest_usd_notional` | `instrument-quote-notional(open-interest,valuation-price)*point-in-time-quote-usd` | `model_eligible` | Sealed receipt, catalog contract, point-in-time FX |
+| <a id="open-interest-relative-change"></a>`open_interest_relative_change` | `current-native-open-interest/prior-native-open-interest-1` | `model_eligible` | Sealed finalized history |
+| <a id="open-interest-change-conditioned-on-price"></a>`open_interest_change_conditioned_on_price` | `open-interest-relative-change*sign(aligned-price-return)` | `model_eligible` | Sealed finalized history and aligned price |
+| <a id="mark-index-divergence"></a>`mark_index_divergence` | `mark-price/index-price-1` | `model_eligible` | Sealed mark/index receipt |
+| <a id="perpetual-spot-basis"></a>`perpetual_spot_basis` | `perpetual-price/aligned-spot-price-1` | `model_eligible` | Sealed derivative and aligned spot |
+| <a id="dated-future-basis"></a>`dated_future_basis` | `dated-future-price/aligned-reference-price-1` | `model_eligible` | Sealed derivative and catalog expiry |
+| <a id="annualized-dated-future-basis"></a>`annualized_dated_future_basis` | `dated-future-basis/(seconds-to-expiry/seconds-per-365-day-year)` | `model_eligible` | Sealed derivative and catalog expiry |
+| <a id="futures-curve-slope"></a>`futures_curve_slope` | `delta-annualized-basis/delta-seconds-to-expiry;at-least-two-maturities` | `model_eligible` | At least two aligned catalog maturities |
+| <a id="futures-curve-curvature"></a>`futures_curve_curvature` | `second-divided-difference-of-annualized-basis;at-least-three-maturities` | `model_eligible` | At least three aligned catalog maturities |
+| <a id="liquidation-observed-count"></a>`liquidation_observed_count` | `count-sealed-liquidation-receipts;coverage-qualified` | `model_eligible` | Sealed finalized liquidation history |
+| <a id="liquidation-observed-notional"></a>`liquidation_observed_notional` | `sum-instrument-quote-notional(sealed-liquidation-receipts);sampled-is-lower-bound` | `model_eligible` | Sealed finalized liquidation history |
+| <a id="liquidation-observed-velocity"></a>`liquidation_observed_velocity` | `observed-liquidation-count/window-seconds;coverage-qualified` | `model_eligible` | Sealed finalized liquidation history |
+| <a id="liquidation-observed-acceleration"></a>`liquidation_observed_acceleration` | `current-observed-velocity-minus-prior-observed-velocity-over-elapsed-seconds` | `model_eligible` | Two finalized qualified windows |
+| <a id="liquidation-to-volume-ratio"></a>`liquidation_to_volume_ratio` | `coverage-qualified-observed-liquidation-notional/aligned-traded-notional` | `model_eligible` | Qualified liquidation and trade windows |
+| <a id="liquidation-to-open-interest-ratio"></a>`liquidation_to_open_interest_ratio` | `coverage-qualified-observed-liquidation-notional/aligned-open-interest-notional` | `model_eligible` | Qualified liquidation and OI windows |
+| <a id="open-interest-destruction"></a>`open_interest_destruction` | `max(-open-interest-relative-change,0)*abs(aligned-price-return)` | `model_eligible` | Aligned price and OI history |
+| <a id="insurance-fund-state"></a>`insurance_fund_state` | `connector-reported-public-reliable-insurance-fund-state` | `uncertainty_only`, optional | Certified public source |
+| <a id="adl-state"></a>`adl_state` | `connector-reported-public-reliable-adl-state` | `uncertainty_only`, optional | Certified public source |
+| <a id="liquidation-source-completeness-flag"></a>`liquidation_source_completeness_flag` | `connector-and-window-bound-liquidation-completeness-class` | `uncertainty_only` | Connector and window-bound coverage |
+| <a id="source-latency-ns"></a>`source_latency_ns` | `collector-receive-wall-time-minus-source-event-time;nanoseconds` | `uncertainty_only` | Collector quality receipt |
+| <a id="feed-jitter-ns"></a>`feed_jitter_ns` | `point-in-time-feed-latency-absolute-change;nanoseconds` | `uncertainty_only` | Collector quality receipt |
+| <a id="clock-skew-estimate-ns"></a>`clock_skew_estimate_ns` | `collector-clock-estimator-source-minus-local;nanoseconds` | `uncertainty_only` | Collector quality receipt |
+| <a id="sequence-gap-count"></a>`sequence_gap_count` | `collector-verified-sequence-gaps-in-window` | `uncertainty_only` | Collector quality receipt |
+| <a id="checksum-failure-count"></a>`checksum_failure_count` | `collector-verified-checksum-failures-in-window` | `uncertainty_only` | Collector quality receipt |
+| <a id="reconnect-count"></a>`reconnect_count` | `collector-verified-source-reconnects-in-window` | `uncertainty_only` | Collector quality receipt |
+| <a id="recovery-count"></a>`recovery_count` | `collector-verified-successful-source-recoveries-in-window` | `uncertainty_only` | Collector quality receipt |
+| <a id="stale-quote-duration-ns"></a>`stale_quote_duration_ns` | `as-known-at-minus-last-trusted-quote-event-time;zero-when-not-stale` | `uncertainty_only` | Collector quality receipt |
+| <a id="source-coverage-fraction"></a>`source_coverage_fraction` | `observed-required-sources/point-in-time-required-source-universe` | `uncertainty_only` | Catalog-bound consolidated source universe |
+| <a id="feature-age-ns"></a>`feature_age_ns` | `as-known-at-minus-feature-event-time-end;nanoseconds` | `uncertainty_only` | Collector quality receipt |
+| <a id="cross-source-disagreement"></a>`cross_source_disagreement` | `robust-normalized-dispersion-across-aligned-healthy-sources` | `uncertainty_only` | Catalog-bound consolidated healthy sources |
+| <a id="correction-count"></a>`correction_count` | `finalized-observation-corrections-in-window` | `uncertainty_only` | Collector quality receipt |
+| <a id="revision-count"></a>`revision_count` | `source-or-feature-revisions-in-window` | `uncertainty_only` | Collector quality receipt |
+| <a id="raw-to-normalized-rejection-count"></a>`raw_to_normalized_rejection_count` | `durable-raw-records-rejected-before-normalized-publication-in-window` | `uncertainty_only` | Collector quality receipt |
+| <a id="disk-pressure-fraction"></a>`disk_pressure_fraction` | `used-capacity/validated-local-data-volume-capacity` | `uncertainty_only` | Supervisor-sealed physical-volume capacity |
+| <a id="local-processing-lag-ns"></a>`local_processing_lag_ns` | `feature-computed-at-minus-source-event-time-end;nanoseconds` | `uncertainty_only` | Collector quality receipt |
+| <a id="source-outage-indicator"></a>`source_outage_indicator` | `collector-source-unhealthy-or-quarantined` | `uncertainty_only` | Collector quality receipt |
+| <a id="source-health-gate"></a>`source_health_gate` | `collector-owned-source-health-eligibility-decision` | `gating_only` | Collector quality receipt |
+| <a id="source-completeness-gate"></a>`source_completeness_gate` | `collector-owned-gap-free-window-completeness-decision` | `gating_only` | Collector quality receipt |
+| <a id="cascade-eligibility-gate"></a>`cascade_eligibility_gate` | `all-required-source-health-and-completeness-gates-pass` | `gating_only` | Finalized consolidated eligible-source universe |
+
+#### Task 6 ownership, documentation, and availability
+
+The following §19.12 card applies to every Task 6 row above and is reviewed
+together with the row's exact formula and registry definition:
+
+- Named maintainer: Market Structure and Feature Integrity team.
+- Mathematical or procedural definition: the exact formula identity in the
+  row and its domain-separated registry formula hash. Every hash also binds
+  the entity, type, role, status, window geometry, output cadence, lateness,
+  TTL, normalization version, exact quality and coverage thresholds, allowed
+  source-health states, required-input contract IDs, and availability policy.
+  Implemented hashes bind the conservative input-quality rule; unavailable
+  hashes bind the prohibition on present-value emission.
+- Units: ratios, shares, concentration, dispersion, basis, and normalized
+  changes are dimensionless finite `float64`; funding and native/notional
+  values are exact `fixed_decimal`; event and state counts are `integer`;
+  latency, jitter, skew, age, staleness, and processing lag are integer
+  nanoseconds; indicators and gates are `boolean`.
+- Supported entities and update cadence: the registry's exact entity scope is
+  authoritative, including distinct `asset_source` and directional
+  `asset_source_pair` identities. Snapshot recipes use epoch-aligned
+  one-second tumbling windows; flow recipes use 60-second sliding windows with
+  one-second advance; history recipes use one-hour sliding windows with
+  one-second advance. Output resolution is one second.
+- Source dependencies: the bounded `required_inputs` committed by each
+  registry definition and summarized in the authority column. No undeclared
+  conversion, price, fee, settlement, delivery-completeness, or collector
+  authority may be substituted.
+- Missingness behavior: unavailable recipes can emit only explicit final
+  `model_not_applicable` missingness from a matching registry definition,
+  entity-bound tracker, exact registered window, source universe, and final
+  watermark. Callers cannot select a different unauthenticated reason. Trust,
+  catalogue, entity, formula, or time-ordering failures fail closed.
+- Expected ranges and invariants: shares, fractions, and concentration are in
+  `[0, 1]`; counts, notional, ages, durations, and observed velocities are
+  nonnegative; completeness flags use a closed integer classification;
+  signed deviations, changes, basis, latency/skew estimates, and
+  classifier inputs must remain finite and retain their documented units.
+  Every present value must match its registered type and entity, and every
+  final observation requires the window end plus five seconds of allowed
+  lateness.
+- Leakage review: catalogue revisions, instrument definitions, normalized
+  receipts, consolidated state, fitted history, watermark decisions, and
+  conversion evidence must all be knowable no later than the observation's
+  `as_known_at`; `computed_at` cannot precede it. Full-history fitting, future
+  fill, response-only source selection, and caller-selected valuation prices
+  are forbidden.
+- Unit and replay tests: `cross_venue_derivatives`, `normalization`, and
+  `session` cover formula boundaries, catalogue/receipt authority, WAL stream
+  binding, live publication retention, exact entity/finality emission,
+  explicit missingness, and deterministic WAL replay for the supported
+  session contract. Full live/WAL/Parquet feature materialization parity is a
+  separate Task 7 gate and is not claimed here.
+- Change history: Task 6 version `1.0.0` was introduced on 2026-07-29. Any
+  change to formula, availability, parameters, source authority, entity,
+  window, quality policy, or interpretation requires a new semantic version
+  and formula hash; an existing ID/version cannot be reinterpreted.
+
+Present-value emission is implemented only for:
+
+`venue_midprice_deviation`,
+`cross_venue_median_absolute_dispersion`,
+`indicative_cross_venue_price_range`,
+`venue_depth_share`,
+`venue_concentration_index`,
+`healthy_venue_fraction`,
+`predicted_funding_rate`,
+`funding_rate_change`,
+`open_interest_native`,
+`open_interest_relative_change`,
+`mark_index_divergence`,
+`liquidation_observed_count`,
+`liquidation_observed_notional`, and
+`liquidation_observed_velocity`;
+
+`liquidation_source_completeness_flag`,
+`source_latency_ns`,
+`feed_jitter_ns`,
+`clock_skew_estimate_ns`,
+`sequence_gap_count`,
+`checksum_failure_count`,
+`reconnect_count`,
+`recovery_count`,
+`stale_quote_duration_ns`,
+`source_coverage_fraction`,
+`feature_age_ns`,
+`cross_source_disagreement`,
+`correction_count`,
+`revision_count`,
+`raw_to_normalized_rejection_count`,
+`disk_pressure_fraction`,
+`local_processing_lag_ns`,
+`source_outage_indicator`,
+`source_health_gate`,
+`source_completeness_gate`, and
+`cascade_eligibility_gate`.
+
+These are typed library emission paths, not evidence that a long-running
+feature materializer has been deployed. All other Task 6 recipes, including
+unimplemented cross-venue and derivatives history/composite recipes, remain
+explicitly unavailable for present values.
 
 ### Experimental L3-only candidates not registered in version 1
 

@@ -27,19 +27,19 @@ sha256 = "38ea6d05b7e4b161cd065f900717aa1e0c481174a61c76d2e053f5dbbc0fcf1a"
 
 [[category.artifact]]
 path = "fixtures/exchanges/binance/manifest.toml"
-sha256 = "24418fcb639dc04891951aa56fe3b67eb36af3f5d6b1f3df0b7d29a0d6f289b3"
+sha256 = "ddbf08cc06d28e042dd7809a33cef5b1690d753864844d4acc3621d99bdab760"
 
 [[category.artifact]]
 path = "fixtures/exchanges/binance/certification.json"
-sha256 = "e6ad60a2041ad3b2c48d65bd1a26c27ddcc0c29928ce5f3e6fe7c918f5444ee3"
+sha256 = "75844889d2754e832299304f0238730f2cb01bc50ca6f31b92e1d9df95ef555e"
 
 [[category.artifact]]
 path = "fixtures/exchanges/binance/certification.sha256"
-sha256 = "49c4a9aa50f9e4722aee067b8e274dba4116ee1c1fe765ec23fd065222fa93f7"
+sha256 = "68e3e6e10210aea1140429dbdb83b073a525f328785edbb0bb3a0c184b0df066"
 
 [[category.artifact]]
 path = "fixtures/exchanges/binance/documentation-review.toml"
-sha256 = "779df1d602cc56fd81d0a9a265e1068dba9ceb65d2bba5d7c0507ee116896d81"
+sha256 = "86e1c72079516233a58297fa979665ad18adbe0305e886c59989084ab15b9178"
 
 [[category.artifact]]
 path = "fixtures/exchanges/binance/spot-aggregate-trade.json"
@@ -271,15 +271,15 @@ sha256 = "424feda47ba4d054ce97862e09ec745b03d27f92ca1bc179487cfacb50d1c1f5"
 
 [[category.artifact]]
 path = "fixtures/golden-replays/market-foundation/digest-mismatch.toml"
-sha256 = "961006c2d586dce685f74acd8cb3119ab1af95f6a59ba53d9552901802440e52"
+sha256 = "044d479d61df04e561d8162eeecec1fb11df4080037ba68e15e746fd4cc007c0"
 
 [[category.artifact]]
 path = "fixtures/golden-replays/market-foundation/manifest.toml"
-sha256 = "70d57fb6ab03ef7ff7f1a43671ab18a2607e7154e547a616ef9747af9d10d27b"
+sha256 = "d7320c43adfaf77a34ac7dd3cb0ca614a96e96994a2f508cd288dbe0f53ca4b5"
 
 [[category.artifact]]
 path = "fixtures/golden-replays/market-foundation/stop-at-20.toml"
-sha256 = "5d3f01f58596beb7dcbe0f38ebc2676c5791636a5983f8ea5f6614621cff4bce"
+sha256 = "20c6856429c2c5cdd2d24135780ec1df86271d04162a38f2c3268cbfcc73a76f"
 
 [[category.artifact]]
 path = "fixtures/golden-replays/model-host-v1/manifest.toml"

@@ -2,9 +2,9 @@
 
 use blake3::Hasher;
 use feature_registry::{
-    DurationNanos, EntityScope, EventTimePolicy, FeatureDefinition, FeatureDefinitionInput,
-    FeatureDocumentation, FeatureId, FeatureStatus, FeatureValueType, FormulaHash,
-    InputRequirement, MissingnessPolicy, NormalizationKind, NormalizationPolicy,
+    DurationNanos, EntityScope, EventTimePolicy, FeatureConsumptionRole, FeatureDefinition,
+    FeatureDefinitionInput, FeatureDocumentation, FeatureId, FeatureStatus, FeatureValueType,
+    FormulaHash, InputRequirement, MissingnessPolicy, NormalizationKind, NormalizationPolicy,
     QualityRequirement, QualityScore, RegistryError, WindowDefinition, WindowId, WindowKind,
 };
 use quality::SourceHealthState;
@@ -214,6 +214,7 @@ impl Task4FeatureKind {
             id: FeatureId::new(self.id())?,
             version: version.clone(),
             status: FeatureStatus::Required,
+            consumption_role: FeatureConsumptionRole::ModelEligible,
             value_type: FeatureValueType::Float64,
             entities: if matches!(self, Self::RealizedCovariance | Self::RealizedCorrelation) {
                 EntityScope::AssetPair

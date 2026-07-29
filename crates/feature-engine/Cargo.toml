@@ -9,8 +9,10 @@ autotests = false
 
 [dependencies]
 blake3.workspace = true
+collector-runtime = { path = "../collector-runtime" }
 consolidated-market = { path = "../consolidated-market" }
 connector-binance = { path = "../connector-binance" }
+connector-core = { path = "../connector-core" }
 domain = { path = "../domain" }
 event-envelope = { path = "../event-envelope" }
 feature-registry = { path = "../feature-registry" }
@@ -45,6 +47,10 @@ path = "tests/price_volatility_features.rs"
 [[test]]
 name = "microstructure_features"
 path = "tests/microstructure_features.rs"
+
+[[test]]
+name = "cross_venue_derivatives"
+path = "tests/cross_venue_derivatives.rs"
 
 [lints]
 workspace = true
