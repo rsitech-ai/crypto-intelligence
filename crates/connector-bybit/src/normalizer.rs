@@ -136,6 +136,10 @@ fn normalize_orderbook(
         Some(value.event_time),
         Some(value.matching_engine_time),
         Some(value.update_id),
+        match value.kind {
+            BookMessageKind::Snapshot => None,
+            BookMessageKind::Delta => value.update_id.checked_sub(1),
+        },
         snapshot_kind,
         QualityFlags::NONE,
     );
@@ -176,6 +180,7 @@ fn normalize_trades(
                 Some(value.event_time),
                 Some(value.trade_time),
                 Some(value.cross_sequence),
+                None,
                 SnapshotKind::NotApplicable,
                 QualityFlags::NONE,
             );
@@ -206,6 +211,7 @@ fn normalize_linear_ticker(
         Some(value.event_time),
         None,
         Some(value.cross_sequence),
+        None,
         SnapshotKind::NotApplicable,
         QualityFlags::NONE,
     );
@@ -257,6 +263,7 @@ fn normalize_liquidations(
                 Some(value.event_time),
                 Some(value.transaction_time),
                 None,
+                None,
                 SnapshotKind::NotApplicable,
                 QualityFlags::NONE,
             );
@@ -294,6 +301,7 @@ fn metadata(
     exchange_timestamp: Option<UnixNanos>,
     exchange_transaction_timestamp: Option<UnixNanos>,
     sequence_number: Option<u64>,
+    previous_sequence_number: Option<u64>,
     snapshot_kind: SnapshotKind,
     quality_flags: QualityFlags,
 ) -> UncheckedEventMetadata {
@@ -309,7 +317,7 @@ fn metadata(
         normalization_timestamp: context.normalization_timestamp,
         connection_started_at: context.connection_started_at,
         sequence_number,
-        previous_sequence_number: None,
+        previous_sequence_number,
         connection_epoch: context.raw.connection_epoch().get(),
         subscription_epoch: context.subscription_epoch.get(),
         snapshot_kind,

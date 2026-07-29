@@ -5,6 +5,7 @@ mod capabilities;
 mod metadata;
 mod normalizer;
 pub mod parser;
+mod session;
 
 pub use book_sync::{BybitBookSyncError, BybitBookSynchronizer};
 pub use capabilities::bybit_capabilities as capabilities;
@@ -17,4 +18,8 @@ pub use parser::{
     AllLiquidation, BookMessageKind, BybitInput, BybitMarket, BybitMessage, DurableBybitMessage,
     LinearTicker, MAX_NATIVE_PAYLOAD_BYTES, NativeBookLevel, NativeParseError, OrderBookMessage,
     PublicTrade, parse_durable_native_message, parse_native_message,
+};
+pub use session::{
+    BybitConfig, BybitConnector, BybitSessionError, BybitSessionRecord, BybitSessionSender,
+    bounded_session_channel,
 };

@@ -22,6 +22,8 @@ use raw_wal::{
 
 const SPOT_BOOK: &[u8] =
     include_bytes!("../../../fixtures/exchanges/bybit/spot-orderbook-snapshot.json");
+const SPOT_BOOK_DELTA: &[u8] =
+    include_bytes!("../../../fixtures/exchanges/bybit/spot-orderbook-delta.json");
 const SPOT_TRADES: &[u8] =
     include_bytes!("../../../fixtures/exchanges/bybit/spot-public-trade.json");
 const LINEAR_BOOK: &[u8] =
@@ -279,6 +281,29 @@ async fn orderbook_snapshot_normalizes_to_a_canonical_raw_linked_event() {
         *raw.payload_hash()
     );
     events[0].verify().expect("event identity");
+}
+
+#[tokio::test]
+async fn exact_next_delta_derives_the_required_predecessor_without_using_cross_sequence() {
+    let catalog = catalog();
+    let raw = durable_reference(SPOT_BOOK_DELTA).await;
+    let message = parse_durable_native_message(
+        BybitInput::PublicWebSocket(BybitMarket::Spot),
+        SPOT_BOOK_DELTA,
+        &raw,
+    )
+    .expect("delta parse");
+
+    let events =
+        normalize_native_message(message, &context(&catalog, &raw)).expect("delta normalize");
+
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].event_type(), EventType::BookDelta);
+    let metadata = events[0].metadata().as_unchecked();
+    assert_eq!(metadata.sequence_number, Some(101));
+    assert_eq!(metadata.previous_sequence_number, Some(100));
+    assert_ne!(metadata.sequence_number, Some(9_532_239_402));
+    events[0].verify().expect("delta identity");
 }
 
 #[tokio::test]

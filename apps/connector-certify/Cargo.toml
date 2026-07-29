@@ -8,8 +8,12 @@ publish.workspace = true
 
 [dependencies]
 connector-binance = { path = "../../crates/connector-binance" }
+connector-bybit = { path = "../../crates/connector-bybit" }
 connector-core = { path = "../../crates/connector-core" }
 clap.workspace = true
+domain = { path = "../../crates/domain" }
+fixed-decimal = { path = "../../crates/fixed-decimal" }
+orderbook = { path = "../../crates/orderbook" }
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
