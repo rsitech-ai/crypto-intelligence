@@ -16,6 +16,7 @@ const MAX_SAMPLE_VALUES: usize = 1_000_000;
 const MIN_POSTERIOR_SAMPLES: usize = 32;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum UncertaintyQuality {
     ProductionCandidate,
     Experimental,

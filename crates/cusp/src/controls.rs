@@ -368,6 +368,14 @@ impl FeatureCovariance {
         }
         Ok(Self { order, matrix })
     }
+
+    pub fn order(&self) -> &[ControlFeatureKey] {
+        &self.order
+    }
+
+    pub fn matrix(&self) -> &[Vec<f64>] {
+        &self.matrix
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -552,6 +560,10 @@ impl ControlMap {
 
     pub fn sparse_penalty(&self) -> f64 {
         penalty_for(&self.schema, &self.alpha) + penalty_for(&self.schema, &self.beta)
+    }
+
+    pub const fn residual_covariance(&self) -> ControlCovariance {
+        self.residual_covariance
     }
 
     fn propagate_covariance(

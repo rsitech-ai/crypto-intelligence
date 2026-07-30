@@ -62,14 +62,18 @@ meaning. Rust constructors and deserialization re-run those semantic checks.
 
 ## Known limitations
 
-- This card defines the control-map boundary. Phase 3 Tasks 7–8 now supply
+- This card defines the control-map boundary. Phase 3 Tasks 7–9 now supply
   bounded offline estimator candidates plus active-set Laplace and fold-bound
-  blocked-bootstrap uncertainty, but feature/hyperparameter selection evidence
-  still belongs to nested walk-forward evaluation.
+  blocked-bootstrap uncertainty and frozen-coefficient online structural
+  inference, but feature/hyperparameter selection evidence still belongs to
+  nested walk-forward evaluation.
 - Fixed-size covariance propagation is in-memory and capped at 64 features.
 - A positive-definite covariance is required; singular estimates must be
   regularized during training with that decision recorded by later fit
   diagnostics.
-- Phase 3 online branch inference, ablation validation, calibration, shadow
-  operation, and release gates remain incomplete. Task 8 uncertainty quality
-  does not itself grant production eligibility.
+- Online snapshots remain research surfaces: absent feature covariance,
+  experimental parameter uncertainty, optional missingness, or degraded source
+  quality is explicit and cannot be promoted to research-available status.
+- Phase 3 RPC exposure, ablation validation, calibration, shadow operation, and
+  release gates remain incomplete. Task 9 structural availability does not
+  itself grant production eligibility.
