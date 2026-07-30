@@ -1,6 +1,7 @@
 //! Authenticated, loopback-only gRPC contracts for the local runtime.
 
 pub mod auth;
+pub mod cusp_service;
 pub mod generated;
 pub mod server;
 pub mod session;

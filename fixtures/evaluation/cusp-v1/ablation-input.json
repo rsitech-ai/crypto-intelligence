@@ -1,0 +1,93 @@
+{
+  "schema_version": 1,
+  "dataset_manifest_blake3": "1111111111111111111111111111111111111111111111111111111111111111",
+  "candidate_model_blake3": "2222222222222222222222222222222222222222222222222222222222222222",
+  "baseline_model_blake3": "3333333333333333333333333333333333333333333333333333333333333333",
+  "required_baselines": [
+    "volatility",
+    "leverage",
+    "regime",
+    "microstructure"
+  ],
+  "folds": [
+    {
+      "fold_id": "outer-1",
+      "regime_id": "low-volatility",
+      "test_start_ns": 1800000001000000000,
+      "test_end_ns": 1800000001500000000,
+      "observation_count": 1000,
+      "positive_event_count": 10,
+      "independent_event_episode_count": 2,
+      "baseline_brier_score": 0.20,
+      "candidate_brier_score": 0.15,
+      "calibration_slope": 1.0,
+      "calibration_intercept": 0.01,
+      "expected_calibration_error": 0.02,
+      "alert_budget_score_delta": 0.03
+    },
+    {
+      "fold_id": "outer-2",
+      "regime_id": "high-volatility",
+      "test_start_ns": 1800000002000000000,
+      "test_end_ns": 1800000002500000000,
+      "observation_count": 1000,
+      "positive_event_count": 10,
+      "independent_event_episode_count": 2,
+      "baseline_brier_score": 0.20,
+      "candidate_brier_score": 0.21,
+      "calibration_slope": 1.0,
+      "calibration_intercept": 0.01,
+      "expected_calibration_error": 0.02,
+      "alert_budget_score_delta": 0.03
+    },
+    {
+      "fold_id": "outer-3",
+      "regime_id": "liquidity-stress",
+      "test_start_ns": 1800000003000000000,
+      "test_end_ns": 1800000003500000000,
+      "observation_count": 1000,
+      "positive_event_count": 10,
+      "independent_event_episode_count": 2,
+      "baseline_brier_score": 0.20,
+      "candidate_brier_score": 0.21,
+      "calibration_slope": 1.0,
+      "calibration_intercept": 0.01,
+      "expected_calibration_error": 0.02,
+      "alert_budget_score_delta": 0.03
+    },
+    {
+      "fold_id": "outer-4",
+      "regime_id": "low-volatility",
+      "test_start_ns": 1800000004000000000,
+      "test_end_ns": 1800000004500000000,
+      "observation_count": 1000,
+      "positive_event_count": 10,
+      "independent_event_episode_count": 2,
+      "baseline_brier_score": 0.20,
+      "candidate_brier_score": 0.21,
+      "calibration_slope": 1.0,
+      "calibration_intercept": 0.01,
+      "expected_calibration_error": 0.02,
+      "alert_budget_score_delta": 0.03
+    },
+    {
+      "fold_id": "outer-5",
+      "regime_id": "high-volatility",
+      "test_start_ns": 1800000005000000000,
+      "test_end_ns": 1800000005500000000,
+      "observation_count": 1000,
+      "positive_event_count": 10,
+      "independent_event_episode_count": 2,
+      "baseline_brier_score": 0.20,
+      "candidate_brier_score": 0.21,
+      "calibration_slope": 1.0,
+      "calibration_intercept": 0.01,
+      "expected_calibration_error": 0.02,
+      "alert_budget_score_delta": 0.03
+    }
+  ],
+  "maximum_standardized_coefficient_drift": 0.75,
+  "sign_scaling_parity": true,
+  "numerical_failures": 0,
+  "attempted_model_variants": 3
+}

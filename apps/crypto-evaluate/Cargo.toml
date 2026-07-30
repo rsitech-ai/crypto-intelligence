@@ -11,7 +11,9 @@ blake3.workspace = true
 capacity = { path = "../../crates/capacity" }
 clap.workspace = true
 config = { path = "../../crates/config" }
+cusp = { path = "../../crates/cusp" }
 hex.workspace = true
+libc.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tempfile.workspace = true

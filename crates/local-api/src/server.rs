@@ -18,10 +18,8 @@ use tonic::{Request, Response, Status, transport::Server};
 use tower::limit::GlobalConcurrencyLimitLayer;
 
 use crate::{
-    auth::{
-        Clock, SESSION_DESCRIPTOR_METADATA_KEY, SessionAuthenticator, SessionSecret, SystemClock,
-        TOKEN_METADATA_KEY,
-    },
+    auth::{Clock, RequestAuthenticator, SessionAuthenticator, SessionSecret, SystemClock},
+    cusp_service::{CuspSnapshotStore, LocalCuspService, MAX_CUSP_HISTORY_PER_ASSET},
     proto::{
         common_v1::{
             AssetId as ProtoAssetId, AssetNamespace as ProtoAssetNamespace, ProtocolVersion,
@@ -40,15 +38,16 @@ use crate::{
                 MarketStateService as MarketStateServiceRpc, MarketStateServiceServer,
             },
         },
+        risk_v1::cusp_service_server::CuspServiceServer,
     },
     session::SessionDescriptor,
 };
 
 const LOOPBACK_BIND: SocketAddr =
     SocketAddr::new(std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST), 0);
-const AUTHENTICATION_FAILED: &str = "authentication failed";
 const DEFAULT_MAX_REQUEST_MESSAGE_BYTES: usize = 256;
 const MAX_RESPONSE_MESSAGE_BYTES: usize = 1_024;
+const MAX_CUSP_RESPONSE_MESSAGE_BYTES: usize = 4 * 1_024 * 1_024;
 const MAX_HEADER_LIST_BYTES: u32 = 2_048;
 const STREAM_WINDOW_BYTES: u32 = 16 * 1_024;
 const CONNECTION_WINDOW_BYTES: u32 = 32 * 1_024;
@@ -270,8 +269,7 @@ impl HealthServiceRpc for HealthService {
 /// Authenticated authoritative snapshot implementation.
 #[derive(Clone)]
 struct MarketStateService {
-    expected_descriptor: SessionDescriptor,
-    authenticator: Arc<SessionAuthenticator>,
+    request_authenticator: RequestAuthenticator,
     clock: Arc<dyn Clock>,
     snapshot: MarketSnapshot,
     #[cfg(test)]
@@ -280,14 +278,12 @@ struct MarketStateService {
 
 impl MarketStateService {
     fn new(
-        expected_descriptor: SessionDescriptor,
-        authenticator: Arc<SessionAuthenticator>,
+        request_authenticator: RequestAuthenticator,
         clock: Arc<dyn Clock>,
         snapshot: MarketSnapshot,
     ) -> Self {
         Self {
-            expected_descriptor,
-            authenticator,
+            request_authenticator,
             clock,
             snapshot,
             #[cfg(test)]
@@ -302,29 +298,7 @@ impl MarketStateService {
     }
 
     fn authenticate<T>(&self, request: &Request<T>) -> Result<(), Status> {
-        let descriptor_metadata = request
-            .metadata()
-            .get_bin(SESSION_DESCRIPTOR_METADATA_KEY)
-            .ok_or_else(authentication_failed)?;
-        let descriptor_bytes = descriptor_metadata
-            .to_bytes()
-            .map_err(|_| authentication_failed())?;
-        let descriptor = SessionDescriptor::from_canonical_bytes(&descriptor_bytes)
-            .map_err(|_| authentication_failed())?;
-        if descriptor != self.expected_descriptor {
-            return Err(authentication_failed());
-        }
-
-        let token_metadata = request
-            .metadata()
-            .get_bin(TOKEN_METADATA_KEY)
-            .ok_or_else(authentication_failed)?;
-        let token = token_metadata
-            .to_bytes()
-            .map_err(|_| authentication_failed())?;
-        self.authenticator
-            .validate_at(&descriptor, &token, self.clock.unix_seconds())
-            .map_err(|_| authentication_failed())
+        self.request_authenticator.authenticate(request)
     }
 
     fn stream_metadata(
@@ -459,10 +433,6 @@ impl MarketStateServiceRpc for MarketStateService {
     }
 }
 
-fn authentication_failed() -> Status {
-    Status::unauthenticated(AUTHENTICATION_FAILED)
-}
-
 /// Startup or graceful-shutdown failures for the loopback server.
 #[derive(Debug, Error)]
 pub enum ServerError {
@@ -493,6 +463,7 @@ pub enum ServerError {
 pub struct LoopbackServer {
     local_addr: SocketAddr,
     limits: ServerLimits,
+    cusp_store: Arc<std::sync::RwLock<CuspSnapshotStore>>,
     shutdown: Option<oneshot::Sender<()>>,
     task: JoinHandle<Result<(), tonic::transport::Error>>,
 }
@@ -507,8 +478,8 @@ impl Drop for LoopbackServer {
 }
 
 impl LoopbackServer {
-    /// Binds only the exact ephemeral IPv4 loopback address and starts both
-    /// services without reflection.
+    /// Binds only the exact ephemeral IPv4 loopback address and starts the
+    /// public health plus authenticated market and Cusp services without reflection.
     pub async fn spawn(
         bind: SocketAddr,
         secret: SessionSecret,
@@ -555,8 +526,14 @@ impl LoopbackServer {
         let listener = Self::bind_loopback(bind).await?;
         let authenticator = Arc::new(SessionAuthenticator::new(secret));
         let health = HealthService::new(descriptor.protocol_major(), descriptor.protocol_minor());
-        let market = MarketStateService::new(descriptor, authenticator, clock, snapshot);
-        Self::spawn_services(listener, health, market, limits).await
+        let request_authenticator =
+            RequestAuthenticator::new(descriptor, authenticator, Arc::clone(&clock));
+        let market =
+            MarketStateService::new(request_authenticator.clone(), Arc::clone(&clock), snapshot);
+        let cusp_store = CuspSnapshotStore::try_new(MAX_CUSP_HISTORY_PER_ASSET)
+            .map_err(|_| ServerError::InvalidLimits)?;
+        let cusp = LocalCuspService::new(cusp_store, request_authenticator);
+        Self::spawn_services(listener, health, market, cusp, limits).await
     }
 
     #[cfg(test)]
@@ -572,9 +549,15 @@ impl LoopbackServer {
         let listener = Self::bind_loopback(bind).await?;
         let authenticator = Arc::new(SessionAuthenticator::new(secret));
         let health = HealthService::new(descriptor.protocol_major(), descriptor.protocol_minor());
-        let market = MarketStateService::new(descriptor, authenticator, clock, snapshot)
-            .with_response_delay(response_delay);
-        Self::spawn_services(listener, health, market, limits).await
+        let request_authenticator =
+            RequestAuthenticator::new(descriptor, authenticator, Arc::clone(&clock));
+        let market =
+            MarketStateService::new(request_authenticator.clone(), Arc::clone(&clock), snapshot)
+                .with_response_delay(response_delay);
+        let cusp_store = CuspSnapshotStore::try_new(MAX_CUSP_HISTORY_PER_ASSET)
+            .map_err(|_| ServerError::InvalidLimits)?;
+        let cusp = LocalCuspService::new(cusp_store, request_authenticator);
+        Self::spawn_services(listener, health, market, cusp, limits).await
     }
 
     async fn bind_loopback(bind: SocketAddr) -> Result<TcpListener, ServerError> {
@@ -590,6 +573,7 @@ impl LoopbackServer {
         listener: TcpListener,
         health: HealthService,
         market: MarketStateService,
+        cusp: LocalCuspService,
         limits: ServerLimits,
     ) -> Result<Self, ServerError> {
         let local_addr = listener
@@ -603,6 +587,10 @@ impl LoopbackServer {
         let market = MarketStateServiceServer::new(market)
             .max_decoding_message_size(limits.maximum_request_bytes)
             .max_encoding_message_size(MAX_RESPONSE_MESSAGE_BYTES);
+        let cusp_store = cusp.shared_store();
+        let cusp = CuspServiceServer::new(cusp)
+            .max_decoding_message_size(limits.maximum_request_bytes)
+            .max_encoding_message_size(MAX_CUSP_RESPONSE_MESSAGE_BYTES);
         let maximum_concurrent_streams = u32::try_from(limits.maximum_concurrent_requests)
             .map_err(|_| ServerError::InvalidLimits)?;
 
@@ -622,6 +610,7 @@ impl LoopbackServer {
                 ))
                 .add_service(health)
                 .add_service(market)
+                .add_service(cusp)
                 .serve_with_incoming_shutdown(incoming, async {
                     let _ = shutdown_signal.await;
                 })
@@ -631,6 +620,7 @@ impl LoopbackServer {
         Ok(Self {
             local_addr,
             limits,
+            cusp_store,
             shutdown: Some(shutdown),
             task,
         })
@@ -638,6 +628,11 @@ impl LoopbackServer {
 
     pub const fn local_addr(&self) -> SocketAddr {
         self.local_addr
+    }
+
+    /// Returns the authenticated Cusp service's bounded publisher handle.
+    pub fn cusp_store(&self) -> Arc<std::sync::RwLock<CuspSnapshotStore>> {
+        Arc::clone(&self.cusp_store)
     }
 
     pub async fn shutdown(mut self) -> Result<(), ServerError> {

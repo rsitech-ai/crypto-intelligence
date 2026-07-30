@@ -15,11 +15,9 @@ numerics = { path = "../numerics" }
 quality = { path = "../quality" }
 semver.workspace = true
 serde.workspace = true
+serde_json.workspace = true
 statrs.workspace = true
 thiserror.workspace = true
-
-[dev-dependencies]
-serde_json.workspace = true
 
 [lints]
 workspace = true

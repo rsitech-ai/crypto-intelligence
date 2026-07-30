@@ -129,30 +129,33 @@ fn online_snapshot_is_deterministic_normalized_and_structurally_complete() {
     let repeated = repeated_engine.update(input).expect("repeated snapshot");
 
     assert_eq!(first, repeated);
-    assert_eq!(first.availability, SnapshotAvailability::ResearchAvailable);
-    assert!(first.controls.is_some());
-    assert!(first.signed_discriminant.is_some());
-    assert!(first.standardized_discriminant.is_some());
-    assert!(first.fold_distance.is_some());
-    assert!(first.equilibria.is_some());
-    assert_eq!(first.posterior_samples.len(), 64);
-    assert!(first.posterior_samples.iter().all(|sample| {
+    assert_eq!(
+        first.availability(),
+        SnapshotAvailability::ResearchAvailable
+    );
+    assert!(first.controls().is_some());
+    assert!(first.signed_discriminant().is_some());
+    assert!(first.standardized_discriminant().is_some());
+    assert!(first.fold_distance().is_some());
+    assert!(first.equilibria().is_some());
+    assert_eq!(first.posterior_samples().len(), 64);
+    assert!(first.posterior_samples().iter().all(|sample| {
         sample.equilibria.controls == sample.controls
             && sample.equilibria.topology == sample.topology
             && !sample.equilibria.roots.is_empty()
     }));
     assert_eq!(
-        first.uncertainty_quality,
+        first.uncertainty_quality(),
         UncertaintyQuality::ProductionCandidate
     );
-    assert_eq!(first.sensitivities.len(), 2);
+    assert_eq!(first.sensitivities().len(), 2);
     assert!(
         first
-            .cusp_region_probability
+            .cusp_region_probability()
             .is_some_and(|value| (0.0..=1.0).contains(&value))
     );
-    assert_probability_sum(first.branch_probabilities.as_slice());
-    assert!(first.evidence_hash.iter().any(|byte| *byte != 0));
+    assert_probability_sum(first.branch_probabilities());
+    assert!(first.evidence_hash().iter().any(|byte| *byte != 0));
     let encoded = serde_json::to_value(&first).expect("serialize snapshot");
     assert_eq!(encoded["schema_version"], 1);
     assert_eq!(encoded["availability"]["state"], "research_available");
@@ -201,11 +204,11 @@ fn degraded_quality_is_research_only_and_changes_evidence() {
         )
         .expect("degraded");
     assert_eq!(
-        degraded.availability,
+        degraded.availability(),
         SnapshotAvailability::ResearchDegraded
     );
-    assert!(degraded.controls.is_some());
-    assert_ne!(available.evidence_hash, degraded.evidence_hash);
+    assert!(degraded.controls().is_some());
+    assert_ne!(available.evidence_hash(), degraded.evidence_hash());
 }
 
 #[test]
@@ -237,11 +240,11 @@ fn missing_feature_uncertainty_is_explicitly_degraded() {
         )
         .expect("snapshot");
     assert_eq!(
-        snapshot.availability,
+        snapshot.availability(),
         SnapshotAvailability::ResearchDegraded
     );
-    assert!(snapshot.controls.is_some());
-    assert_eq!(snapshot.posterior_samples.len(), 64);
+    assert!(snapshot.controls().is_some());
+    assert_eq!(snapshot.posterior_samples().len(), 64);
 }
 
 #[test]
@@ -268,11 +271,11 @@ fn experimental_parameter_uncertainty_cannot_be_research_available() {
         .update(available_input(BASE_TIME_NS, vector(0.25, 0.30)))
         .expect("snapshot");
     assert_eq!(
-        snapshot.uncertainty_quality,
+        snapshot.uncertainty_quality(),
         UncertaintyQuality::Experimental
     );
     assert_eq!(
-        snapshot.availability,
+        snapshot.availability(),
         SnapshotAvailability::ResearchDegraded
     );
 }
@@ -297,14 +300,14 @@ fn missing_required_feature_and_rejected_quality_never_become_zero_risk() {
         .update(available_input(BASE_TIME_NS, missing))
         .expect("unavailable snapshot");
     assert_eq!(
-        unavailable.availability,
+        unavailable.availability(),
         SnapshotAvailability::Unavailable(UnavailabilityReason::RequiredFeatureMissing)
     );
-    assert!(unavailable.controls.is_none());
-    assert!(unavailable.cusp_region_probability.is_none());
-    assert!(unavailable.fold_distance.is_none());
-    assert!(unavailable.posterior_samples.is_empty());
-    assert!(unavailable.branch_probabilities.is_empty());
+    assert!(unavailable.controls().is_none());
+    assert!(unavailable.cusp_region_probability().is_none());
+    assert!(unavailable.fold_distance().is_none());
+    assert!(unavailable.posterior_samples().is_empty());
+    assert!(unavailable.branch_probabilities().is_empty());
     let encoded = serde_json::to_value(&unavailable).expect("serialize unavailable snapshot");
     assert_eq!(encoded["availability"]["state"], "unavailable");
     assert_eq!(
@@ -338,10 +341,10 @@ fn missing_required_feature_and_rejected_quality_never_become_zero_risk() {
         )
         .expect("rejected snapshot");
     assert_eq!(
-        rejected.availability,
+        rejected.availability(),
         SnapshotAvailability::Unavailable(UnavailabilityReason::QualityRejected)
     );
-    assert!(rejected.controls.is_none());
+    assert!(rejected.controls().is_none());
 }
 
 #[test]
@@ -387,15 +390,18 @@ fn unavailable_updates_do_not_mutate_the_hidden_branch_posterior() {
         .update(available_input(as_of_ns, vector(0.25, 0.30)))
         .expect("direct snapshot");
     assert_eq!(
-        after_rejection.most_likely_branch,
-        direct.most_likely_branch
+        after_rejection.most_likely_branch(),
+        direct.most_likely_branch()
     );
     assert_eq!(
-        after_rejection.branch_probabilities,
-        direct.branch_probabilities
+        after_rejection.branch_probabilities(),
+        direct.branch_probabilities()
     );
-    assert_eq!(after_rejection.hysteresis, direct.hysteresis);
-    assert_eq!(after_rejection.posterior_samples, direct.posterior_samples);
+    assert_eq!(after_rejection.hysteresis(), direct.hysteresis());
+    assert_eq!(
+        after_rejection.posterior_samples(),
+        direct.posterior_samples()
+    );
 }
 
 #[test]
@@ -440,8 +446,13 @@ fn cadence_and_posterior_work_are_bounded_before_updates() {
     let maximum_snapshot = maximum_engine
         .update(available_input(BASE_TIME_NS, vector(0.25, 0.30)))
         .expect("maximum bounded update");
-    assert_eq!(maximum_snapshot.posterior_samples.len(), 2_048);
-    assert!(maximum_snapshot.evidence_hash.iter().any(|byte| *byte != 0));
+    assert_eq!(maximum_snapshot.posterior_samples().len(), 2_048);
+    assert!(
+        maximum_snapshot
+            .evidence_hash()
+            .iter()
+            .any(|byte| *byte != 0)
+    );
     assert_eq!(
         CuspEngine::try_new(
             oversized_fit,
@@ -568,6 +579,47 @@ fn posterior_evidence_must_match_the_exact_frozen_fit() {
 }
 
 #[test]
+fn frozen_model_evidence_binds_the_complete_control_map_identity() {
+    let first_fit = fit(
+        &transition_data_with_normalization_hash([17; 32]),
+        smooth_config(),
+    )
+    .expect("first fit");
+    let second_fit = fit(
+        &transition_data_with_normalization_hash([18; 32]),
+        smooth_config(),
+    )
+    .expect("second fit");
+    assert_eq!(first_fit.parameter_values(), second_fit.parameter_values());
+    let first_samples = LaplaceApproximation::from_fit(&first_fit, LaplaceConfig::fixture())
+        .expect("first Laplace fit")
+        .sample_parameters(73, 64)
+        .expect("first samples");
+    let second_samples = LaplaceApproximation::from_fit(&second_fit, LaplaceConfig::fixture())
+        .expect("second Laplace fit")
+        .sample_parameters(73, 64)
+        .expect("second samples");
+    let first = CuspEngine::try_new(
+        first_fit,
+        first_samples,
+        ControlCovariance::try_new(0.08, 0.01, 0.12).expect("covariance"),
+        online_config(),
+        None,
+    )
+    .expect("first engine");
+    let second = CuspEngine::try_new(
+        second_fit,
+        second_samples,
+        ControlCovariance::try_new(0.08, 0.01, 0.12).expect("covariance"),
+        online_config(),
+        None,
+    )
+    .expect("second engine");
+
+    assert_ne!(first.model_evidence_hash(), second.model_evidence_hash());
+}
+
+#[test]
 fn evidence_changes_with_time_without_online_refitting() {
     let (fit, samples) = fitted_posterior(64);
     let parameters = fit.parameter_values().to_vec();
@@ -596,7 +648,7 @@ fn evidence_changes_with_time_without_online_refitting() {
             vector(0.25, 0.30),
         ))
         .expect("second");
-    assert_ne!(first.evidence_hash, second.evidence_hash);
+    assert_ne!(first.evidence_hash(), second.evidence_hash());
     assert_eq!(first_engine.frozen_parameters(), parameters);
     assert_eq!(second_engine.frozen_parameters(), parameters);
 }
@@ -669,6 +721,10 @@ fn fitted_posterior(
 }
 
 fn transition_data() -> FitDataset {
+    transition_data_with_normalization_hash([17; 32])
+}
+
+fn transition_data_with_normalization_hash(normalization_hash: [u8; 32]) -> FitDataset {
     let mut rows = Vec::new();
     for index in 0..96_usize {
         let alpha_feature = centered_cycle(index, 17, 8.0);
@@ -696,7 +752,7 @@ fn transition_data() -> FitDataset {
     }
     FitDataset::try_new(
         control_schema(),
-        [17; 32],
+        normalization_hash,
         [23; 32],
         [29; 32],
         FitTimeRange::try_new(BASE_TIME_NS, BASE_TIME_NS + 96 * STEP_NS).expect("time range"),

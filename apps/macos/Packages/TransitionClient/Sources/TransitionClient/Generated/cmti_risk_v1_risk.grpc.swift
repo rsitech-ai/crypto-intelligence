@@ -1188,9 +1188,23 @@ public enum Cmti_Risk_V1_CuspService: Sendable {
                 type: .unary
             )
         }
+        /// Namespace for "GetCuspHistory" metadata.
+        public enum GetCuspHistory: Sendable {
+            /// Request type for "GetCuspHistory".
+            public typealias Input = Cmti_Risk_V1_CuspServiceGetCuspHistoryRequest
+            /// Response type for "GetCuspHistory".
+            public typealias Output = Cmti_Risk_V1_CuspServiceGetCuspHistoryResponse
+            /// Descriptor for "GetCuspHistory".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "cmti.risk.v1.CuspService"),
+                method: "GetCuspHistory",
+                type: .unary
+            )
+        }
         /// Descriptors for all methods in the "cmti.risk.v1.CuspService" service.
         public static let descriptors: [GRPCCore.MethodDescriptor] = [
-            GetCuspState.descriptor
+            GetCuspState.descriptor,
+            GetCuspHistory.descriptor
         ]
     }
 }
@@ -1227,6 +1241,25 @@ extension Cmti_Risk_V1_CuspService {
             deserializer: some GRPCCore.MessageDeserializer<Cmti_Risk_V1_CuspServiceGetCuspStateResponse>,
             options: GRPCCore.CallOptions,
             onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Cmti_Risk_V1_CuspServiceGetCuspStateResponse>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "GetCuspHistory" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Cmti_Risk_V1_CuspServiceGetCuspHistoryRequest` message.
+        ///   - serializer: A serializer for `Cmti_Risk_V1_CuspServiceGetCuspHistoryRequest` messages.
+        ///   - deserializer: A deserializer for `Cmti_Risk_V1_CuspServiceGetCuspHistoryResponse` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func getCuspHistory<Result>(
+            request: GRPCCore.ClientRequest<Cmti_Risk_V1_CuspServiceGetCuspHistoryRequest>,
+            serializer: some GRPCCore.MessageSerializer<Cmti_Risk_V1_CuspServiceGetCuspHistoryRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Cmti_Risk_V1_CuspServiceGetCuspHistoryResponse>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Cmti_Risk_V1_CuspServiceGetCuspHistoryResponse>) async throws -> Result
         ) async throws -> Result where Result: Sendable
     }
 
@@ -1275,6 +1308,36 @@ extension Cmti_Risk_V1_CuspService {
                 onResponse: handleResponse
             )
         }
+
+        /// Call the "GetCuspHistory" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Cmti_Risk_V1_CuspServiceGetCuspHistoryRequest` message.
+        ///   - serializer: A serializer for `Cmti_Risk_V1_CuspServiceGetCuspHistoryRequest` messages.
+        ///   - deserializer: A deserializer for `Cmti_Risk_V1_CuspServiceGetCuspHistoryResponse` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func getCuspHistory<Result>(
+            request: GRPCCore.ClientRequest<Cmti_Risk_V1_CuspServiceGetCuspHistoryRequest>,
+            serializer: some GRPCCore.MessageSerializer<Cmti_Risk_V1_CuspServiceGetCuspHistoryRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Cmti_Risk_V1_CuspServiceGetCuspHistoryResponse>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Cmti_Risk_V1_CuspServiceGetCuspHistoryResponse>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Cmti_Risk_V1_CuspService.Method.GetCuspHistory.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
     }
 }
 
@@ -1301,6 +1364,31 @@ extension Cmti_Risk_V1_CuspService.ClientProtocol {
             request: request,
             serializer: GRPCProtobuf.ProtobufSerializer<Cmti_Risk_V1_CuspServiceGetCuspStateRequest>(),
             deserializer: GRPCProtobuf.ProtobufDeserializer<Cmti_Risk_V1_CuspServiceGetCuspStateResponse>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "GetCuspHistory" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Cmti_Risk_V1_CuspServiceGetCuspHistoryRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func getCuspHistory<Result>(
+        request: GRPCCore.ClientRequest<Cmti_Risk_V1_CuspServiceGetCuspHistoryRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Cmti_Risk_V1_CuspServiceGetCuspHistoryResponse>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.getCuspHistory(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Cmti_Risk_V1_CuspServiceGetCuspHistoryRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Cmti_Risk_V1_CuspServiceGetCuspHistoryResponse>(),
             options: options,
             onResponse: handleResponse
         )
@@ -1333,6 +1421,35 @@ extension Cmti_Risk_V1_CuspService.ClientProtocol {
             metadata: metadata
         )
         return try await self.getCuspState(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "GetCuspHistory" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func getCuspHistory<Result>(
+        _ message: Cmti_Risk_V1_CuspServiceGetCuspHistoryRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Cmti_Risk_V1_CuspServiceGetCuspHistoryResponse>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Cmti_Risk_V1_CuspServiceGetCuspHistoryRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.getCuspHistory(
             request: request,
             options: options,
             onResponse: handleResponse

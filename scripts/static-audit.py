@@ -4,6 +4,8 @@ import json,re,subprocess,sys,tomllib
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]; errors=[]; warnings=[]
 def fail(x): errors.append(x)
+def ignored_generated_path(path:Path):
+ return any(part in{".git",".build","target","__pycache__"} for part in path.parts)
 def placeholder_reason(path:Path,text:str):
  if text.strip()==path.as_posix():
   return "path-only source placeholder"
@@ -58,14 +60,14 @@ def plan():
  (ROOT/"docs/implementation/PLAN-TRACEABILITY.json").write_text(json.dumps(report,indent=2)+"\n")
 def parsers():
  for p in ROOT.rglob("*.toml"):
-  if ".git" in p.parts or ".build" in p.parts: continue
+  if ignored_generated_path(p): continue
   try:tomllib.loads(p.read_text())
   except Exception as e:fail(f"TOML {p.relative_to(ROOT)}: {e}")
   if p.name=="Cargo.toml":
    reason=cargo_manifest_reason(p)
    if reason:fail(f"Cargo manifest {p.relative_to(ROOT)}: {reason}")
  for p in ROOT.rglob("*.json"):
-  if ".git" in p.parts or ".build" in p.parts:continue
+  if ignored_generated_path(p):continue
   try:json.loads(p.read_text())
   except Exception as e:fail(f"JSON {p.relative_to(ROOT)}: {e}")
  project=ROOT/"apps/macos/CuspObservatory.xcodeproj/project.pbxproj"
@@ -105,7 +107,7 @@ def security():
  obs=read("crates/observability/src/lib.rs")
  for x in["buffered_lines_limit","lossy(true)","DroppedLogLines","contains_json_secret","REDACTED"]:
   if x not in obs:fail(f"observability missing {x}")
- manifests="\n".join(p.read_text().lower() for p in ROOT.rglob("Cargo.toml"))
+ manifests="\n".join(p.read_text().lower() for p in ROOT.rglob("Cargo.toml") if not ignored_generated_path(p))
  for x in["opentelemetry","sentry"]:
   if x in manifests:fail(f"remote telemetry dependency {x}")
 def governance():
@@ -147,14 +149,14 @@ def hygiene():
   d=ROOT/base
   if not d.exists():continue
   for p in d.rglob("*"):
-   if not p.is_file() or p.resolve()==Path(__file__).resolve() or ".build" in p.parts or p.suffix not in{".rs",".swift",".py",".sh",".proto",".toml",".json",".yaml",".yml"}:continue
+   if not p.is_file() or p.resolve()==Path(__file__).resolve() or ignored_generated_path(p) or p.suffix not in{".rs",".swift",".py",".sh",".proto",".toml",".json",".yaml",".yml"}:continue
    t=p.read_text(errors="replace")
    if pat.search(t):fail(f"placeholder {p.relative_to(ROOT)}")
    reason=placeholder_reason(p.relative_to(ROOT),t)
    if reason:fail(f"placeholder {p.relative_to(ROOT)}: {reason}")
    if contains_hard_coded_secret(t):fail(f"secret-shaped content {p.relative_to(ROOT)}")
  for p in ROOT.rglob("*"):
-  if ".git" in p.parts or ".build" in p.parts or "target" in p.parts or "__pycache__" in p.parts:continue
+  if ignored_generated_path(p):continue
   try:
    if p.is_symlink():fail(f"symlink {p.relative_to(ROOT)}")
   except OSError:fail(f"unreadable {p}")

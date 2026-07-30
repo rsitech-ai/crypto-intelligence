@@ -55,12 +55,130 @@ message ScenarioDistribution {
   repeated string values = 3;
 }
 
+enum CuspBranch {
+  CUSP_BRANCH_UNSPECIFIED = 0;
+  CUSP_BRANCH_LOWER = 1;
+  CUSP_BRANCH_UPPER = 2;
+}
+
+enum CuspHysteresisState {
+  CUSP_HYSTERESIS_STATE_UNSPECIFIED = 0;
+  CUSP_HYSTERESIS_STATE_FOLLOWING_LOWER = 1;
+  CUSP_HYSTERESIS_STATE_FOLLOWING_UPPER = 2;
+  CUSP_HYSTERESIS_STATE_JUMPED_LOWER_TO_UPPER = 3;
+  CUSP_HYSTERESIS_STATE_JUMPED_UPPER_TO_LOWER = 4;
+}
+
+enum CuspEquilibriumStability {
+  CUSP_EQUILIBRIUM_STABILITY_UNSPECIFIED = 0;
+  CUSP_EQUILIBRIUM_STABILITY_STABLE = 1;
+  CUSP_EQUILIBRIUM_STABILITY_UNSTABLE = 2;
+  CUSP_EQUILIBRIUM_STABILITY_MARGINAL = 3;
+}
+
+enum CuspUncertaintyQuality {
+  CUSP_UNCERTAINTY_QUALITY_UNSPECIFIED = 0;
+  CUSP_UNCERTAINTY_QUALITY_PRODUCTION_CANDIDATE = 1;
+  CUSP_UNCERTAINTY_QUALITY_EXPERIMENTAL = 2;
+  CUSP_UNCERTAINTY_QUALITY_UNAVAILABLE = 3;
+}
+
+enum CuspWeightEligibility {
+  CUSP_WEIGHT_ELIGIBILITY_UNSPECIFIED = 0;
+  CUSP_WEIGHT_ELIGIBILITY_RESEARCH_ONLY = 1;
+  CUSP_WEIGHT_ELIGIBILITY_ELIGIBLE_FOR_PRODUCTION_WEIGHT = 2;
+}
+
+enum CuspProductionUse {
+  CUSP_PRODUCTION_USE_UNSPECIFIED = 0;
+  CUSP_PRODUCTION_USE_NOT_USED_IN_PRODUCTION_PROBABILITY = 1;
+  CUSP_PRODUCTION_USE_USED_IN_PRODUCTION_PROBABILITY = 2;
+}
+
+message CuspEquilibrium {
+  string root = 1;
+  uint32 multiplicity = 2;
+  string residual = 3;
+  string condition_proxy = 4;
+  CuspEquilibriumStability stability = 5;
+  string hessian = 6;
+  optional string restoring_force = 7;
+}
+
+message CuspBranchProbability {
+  CuspBranch branch = 1;
+  uint32 probability_ppm = 2;
+}
+
+message CuspFeatureSensitivity {
+  string feature_id = 1;
+  string feature_version = 2;
+  string alpha_sensitivity = 3;
+  string beta_sensitivity = 4;
+}
+
+message CuspMissingFeature {
+  string feature_id = 1;
+  string feature_version = 2;
+  string reason = 3;
+}
+
+message CuspFoldState {
+  string distance = 1;
+  string nearest_alpha = 2;
+  string nearest_beta = 3;
+  string fold_parameter = 4;
+  bool converged = 5;
+  uint32 iterations = 6;
+  uint32 evaluations = 7;
+  optional string condition_number = 8;
+}
+
+message CuspGateCheck {
+  string kind = 1;
+  bool passed = 2;
+  sint64 observed = 3;
+  optional sint64 minimum = 4;
+  optional sint64 maximum = 5;
+  string unit = 6;
+}
+
 message CuspState {
   string state_id = 1;
   string alpha = 2;
   string beta = 3;
   string fold_distance = 4;
   cmti.common.v1.AvailabilityState availability = 5;
+  cmti.common.v1.AssetId asset = 6;
+  cmti.common.v1.UnixNanos as_of_time = 7;
+  string normalized_state = 8;
+  optional string cusp_region_probability = 9;
+  optional string signed_discriminant = 10;
+  optional string standardized_discriminant = 11;
+  repeated CuspEquilibrium equilibria = 12;
+  CuspBranch most_likely_branch = 13;
+  repeated CuspBranchProbability branch_probabilities = 14;
+  optional string minimum_barrier = 15;
+  optional string restoring_force = 16;
+  CuspHysteresisState hysteresis = 17;
+  repeated CuspFeatureSensitivity sensitivities = 18;
+  repeated CuspMissingFeature missing_optional_features = 19;
+  CuspUncertaintyQuality uncertainty_quality = 20;
+  bytes evidence_blake3 = 21;
+  CuspWeightEligibility weight_eligibility = 22;
+  CuspProductionUse production_use = 23;
+  bytes gate_evidence_blake3 = 24;
+  cmti.common.v1.DataQualitySummary quality = 25;
+  uint32 feature_coverage_ppm = 26;
+  string source_health = 27;
+  CuspFoldState fold = 28;
+  uint32 posterior_sample_count = 29;
+  uint32 schema_version = 30;
+  string availability_reason = 31;
+  bytes model_evidence_blake3 = 32;
+  repeated CuspGateCheck gate_checks = 33;
+  uint32 gate_policy_schema_version = 34;
+  uint32 gate_evaluation_schema_version = 35;
 }
 
 message AlertRule {
@@ -163,6 +281,16 @@ message CuspServiceGetCuspStateResponse {
   CuspState cusp_state = 1;
 }
 
+message CuspServiceGetCuspHistoryRequest {
+  cmti.common.v1.AssetId asset = 1;
+  uint32 limit = 2;
+  cmti.common.v1.UnixNanos before_as_of_time = 3;
+}
+
+message CuspServiceGetCuspHistoryResponse {
+  repeated CuspState cusp_states = 1;
+}
+
 message ListRulesRequest {}
 
 message ListRulesResponse {
@@ -205,6 +333,7 @@ service ForecastService {
 
 service CuspService {
   rpc GetCuspState(CuspServiceGetCuspStateRequest) returns (CuspServiceGetCuspStateResponse);
+  rpc GetCuspHistory(CuspServiceGetCuspHistoryRequest) returns (CuspServiceGetCuspHistoryResponse);
 }
 
 service AlertService {

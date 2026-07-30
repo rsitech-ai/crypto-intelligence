@@ -1,4 +1,5 @@
 mod capacity;
+mod cusp_report;
 mod evaluation;
 
 use std::process::ExitCode;
@@ -20,6 +21,7 @@ struct Arguments {
 #[derive(Debug, Subcommand)]
 enum Command {
     Capacity(capacity::CapacityArguments),
+    CuspAblation(cusp_report::CuspAblationArguments),
     Evaluate(evaluation::EvaluationArguments),
 }
 
@@ -28,6 +30,9 @@ fn main() -> ExitCode {
     let result = match (arguments.command, arguments.manifest, arguments.output) {
         (Some(Command::Capacity(arguments)), None, None) => {
             capacity::run(arguments).map_err(ApplicationError::Capacity)
+        }
+        (Some(Command::CuspAblation(arguments)), None, None) => {
+            cusp_report::run(arguments).map_err(ApplicationError::CuspReport)
         }
         (Some(Command::Evaluate(arguments)), None, None) => {
             evaluation::run(arguments).map_err(ApplicationError::Evaluation)
@@ -51,6 +56,8 @@ fn main() -> ExitCode {
 enum ApplicationError {
     #[error("capacity command failed: {0}")]
     Capacity(#[source] capacity::CliError),
+    #[error("cusp ablation command failed: {0}")]
+    CuspReport(#[source] cusp_report::CuspReportError),
     #[error("evaluation command failed: {0}")]
     Evaluation(#[source] evaluation::EvaluationError),
     #[error("provide a subcommand or both --manifest and --output")]

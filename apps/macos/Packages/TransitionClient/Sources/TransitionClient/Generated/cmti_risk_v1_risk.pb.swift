@@ -133,6 +133,250 @@ public nonisolated enum Cmti_Risk_V1_ForecastStatus: SwiftProtobuf.Enum, Swift.C
 
 }
 
+public nonisolated enum Cmti_Risk_V1_CuspBranch: SwiftProtobuf.Enum, Swift.CaseIterable {
+  public typealias RawValue = Int
+  case unspecified // = 0
+  case lower // = 1
+  case upper // = 2
+  case UNRECOGNIZED(Int)
+
+  public init() {
+    self = .unspecified
+  }
+
+  public init?(rawValue: Int) {
+    switch rawValue {
+    case 0: self = .unspecified
+    case 1: self = .lower
+    case 2: self = .upper
+    default: self = .UNRECOGNIZED(rawValue)
+    }
+  }
+
+  public var rawValue: Int {
+    switch self {
+    case .unspecified: return 0
+    case .lower: return 1
+    case .upper: return 2
+    case .UNRECOGNIZED(let i): return i
+    }
+  }
+
+  // The compiler won't synthesize support with the UNRECOGNIZED case.
+  public static let allCases: [Cmti_Risk_V1_CuspBranch] = [
+    .unspecified,
+    .lower,
+    .upper,
+  ]
+
+}
+
+public nonisolated enum Cmti_Risk_V1_CuspHysteresisState: SwiftProtobuf.Enum, Swift.CaseIterable {
+  public typealias RawValue = Int
+  case unspecified // = 0
+  case followingLower // = 1
+  case followingUpper // = 2
+  case jumpedLowerToUpper // = 3
+  case jumpedUpperToLower // = 4
+  case UNRECOGNIZED(Int)
+
+  public init() {
+    self = .unspecified
+  }
+
+  public init?(rawValue: Int) {
+    switch rawValue {
+    case 0: self = .unspecified
+    case 1: self = .followingLower
+    case 2: self = .followingUpper
+    case 3: self = .jumpedLowerToUpper
+    case 4: self = .jumpedUpperToLower
+    default: self = .UNRECOGNIZED(rawValue)
+    }
+  }
+
+  public var rawValue: Int {
+    switch self {
+    case .unspecified: return 0
+    case .followingLower: return 1
+    case .followingUpper: return 2
+    case .jumpedLowerToUpper: return 3
+    case .jumpedUpperToLower: return 4
+    case .UNRECOGNIZED(let i): return i
+    }
+  }
+
+  // The compiler won't synthesize support with the UNRECOGNIZED case.
+  public static let allCases: [Cmti_Risk_V1_CuspHysteresisState] = [
+    .unspecified,
+    .followingLower,
+    .followingUpper,
+    .jumpedLowerToUpper,
+    .jumpedUpperToLower,
+  ]
+
+}
+
+public nonisolated enum Cmti_Risk_V1_CuspEquilibriumStability: SwiftProtobuf.Enum, Swift.CaseIterable {
+  public typealias RawValue = Int
+  case unspecified // = 0
+  case stable // = 1
+  case unstable // = 2
+  case marginal // = 3
+  case UNRECOGNIZED(Int)
+
+  public init() {
+    self = .unspecified
+  }
+
+  public init?(rawValue: Int) {
+    switch rawValue {
+    case 0: self = .unspecified
+    case 1: self = .stable
+    case 2: self = .unstable
+    case 3: self = .marginal
+    default: self = .UNRECOGNIZED(rawValue)
+    }
+  }
+
+  public var rawValue: Int {
+    switch self {
+    case .unspecified: return 0
+    case .stable: return 1
+    case .unstable: return 2
+    case .marginal: return 3
+    case .UNRECOGNIZED(let i): return i
+    }
+  }
+
+  // The compiler won't synthesize support with the UNRECOGNIZED case.
+  public static let allCases: [Cmti_Risk_V1_CuspEquilibriumStability] = [
+    .unspecified,
+    .stable,
+    .unstable,
+    .marginal,
+  ]
+
+}
+
+public nonisolated enum Cmti_Risk_V1_CuspUncertaintyQuality: SwiftProtobuf.Enum, Swift.CaseIterable {
+  public typealias RawValue = Int
+  case unspecified // = 0
+  case productionCandidate // = 1
+  case experimental // = 2
+  case unavailable // = 3
+  case UNRECOGNIZED(Int)
+
+  public init() {
+    self = .unspecified
+  }
+
+  public init?(rawValue: Int) {
+    switch rawValue {
+    case 0: self = .unspecified
+    case 1: self = .productionCandidate
+    case 2: self = .experimental
+    case 3: self = .unavailable
+    default: self = .UNRECOGNIZED(rawValue)
+    }
+  }
+
+  public var rawValue: Int {
+    switch self {
+    case .unspecified: return 0
+    case .productionCandidate: return 1
+    case .experimental: return 2
+    case .unavailable: return 3
+    case .UNRECOGNIZED(let i): return i
+    }
+  }
+
+  // The compiler won't synthesize support with the UNRECOGNIZED case.
+  public static let allCases: [Cmti_Risk_V1_CuspUncertaintyQuality] = [
+    .unspecified,
+    .productionCandidate,
+    .experimental,
+    .unavailable,
+  ]
+
+}
+
+public nonisolated enum Cmti_Risk_V1_CuspWeightEligibility: SwiftProtobuf.Enum, Swift.CaseIterable {
+  public typealias RawValue = Int
+  case unspecified // = 0
+  case researchOnly // = 1
+  case eligibleForProductionWeight // = 2
+  case UNRECOGNIZED(Int)
+
+  public init() {
+    self = .unspecified
+  }
+
+  public init?(rawValue: Int) {
+    switch rawValue {
+    case 0: self = .unspecified
+    case 1: self = .researchOnly
+    case 2: self = .eligibleForProductionWeight
+    default: self = .UNRECOGNIZED(rawValue)
+    }
+  }
+
+  public var rawValue: Int {
+    switch self {
+    case .unspecified: return 0
+    case .researchOnly: return 1
+    case .eligibleForProductionWeight: return 2
+    case .UNRECOGNIZED(let i): return i
+    }
+  }
+
+  // The compiler won't synthesize support with the UNRECOGNIZED case.
+  public static let allCases: [Cmti_Risk_V1_CuspWeightEligibility] = [
+    .unspecified,
+    .researchOnly,
+    .eligibleForProductionWeight,
+  ]
+
+}
+
+public nonisolated enum Cmti_Risk_V1_CuspProductionUse: SwiftProtobuf.Enum, Swift.CaseIterable {
+  public typealias RawValue = Int
+  case unspecified // = 0
+  case notUsedInProductionProbability // = 1
+  case usedInProductionProbability // = 2
+  case UNRECOGNIZED(Int)
+
+  public init() {
+    self = .unspecified
+  }
+
+  public init?(rawValue: Int) {
+    switch rawValue {
+    case 0: self = .unspecified
+    case 1: self = .notUsedInProductionProbability
+    case 2: self = .usedInProductionProbability
+    default: self = .UNRECOGNIZED(rawValue)
+    }
+  }
+
+  public var rawValue: Int {
+    switch self {
+    case .unspecified: return 0
+    case .notUsedInProductionProbability: return 1
+    case .usedInProductionProbability: return 2
+    case .UNRECOGNIZED(let i): return i
+    }
+  }
+
+  // The compiler won't synthesize support with the UNRECOGNIZED case.
+  public static let allCases: [Cmti_Risk_V1_CuspProductionUse] = [
+    .unspecified,
+    .notUsedInProductionProbability,
+    .usedInProductionProbability,
+  ]
+
+}
+
 public nonisolated struct Cmti_Risk_V1_ProbabilityPoint: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
@@ -228,24 +472,382 @@ public nonisolated struct Cmti_Risk_V1_ScenarioDistribution: Sendable {
   public init() {}
 }
 
-public nonisolated struct Cmti_Risk_V1_CuspState: Sendable {
+public nonisolated struct Cmti_Risk_V1_CuspEquilibrium: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
-  public var stateID: String = String()
+  public var root: String = String()
 
-  public var alpha: String = String()
+  public var multiplicity: UInt32 = 0
 
-  public var beta: String = String()
+  public var residual: String = String()
 
-  public var foldDistance: String = String()
+  public var conditionProxy: String = String()
 
-  public var availability: Cmti_Common_V1_AvailabilityState = .unspecified
+  public var stability: Cmti_Risk_V1_CuspEquilibriumStability = .unspecified
+
+  public var hessian: String = String()
+
+  public var restoringForce: String {
+    get {_restoringForce ?? String()}
+    set {_restoringForce = newValue}
+  }
+  /// Returns true if `restoringForce` has been explicitly set.
+  public var hasRestoringForce: Bool {self._restoringForce != nil}
+  /// Clears the value of `restoringForce`. Subsequent reads from it will return its default value.
+  public mutating func clearRestoringForce() {self._restoringForce = nil}
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
+
+  fileprivate var _restoringForce: String? = nil
+}
+
+public nonisolated struct Cmti_Risk_V1_CuspBranchProbability: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var branch: Cmti_Risk_V1_CuspBranch = .unspecified
+
+  public var probabilityPpm: UInt32 = 0
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct Cmti_Risk_V1_CuspFeatureSensitivity: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var featureID: String = String()
+
+  public var featureVersion: String = String()
+
+  public var alphaSensitivity: String = String()
+
+  public var betaSensitivity: String = String()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct Cmti_Risk_V1_CuspMissingFeature: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var featureID: String = String()
+
+  public var featureVersion: String = String()
+
+  public var reason: String = String()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct Cmti_Risk_V1_CuspFoldState: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var distance: String = String()
+
+  public var nearestAlpha: String = String()
+
+  public var nearestBeta: String = String()
+
+  public var foldParameter: String = String()
+
+  public var converged: Bool = false
+
+  public var iterations: UInt32 = 0
+
+  public var evaluations: UInt32 = 0
+
+  public var conditionNumber: String {
+    get {_conditionNumber ?? String()}
+    set {_conditionNumber = newValue}
+  }
+  /// Returns true if `conditionNumber` has been explicitly set.
+  public var hasConditionNumber: Bool {self._conditionNumber != nil}
+  /// Clears the value of `conditionNumber`. Subsequent reads from it will return its default value.
+  public mutating func clearConditionNumber() {self._conditionNumber = nil}
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+
+  fileprivate var _conditionNumber: String? = nil
+}
+
+public nonisolated struct Cmti_Risk_V1_CuspGateCheck: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var kind: String = String()
+
+  public var passed: Bool = false
+
+  public var observed: Int64 = 0
+
+  public var minimum: Int64 {
+    get {_minimum ?? 0}
+    set {_minimum = newValue}
+  }
+  /// Returns true if `minimum` has been explicitly set.
+  public var hasMinimum: Bool {self._minimum != nil}
+  /// Clears the value of `minimum`. Subsequent reads from it will return its default value.
+  public mutating func clearMinimum() {self._minimum = nil}
+
+  public var maximum: Int64 {
+    get {_maximum ?? 0}
+    set {_maximum = newValue}
+  }
+  /// Returns true if `maximum` has been explicitly set.
+  public var hasMaximum: Bool {self._maximum != nil}
+  /// Clears the value of `maximum`. Subsequent reads from it will return its default value.
+  public mutating func clearMaximum() {self._maximum = nil}
+
+  public var unit: String = String()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+
+  fileprivate var _minimum: Int64? = nil
+  fileprivate var _maximum: Int64? = nil
+}
+
+public nonisolated struct Cmti_Risk_V1_CuspState: @unchecked Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var stateID: String {
+    get {_storage._stateID}
+    set {_uniqueStorage()._stateID = newValue}
+  }
+
+  public var alpha: String {
+    get {_storage._alpha}
+    set {_uniqueStorage()._alpha = newValue}
+  }
+
+  public var beta: String {
+    get {_storage._beta}
+    set {_uniqueStorage()._beta = newValue}
+  }
+
+  public var foldDistance: String {
+    get {_storage._foldDistance}
+    set {_uniqueStorage()._foldDistance = newValue}
+  }
+
+  public var availability: Cmti_Common_V1_AvailabilityState {
+    get {_storage._availability}
+    set {_uniqueStorage()._availability = newValue}
+  }
+
+  public var asset: Cmti_Common_V1_AssetId {
+    get {_storage._asset ?? Cmti_Common_V1_AssetId()}
+    set {_uniqueStorage()._asset = newValue}
+  }
+  /// Returns true if `asset` has been explicitly set.
+  public var hasAsset: Bool {_storage._asset != nil}
+  /// Clears the value of `asset`. Subsequent reads from it will return its default value.
+  public mutating func clearAsset() {_uniqueStorage()._asset = nil}
+
+  public var asOfTime: Cmti_Common_V1_UnixNanos {
+    get {_storage._asOfTime ?? Cmti_Common_V1_UnixNanos()}
+    set {_uniqueStorage()._asOfTime = newValue}
+  }
+  /// Returns true if `asOfTime` has been explicitly set.
+  public var hasAsOfTime: Bool {_storage._asOfTime != nil}
+  /// Clears the value of `asOfTime`. Subsequent reads from it will return its default value.
+  public mutating func clearAsOfTime() {_uniqueStorage()._asOfTime = nil}
+
+  public var normalizedState: String {
+    get {_storage._normalizedState}
+    set {_uniqueStorage()._normalizedState = newValue}
+  }
+
+  public var cuspRegionProbability: String {
+    get {_storage._cuspRegionProbability ?? String()}
+    set {_uniqueStorage()._cuspRegionProbability = newValue}
+  }
+  /// Returns true if `cuspRegionProbability` has been explicitly set.
+  public var hasCuspRegionProbability: Bool {_storage._cuspRegionProbability != nil}
+  /// Clears the value of `cuspRegionProbability`. Subsequent reads from it will return its default value.
+  public mutating func clearCuspRegionProbability() {_uniqueStorage()._cuspRegionProbability = nil}
+
+  public var signedDiscriminant: String {
+    get {_storage._signedDiscriminant ?? String()}
+    set {_uniqueStorage()._signedDiscriminant = newValue}
+  }
+  /// Returns true if `signedDiscriminant` has been explicitly set.
+  public var hasSignedDiscriminant: Bool {_storage._signedDiscriminant != nil}
+  /// Clears the value of `signedDiscriminant`. Subsequent reads from it will return its default value.
+  public mutating func clearSignedDiscriminant() {_uniqueStorage()._signedDiscriminant = nil}
+
+  public var standardizedDiscriminant: String {
+    get {_storage._standardizedDiscriminant ?? String()}
+    set {_uniqueStorage()._standardizedDiscriminant = newValue}
+  }
+  /// Returns true if `standardizedDiscriminant` has been explicitly set.
+  public var hasStandardizedDiscriminant: Bool {_storage._standardizedDiscriminant != nil}
+  /// Clears the value of `standardizedDiscriminant`. Subsequent reads from it will return its default value.
+  public mutating func clearStandardizedDiscriminant() {_uniqueStorage()._standardizedDiscriminant = nil}
+
+  public var equilibria: [Cmti_Risk_V1_CuspEquilibrium] {
+    get {_storage._equilibria}
+    set {_uniqueStorage()._equilibria = newValue}
+  }
+
+  public var mostLikelyBranch: Cmti_Risk_V1_CuspBranch {
+    get {_storage._mostLikelyBranch}
+    set {_uniqueStorage()._mostLikelyBranch = newValue}
+  }
+
+  public var branchProbabilities: [Cmti_Risk_V1_CuspBranchProbability] {
+    get {_storage._branchProbabilities}
+    set {_uniqueStorage()._branchProbabilities = newValue}
+  }
+
+  public var minimumBarrier: String {
+    get {_storage._minimumBarrier ?? String()}
+    set {_uniqueStorage()._minimumBarrier = newValue}
+  }
+  /// Returns true if `minimumBarrier` has been explicitly set.
+  public var hasMinimumBarrier: Bool {_storage._minimumBarrier != nil}
+  /// Clears the value of `minimumBarrier`. Subsequent reads from it will return its default value.
+  public mutating func clearMinimumBarrier() {_uniqueStorage()._minimumBarrier = nil}
+
+  public var restoringForce: String {
+    get {_storage._restoringForce ?? String()}
+    set {_uniqueStorage()._restoringForce = newValue}
+  }
+  /// Returns true if `restoringForce` has been explicitly set.
+  public var hasRestoringForce: Bool {_storage._restoringForce != nil}
+  /// Clears the value of `restoringForce`. Subsequent reads from it will return its default value.
+  public mutating func clearRestoringForce() {_uniqueStorage()._restoringForce = nil}
+
+  public var hysteresis: Cmti_Risk_V1_CuspHysteresisState {
+    get {_storage._hysteresis}
+    set {_uniqueStorage()._hysteresis = newValue}
+  }
+
+  public var sensitivities: [Cmti_Risk_V1_CuspFeatureSensitivity] {
+    get {_storage._sensitivities}
+    set {_uniqueStorage()._sensitivities = newValue}
+  }
+
+  public var missingOptionalFeatures: [Cmti_Risk_V1_CuspMissingFeature] {
+    get {_storage._missingOptionalFeatures}
+    set {_uniqueStorage()._missingOptionalFeatures = newValue}
+  }
+
+  public var uncertaintyQuality: Cmti_Risk_V1_CuspUncertaintyQuality {
+    get {_storage._uncertaintyQuality}
+    set {_uniqueStorage()._uncertaintyQuality = newValue}
+  }
+
+  public var evidenceBlake3: Data {
+    get {_storage._evidenceBlake3}
+    set {_uniqueStorage()._evidenceBlake3 = newValue}
+  }
+
+  public var weightEligibility: Cmti_Risk_V1_CuspWeightEligibility {
+    get {_storage._weightEligibility}
+    set {_uniqueStorage()._weightEligibility = newValue}
+  }
+
+  public var productionUse: Cmti_Risk_V1_CuspProductionUse {
+    get {_storage._productionUse}
+    set {_uniqueStorage()._productionUse = newValue}
+  }
+
+  public var gateEvidenceBlake3: Data {
+    get {_storage._gateEvidenceBlake3}
+    set {_uniqueStorage()._gateEvidenceBlake3 = newValue}
+  }
+
+  public var quality: Cmti_Common_V1_DataQualitySummary {
+    get {_storage._quality ?? Cmti_Common_V1_DataQualitySummary()}
+    set {_uniqueStorage()._quality = newValue}
+  }
+  /// Returns true if `quality` has been explicitly set.
+  public var hasQuality: Bool {_storage._quality != nil}
+  /// Clears the value of `quality`. Subsequent reads from it will return its default value.
+  public mutating func clearQuality() {_uniqueStorage()._quality = nil}
+
+  public var featureCoveragePpm: UInt32 {
+    get {_storage._featureCoveragePpm}
+    set {_uniqueStorage()._featureCoveragePpm = newValue}
+  }
+
+  public var sourceHealth: String {
+    get {_storage._sourceHealth}
+    set {_uniqueStorage()._sourceHealth = newValue}
+  }
+
+  public var fold: Cmti_Risk_V1_CuspFoldState {
+    get {_storage._fold ?? Cmti_Risk_V1_CuspFoldState()}
+    set {_uniqueStorage()._fold = newValue}
+  }
+  /// Returns true if `fold` has been explicitly set.
+  public var hasFold: Bool {_storage._fold != nil}
+  /// Clears the value of `fold`. Subsequent reads from it will return its default value.
+  public mutating func clearFold() {_uniqueStorage()._fold = nil}
+
+  public var posteriorSampleCount: UInt32 {
+    get {_storage._posteriorSampleCount}
+    set {_uniqueStorage()._posteriorSampleCount = newValue}
+  }
+
+  public var schemaVersion: UInt32 {
+    get {_storage._schemaVersion}
+    set {_uniqueStorage()._schemaVersion = newValue}
+  }
+
+  public var availabilityReason: String {
+    get {_storage._availabilityReason}
+    set {_uniqueStorage()._availabilityReason = newValue}
+  }
+
+  public var modelEvidenceBlake3: Data {
+    get {_storage._modelEvidenceBlake3}
+    set {_uniqueStorage()._modelEvidenceBlake3 = newValue}
+  }
+
+  public var gateChecks: [Cmti_Risk_V1_CuspGateCheck] {
+    get {_storage._gateChecks}
+    set {_uniqueStorage()._gateChecks = newValue}
+  }
+
+  public var gatePolicySchemaVersion: UInt32 {
+    get {_storage._gatePolicySchemaVersion}
+    set {_uniqueStorage()._gatePolicySchemaVersion = newValue}
+  }
+
+  public var gateEvaluationSchemaVersion: UInt32 {
+    get {_storage._gateEvaluationSchemaVersion}
+    set {_uniqueStorage()._gateEvaluationSchemaVersion = newValue}
+  }
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+
+  fileprivate var _storage = _StorageClass.defaultInstance
 }
 
 public nonisolated struct Cmti_Risk_V1_AlertRule: Sendable {
@@ -667,6 +1269,51 @@ public nonisolated struct Cmti_Risk_V1_CuspServiceGetCuspStateResponse: Sendable
   fileprivate var _cuspState: Cmti_Risk_V1_CuspState? = nil
 }
 
+public nonisolated struct Cmti_Risk_V1_CuspServiceGetCuspHistoryRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var asset: Cmti_Common_V1_AssetId {
+    get {_asset ?? Cmti_Common_V1_AssetId()}
+    set {_asset = newValue}
+  }
+  /// Returns true if `asset` has been explicitly set.
+  public var hasAsset: Bool {self._asset != nil}
+  /// Clears the value of `asset`. Subsequent reads from it will return its default value.
+  public mutating func clearAsset() {self._asset = nil}
+
+  public var limit: UInt32 = 0
+
+  public var beforeAsOfTime: Cmti_Common_V1_UnixNanos {
+    get {_beforeAsOfTime ?? Cmti_Common_V1_UnixNanos()}
+    set {_beforeAsOfTime = newValue}
+  }
+  /// Returns true if `beforeAsOfTime` has been explicitly set.
+  public var hasBeforeAsOfTime: Bool {self._beforeAsOfTime != nil}
+  /// Clears the value of `beforeAsOfTime`. Subsequent reads from it will return its default value.
+  public mutating func clearBeforeAsOfTime() {self._beforeAsOfTime = nil}
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+
+  fileprivate var _asset: Cmti_Common_V1_AssetId? = nil
+  fileprivate var _beforeAsOfTime: Cmti_Common_V1_UnixNanos? = nil
+}
+
+public nonisolated struct Cmti_Risk_V1_CuspServiceGetCuspHistoryResponse: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var cuspStates: [Cmti_Risk_V1_CuspState] = []
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
 public nonisolated struct Cmti_Risk_V1_ListRulesRequest: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
@@ -787,6 +1434,30 @@ nonisolated extension Cmti_Risk_V1_TransitionEventKind: SwiftProtobuf._ProtoName
 
 nonisolated extension Cmti_Risk_V1_ForecastStatus: SwiftProtobuf._ProtoNameProviding {
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0FORECAST_STATUS_UNSPECIFIED\0\u{1}FORECAST_STATUS_ACTIVE\0\u{1}FORECAST_STATUS_ABSTAINED\0\u{1}FORECAST_STATUS_EXPERIMENTAL\0\u{1}FORECAST_STATUS_SUPPRESSED\0")
+}
+
+nonisolated extension Cmti_Risk_V1_CuspBranch: SwiftProtobuf._ProtoNameProviding {
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0CUSP_BRANCH_UNSPECIFIED\0\u{1}CUSP_BRANCH_LOWER\0\u{1}CUSP_BRANCH_UPPER\0")
+}
+
+nonisolated extension Cmti_Risk_V1_CuspHysteresisState: SwiftProtobuf._ProtoNameProviding {
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0CUSP_HYSTERESIS_STATE_UNSPECIFIED\0\u{1}CUSP_HYSTERESIS_STATE_FOLLOWING_LOWER\0\u{1}CUSP_HYSTERESIS_STATE_FOLLOWING_UPPER\0\u{1}CUSP_HYSTERESIS_STATE_JUMPED_LOWER_TO_UPPER\0\u{1}CUSP_HYSTERESIS_STATE_JUMPED_UPPER_TO_LOWER\0")
+}
+
+nonisolated extension Cmti_Risk_V1_CuspEquilibriumStability: SwiftProtobuf._ProtoNameProviding {
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0CUSP_EQUILIBRIUM_STABILITY_UNSPECIFIED\0\u{1}CUSP_EQUILIBRIUM_STABILITY_STABLE\0\u{1}CUSP_EQUILIBRIUM_STABILITY_UNSTABLE\0\u{1}CUSP_EQUILIBRIUM_STABILITY_MARGINAL\0")
+}
+
+nonisolated extension Cmti_Risk_V1_CuspUncertaintyQuality: SwiftProtobuf._ProtoNameProviding {
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0CUSP_UNCERTAINTY_QUALITY_UNSPECIFIED\0\u{1}CUSP_UNCERTAINTY_QUALITY_PRODUCTION_CANDIDATE\0\u{1}CUSP_UNCERTAINTY_QUALITY_EXPERIMENTAL\0\u{1}CUSP_UNCERTAINTY_QUALITY_UNAVAILABLE\0")
+}
+
+nonisolated extension Cmti_Risk_V1_CuspWeightEligibility: SwiftProtobuf._ProtoNameProviding {
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0CUSP_WEIGHT_ELIGIBILITY_UNSPECIFIED\0\u{1}CUSP_WEIGHT_ELIGIBILITY_RESEARCH_ONLY\0\u{1}CUSP_WEIGHT_ELIGIBILITY_ELIGIBLE_FOR_PRODUCTION_WEIGHT\0")
+}
+
+nonisolated extension Cmti_Risk_V1_CuspProductionUse: SwiftProtobuf._ProtoNameProviding {
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0CUSP_PRODUCTION_USE_UNSPECIFIED\0\u{1}CUSP_PRODUCTION_USE_NOT_USED_IN_PRODUCTION_PROBABILITY\0\u{1}CUSP_PRODUCTION_USE_USED_IN_PRODUCTION_PROBABILITY\0")
 }
 
 nonisolated extension Cmti_Risk_V1_ProbabilityPoint: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
@@ -988,9 +1659,9 @@ nonisolated extension Cmti_Risk_V1_ScenarioDistribution: SwiftProtobuf.Message, 
   }
 }
 
-nonisolated extension Cmti_Risk_V1_CuspState: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
-  public static let protoMessageName: String = _protobuf_package + ".CuspState"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}state_id\0\u{1}alpha\0\u{1}beta\0\u{3}fold_distance\0\u{1}availability\0")
+nonisolated extension Cmti_Risk_V1_CuspEquilibrium: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".CuspEquilibrium"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}root\0\u{1}multiplicity\0\u{1}residual\0\u{3}condition_proxy\0\u{1}stability\0\u{1}hessian\0\u{3}restoring_force\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -998,41 +1669,611 @@ nonisolated extension Cmti_Risk_V1_CuspState: SwiftProtobuf.Message, SwiftProtob
       // allocates stack space for every case branch when no optimizations are
       // enabled. https://github.com/apple/swift-protobuf/issues/1034
       switch fieldNumber {
-      case 1: try { try decoder.decodeSingularStringField(value: &self.stateID) }()
-      case 2: try { try decoder.decodeSingularStringField(value: &self.alpha) }()
-      case 3: try { try decoder.decodeSingularStringField(value: &self.beta) }()
-      case 4: try { try decoder.decodeSingularStringField(value: &self.foldDistance) }()
-      case 5: try { try decoder.decodeSingularEnumField(value: &self.availability) }()
+      case 1: try { try decoder.decodeSingularStringField(value: &self.root) }()
+      case 2: try { try decoder.decodeSingularUInt32Field(value: &self.multiplicity) }()
+      case 3: try { try decoder.decodeSingularStringField(value: &self.residual) }()
+      case 4: try { try decoder.decodeSingularStringField(value: &self.conditionProxy) }()
+      case 5: try { try decoder.decodeSingularEnumField(value: &self.stability) }()
+      case 6: try { try decoder.decodeSingularStringField(value: &self.hessian) }()
+      case 7: try { try decoder.decodeSingularStringField(value: &self._restoringForce) }()
       default: break
       }
     }
   }
 
   public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
-    if !self.stateID.isEmpty {
-      try visitor.visitSingularStringField(value: self.stateID, fieldNumber: 1)
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
+    if !self.root.isEmpty {
+      try visitor.visitSingularStringField(value: self.root, fieldNumber: 1)
     }
-    if !self.alpha.isEmpty {
-      try visitor.visitSingularStringField(value: self.alpha, fieldNumber: 2)
+    if self.multiplicity != 0 {
+      try visitor.visitSingularUInt32Field(value: self.multiplicity, fieldNumber: 2)
     }
-    if !self.beta.isEmpty {
-      try visitor.visitSingularStringField(value: self.beta, fieldNumber: 3)
+    if !self.residual.isEmpty {
+      try visitor.visitSingularStringField(value: self.residual, fieldNumber: 3)
     }
-    if !self.foldDistance.isEmpty {
-      try visitor.visitSingularStringField(value: self.foldDistance, fieldNumber: 4)
+    if !self.conditionProxy.isEmpty {
+      try visitor.visitSingularStringField(value: self.conditionProxy, fieldNumber: 4)
     }
-    if self.availability != .unspecified {
-      try visitor.visitSingularEnumField(value: self.availability, fieldNumber: 5)
+    if self.stability != .unspecified {
+      try visitor.visitSingularEnumField(value: self.stability, fieldNumber: 5)
+    }
+    if !self.hessian.isEmpty {
+      try visitor.visitSingularStringField(value: self.hessian, fieldNumber: 6)
+    }
+    try { if let v = self._restoringForce {
+      try visitor.visitSingularStringField(value: v, fieldNumber: 7)
+    } }()
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Cmti_Risk_V1_CuspEquilibrium, rhs: Cmti_Risk_V1_CuspEquilibrium) -> Bool {
+    if lhs.root != rhs.root {return false}
+    if lhs.multiplicity != rhs.multiplicity {return false}
+    if lhs.residual != rhs.residual {return false}
+    if lhs.conditionProxy != rhs.conditionProxy {return false}
+    if lhs.stability != rhs.stability {return false}
+    if lhs.hessian != rhs.hessian {return false}
+    if lhs._restoringForce != rhs._restoringForce {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Cmti_Risk_V1_CuspBranchProbability: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".CuspBranchProbability"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}branch\0\u{3}probability_ppm\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularEnumField(value: &self.branch) }()
+      case 2: try { try decoder.decodeSingularUInt32Field(value: &self.probabilityPpm) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if self.branch != .unspecified {
+      try visitor.visitSingularEnumField(value: self.branch, fieldNumber: 1)
+    }
+    if self.probabilityPpm != 0 {
+      try visitor.visitSingularUInt32Field(value: self.probabilityPpm, fieldNumber: 2)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Cmti_Risk_V1_CuspBranchProbability, rhs: Cmti_Risk_V1_CuspBranchProbability) -> Bool {
+    if lhs.branch != rhs.branch {return false}
+    if lhs.probabilityPpm != rhs.probabilityPpm {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Cmti_Risk_V1_CuspFeatureSensitivity: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".CuspFeatureSensitivity"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}feature_id\0\u{3}feature_version\0\u{3}alpha_sensitivity\0\u{3}beta_sensitivity\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.featureID) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.featureVersion) }()
+      case 3: try { try decoder.decodeSingularStringField(value: &self.alphaSensitivity) }()
+      case 4: try { try decoder.decodeSingularStringField(value: &self.betaSensitivity) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.featureID.isEmpty {
+      try visitor.visitSingularStringField(value: self.featureID, fieldNumber: 1)
+    }
+    if !self.featureVersion.isEmpty {
+      try visitor.visitSingularStringField(value: self.featureVersion, fieldNumber: 2)
+    }
+    if !self.alphaSensitivity.isEmpty {
+      try visitor.visitSingularStringField(value: self.alphaSensitivity, fieldNumber: 3)
+    }
+    if !self.betaSensitivity.isEmpty {
+      try visitor.visitSingularStringField(value: self.betaSensitivity, fieldNumber: 4)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Cmti_Risk_V1_CuspFeatureSensitivity, rhs: Cmti_Risk_V1_CuspFeatureSensitivity) -> Bool {
+    if lhs.featureID != rhs.featureID {return false}
+    if lhs.featureVersion != rhs.featureVersion {return false}
+    if lhs.alphaSensitivity != rhs.alphaSensitivity {return false}
+    if lhs.betaSensitivity != rhs.betaSensitivity {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Cmti_Risk_V1_CuspMissingFeature: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".CuspMissingFeature"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}feature_id\0\u{3}feature_version\0\u{1}reason\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.featureID) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.featureVersion) }()
+      case 3: try { try decoder.decodeSingularStringField(value: &self.reason) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.featureID.isEmpty {
+      try visitor.visitSingularStringField(value: self.featureID, fieldNumber: 1)
+    }
+    if !self.featureVersion.isEmpty {
+      try visitor.visitSingularStringField(value: self.featureVersion, fieldNumber: 2)
+    }
+    if !self.reason.isEmpty {
+      try visitor.visitSingularStringField(value: self.reason, fieldNumber: 3)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Cmti_Risk_V1_CuspMissingFeature, rhs: Cmti_Risk_V1_CuspMissingFeature) -> Bool {
+    if lhs.featureID != rhs.featureID {return false}
+    if lhs.featureVersion != rhs.featureVersion {return false}
+    if lhs.reason != rhs.reason {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Cmti_Risk_V1_CuspFoldState: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".CuspFoldState"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}distance\0\u{3}nearest_alpha\0\u{3}nearest_beta\0\u{3}fold_parameter\0\u{1}converged\0\u{1}iterations\0\u{1}evaluations\0\u{3}condition_number\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.distance) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.nearestAlpha) }()
+      case 3: try { try decoder.decodeSingularStringField(value: &self.nearestBeta) }()
+      case 4: try { try decoder.decodeSingularStringField(value: &self.foldParameter) }()
+      case 5: try { try decoder.decodeSingularBoolField(value: &self.converged) }()
+      case 6: try { try decoder.decodeSingularUInt32Field(value: &self.iterations) }()
+      case 7: try { try decoder.decodeSingularUInt32Field(value: &self.evaluations) }()
+      case 8: try { try decoder.decodeSingularStringField(value: &self._conditionNumber) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
+    if !self.distance.isEmpty {
+      try visitor.visitSingularStringField(value: self.distance, fieldNumber: 1)
+    }
+    if !self.nearestAlpha.isEmpty {
+      try visitor.visitSingularStringField(value: self.nearestAlpha, fieldNumber: 2)
+    }
+    if !self.nearestBeta.isEmpty {
+      try visitor.visitSingularStringField(value: self.nearestBeta, fieldNumber: 3)
+    }
+    if !self.foldParameter.isEmpty {
+      try visitor.visitSingularStringField(value: self.foldParameter, fieldNumber: 4)
+    }
+    if self.converged != false {
+      try visitor.visitSingularBoolField(value: self.converged, fieldNumber: 5)
+    }
+    if self.iterations != 0 {
+      try visitor.visitSingularUInt32Field(value: self.iterations, fieldNumber: 6)
+    }
+    if self.evaluations != 0 {
+      try visitor.visitSingularUInt32Field(value: self.evaluations, fieldNumber: 7)
+    }
+    try { if let v = self._conditionNumber {
+      try visitor.visitSingularStringField(value: v, fieldNumber: 8)
+    } }()
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Cmti_Risk_V1_CuspFoldState, rhs: Cmti_Risk_V1_CuspFoldState) -> Bool {
+    if lhs.distance != rhs.distance {return false}
+    if lhs.nearestAlpha != rhs.nearestAlpha {return false}
+    if lhs.nearestBeta != rhs.nearestBeta {return false}
+    if lhs.foldParameter != rhs.foldParameter {return false}
+    if lhs.converged != rhs.converged {return false}
+    if lhs.iterations != rhs.iterations {return false}
+    if lhs.evaluations != rhs.evaluations {return false}
+    if lhs._conditionNumber != rhs._conditionNumber {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Cmti_Risk_V1_CuspGateCheck: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".CuspGateCheck"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}kind\0\u{1}passed\0\u{1}observed\0\u{1}minimum\0\u{1}maximum\0\u{1}unit\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.kind) }()
+      case 2: try { try decoder.decodeSingularBoolField(value: &self.passed) }()
+      case 3: try { try decoder.decodeSingularSInt64Field(value: &self.observed) }()
+      case 4: try { try decoder.decodeSingularSInt64Field(value: &self._minimum) }()
+      case 5: try { try decoder.decodeSingularSInt64Field(value: &self._maximum) }()
+      case 6: try { try decoder.decodeSingularStringField(value: &self.unit) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
+    if !self.kind.isEmpty {
+      try visitor.visitSingularStringField(value: self.kind, fieldNumber: 1)
+    }
+    if self.passed != false {
+      try visitor.visitSingularBoolField(value: self.passed, fieldNumber: 2)
+    }
+    if self.observed != 0 {
+      try visitor.visitSingularSInt64Field(value: self.observed, fieldNumber: 3)
+    }
+    try { if let v = self._minimum {
+      try visitor.visitSingularSInt64Field(value: v, fieldNumber: 4)
+    } }()
+    try { if let v = self._maximum {
+      try visitor.visitSingularSInt64Field(value: v, fieldNumber: 5)
+    } }()
+    if !self.unit.isEmpty {
+      try visitor.visitSingularStringField(value: self.unit, fieldNumber: 6)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Cmti_Risk_V1_CuspGateCheck, rhs: Cmti_Risk_V1_CuspGateCheck) -> Bool {
+    if lhs.kind != rhs.kind {return false}
+    if lhs.passed != rhs.passed {return false}
+    if lhs.observed != rhs.observed {return false}
+    if lhs._minimum != rhs._minimum {return false}
+    if lhs._maximum != rhs._maximum {return false}
+    if lhs.unit != rhs.unit {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Cmti_Risk_V1_CuspState: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".CuspState"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}state_id\0\u{1}alpha\0\u{1}beta\0\u{3}fold_distance\0\u{1}availability\0\u{1}asset\0\u{3}as_of_time\0\u{3}normalized_state\0\u{3}cusp_region_probability\0\u{3}signed_discriminant\0\u{3}standardized_discriminant\0\u{1}equilibria\0\u{3}most_likely_branch\0\u{3}branch_probabilities\0\u{3}minimum_barrier\0\u{3}restoring_force\0\u{1}hysteresis\0\u{1}sensitivities\0\u{3}missing_optional_features\0\u{3}uncertainty_quality\0\u{3}evidence_blake3\0\u{3}weight_eligibility\0\u{3}production_use\0\u{3}gate_evidence_blake3\0\u{1}quality\0\u{3}feature_coverage_ppm\0\u{3}source_health\0\u{1}fold\0\u{3}posterior_sample_count\0\u{3}schema_version\0\u{3}availability_reason\0\u{3}model_evidence_blake3\0\u{3}gate_checks\0\u{3}gate_policy_schema_version\0\u{3}gate_evaluation_schema_version\0")
+
+  fileprivate class _StorageClass {
+    var _stateID: String = String()
+    var _alpha: String = String()
+    var _beta: String = String()
+    var _foldDistance: String = String()
+    var _availability: Cmti_Common_V1_AvailabilityState = .unspecified
+    var _asset: Cmti_Common_V1_AssetId? = nil
+    var _asOfTime: Cmti_Common_V1_UnixNanos? = nil
+    var _normalizedState: String = String()
+    var _cuspRegionProbability: String? = nil
+    var _signedDiscriminant: String? = nil
+    var _standardizedDiscriminant: String? = nil
+    var _equilibria: [Cmti_Risk_V1_CuspEquilibrium] = []
+    var _mostLikelyBranch: Cmti_Risk_V1_CuspBranch = .unspecified
+    var _branchProbabilities: [Cmti_Risk_V1_CuspBranchProbability] = []
+    var _minimumBarrier: String? = nil
+    var _restoringForce: String? = nil
+    var _hysteresis: Cmti_Risk_V1_CuspHysteresisState = .unspecified
+    var _sensitivities: [Cmti_Risk_V1_CuspFeatureSensitivity] = []
+    var _missingOptionalFeatures: [Cmti_Risk_V1_CuspMissingFeature] = []
+    var _uncertaintyQuality: Cmti_Risk_V1_CuspUncertaintyQuality = .unspecified
+    var _evidenceBlake3: Data = Data()
+    var _weightEligibility: Cmti_Risk_V1_CuspWeightEligibility = .unspecified
+    var _productionUse: Cmti_Risk_V1_CuspProductionUse = .unspecified
+    var _gateEvidenceBlake3: Data = Data()
+    var _quality: Cmti_Common_V1_DataQualitySummary? = nil
+    var _featureCoveragePpm: UInt32 = 0
+    var _sourceHealth: String = String()
+    var _fold: Cmti_Risk_V1_CuspFoldState? = nil
+    var _posteriorSampleCount: UInt32 = 0
+    var _schemaVersion: UInt32 = 0
+    var _availabilityReason: String = String()
+    var _modelEvidenceBlake3: Data = Data()
+    var _gateChecks: [Cmti_Risk_V1_CuspGateCheck] = []
+    var _gatePolicySchemaVersion: UInt32 = 0
+    var _gateEvaluationSchemaVersion: UInt32 = 0
+
+      // This property is used as the initial default value for new instances of the type.
+      // The type itself is protecting the reference to its storage via CoW semantics.
+      // This will force a copy to be made of this reference when the first mutation occurs;
+      // hence, it is safe to mark this as `nonisolated(unsafe)`.
+      static nonisolated(unsafe) let defaultInstance = _StorageClass()
+
+    private init() {}
+
+    init(copying source: _StorageClass) {
+      _stateID = source._stateID
+      _alpha = source._alpha
+      _beta = source._beta
+      _foldDistance = source._foldDistance
+      _availability = source._availability
+      _asset = source._asset
+      _asOfTime = source._asOfTime
+      _normalizedState = source._normalizedState
+      _cuspRegionProbability = source._cuspRegionProbability
+      _signedDiscriminant = source._signedDiscriminant
+      _standardizedDiscriminant = source._standardizedDiscriminant
+      _equilibria = source._equilibria
+      _mostLikelyBranch = source._mostLikelyBranch
+      _branchProbabilities = source._branchProbabilities
+      _minimumBarrier = source._minimumBarrier
+      _restoringForce = source._restoringForce
+      _hysteresis = source._hysteresis
+      _sensitivities = source._sensitivities
+      _missingOptionalFeatures = source._missingOptionalFeatures
+      _uncertaintyQuality = source._uncertaintyQuality
+      _evidenceBlake3 = source._evidenceBlake3
+      _weightEligibility = source._weightEligibility
+      _productionUse = source._productionUse
+      _gateEvidenceBlake3 = source._gateEvidenceBlake3
+      _quality = source._quality
+      _featureCoveragePpm = source._featureCoveragePpm
+      _sourceHealth = source._sourceHealth
+      _fold = source._fold
+      _posteriorSampleCount = source._posteriorSampleCount
+      _schemaVersion = source._schemaVersion
+      _availabilityReason = source._availabilityReason
+      _modelEvidenceBlake3 = source._modelEvidenceBlake3
+      _gateChecks = source._gateChecks
+      _gatePolicySchemaVersion = source._gatePolicySchemaVersion
+      _gateEvaluationSchemaVersion = source._gateEvaluationSchemaVersion
+    }
+  }
+
+  fileprivate mutating func _uniqueStorage() -> _StorageClass {
+    if !isKnownUniquelyReferenced(&_storage) {
+      _storage = _StorageClass(copying: _storage)
+    }
+    return _storage
+  }
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    _ = _uniqueStorage()
+    try withExtendedLifetime(_storage) { (_storage: _StorageClass) in
+      while let fieldNumber = try decoder.nextFieldNumber() {
+        // The use of inline closures is to circumvent an issue where the compiler
+        // allocates stack space for every case branch when no optimizations are
+        // enabled. https://github.com/apple/swift-protobuf/issues/1034
+        switch fieldNumber {
+        case 1: try { try decoder.decodeSingularStringField(value: &_storage._stateID) }()
+        case 2: try { try decoder.decodeSingularStringField(value: &_storage._alpha) }()
+        case 3: try { try decoder.decodeSingularStringField(value: &_storage._beta) }()
+        case 4: try { try decoder.decodeSingularStringField(value: &_storage._foldDistance) }()
+        case 5: try { try decoder.decodeSingularEnumField(value: &_storage._availability) }()
+        case 6: try { try decoder.decodeSingularMessageField(value: &_storage._asset) }()
+        case 7: try { try decoder.decodeSingularMessageField(value: &_storage._asOfTime) }()
+        case 8: try { try decoder.decodeSingularStringField(value: &_storage._normalizedState) }()
+        case 9: try { try decoder.decodeSingularStringField(value: &_storage._cuspRegionProbability) }()
+        case 10: try { try decoder.decodeSingularStringField(value: &_storage._signedDiscriminant) }()
+        case 11: try { try decoder.decodeSingularStringField(value: &_storage._standardizedDiscriminant) }()
+        case 12: try { try decoder.decodeRepeatedMessageField(value: &_storage._equilibria) }()
+        case 13: try { try decoder.decodeSingularEnumField(value: &_storage._mostLikelyBranch) }()
+        case 14: try { try decoder.decodeRepeatedMessageField(value: &_storage._branchProbabilities) }()
+        case 15: try { try decoder.decodeSingularStringField(value: &_storage._minimumBarrier) }()
+        case 16: try { try decoder.decodeSingularStringField(value: &_storage._restoringForce) }()
+        case 17: try { try decoder.decodeSingularEnumField(value: &_storage._hysteresis) }()
+        case 18: try { try decoder.decodeRepeatedMessageField(value: &_storage._sensitivities) }()
+        case 19: try { try decoder.decodeRepeatedMessageField(value: &_storage._missingOptionalFeatures) }()
+        case 20: try { try decoder.decodeSingularEnumField(value: &_storage._uncertaintyQuality) }()
+        case 21: try { try decoder.decodeSingularBytesField(value: &_storage._evidenceBlake3) }()
+        case 22: try { try decoder.decodeSingularEnumField(value: &_storage._weightEligibility) }()
+        case 23: try { try decoder.decodeSingularEnumField(value: &_storage._productionUse) }()
+        case 24: try { try decoder.decodeSingularBytesField(value: &_storage._gateEvidenceBlake3) }()
+        case 25: try { try decoder.decodeSingularMessageField(value: &_storage._quality) }()
+        case 26: try { try decoder.decodeSingularUInt32Field(value: &_storage._featureCoveragePpm) }()
+        case 27: try { try decoder.decodeSingularStringField(value: &_storage._sourceHealth) }()
+        case 28: try { try decoder.decodeSingularMessageField(value: &_storage._fold) }()
+        case 29: try { try decoder.decodeSingularUInt32Field(value: &_storage._posteriorSampleCount) }()
+        case 30: try { try decoder.decodeSingularUInt32Field(value: &_storage._schemaVersion) }()
+        case 31: try { try decoder.decodeSingularStringField(value: &_storage._availabilityReason) }()
+        case 32: try { try decoder.decodeSingularBytesField(value: &_storage._modelEvidenceBlake3) }()
+        case 33: try { try decoder.decodeRepeatedMessageField(value: &_storage._gateChecks) }()
+        case 34: try { try decoder.decodeSingularUInt32Field(value: &_storage._gatePolicySchemaVersion) }()
+        case 35: try { try decoder.decodeSingularUInt32Field(value: &_storage._gateEvaluationSchemaVersion) }()
+        default: break
+        }
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    try withExtendedLifetime(_storage) { (_storage: _StorageClass) in
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every if/case branch local when no optimizations
+      // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+      // https://github.com/apple/swift-protobuf/issues/1182
+      if !_storage._stateID.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._stateID, fieldNumber: 1)
+      }
+      if !_storage._alpha.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._alpha, fieldNumber: 2)
+      }
+      if !_storage._beta.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._beta, fieldNumber: 3)
+      }
+      if !_storage._foldDistance.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._foldDistance, fieldNumber: 4)
+      }
+      if _storage._availability != .unspecified {
+        try visitor.visitSingularEnumField(value: _storage._availability, fieldNumber: 5)
+      }
+      try { if let v = _storage._asset {
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 6)
+      } }()
+      try { if let v = _storage._asOfTime {
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 7)
+      } }()
+      if !_storage._normalizedState.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._normalizedState, fieldNumber: 8)
+      }
+      try { if let v = _storage._cuspRegionProbability {
+        try visitor.visitSingularStringField(value: v, fieldNumber: 9)
+      } }()
+      try { if let v = _storage._signedDiscriminant {
+        try visitor.visitSingularStringField(value: v, fieldNumber: 10)
+      } }()
+      try { if let v = _storage._standardizedDiscriminant {
+        try visitor.visitSingularStringField(value: v, fieldNumber: 11)
+      } }()
+      if !_storage._equilibria.isEmpty {
+        try visitor.visitRepeatedMessageField(value: _storage._equilibria, fieldNumber: 12)
+      }
+      if _storage._mostLikelyBranch != .unspecified {
+        try visitor.visitSingularEnumField(value: _storage._mostLikelyBranch, fieldNumber: 13)
+      }
+      if !_storage._branchProbabilities.isEmpty {
+        try visitor.visitRepeatedMessageField(value: _storage._branchProbabilities, fieldNumber: 14)
+      }
+      try { if let v = _storage._minimumBarrier {
+        try visitor.visitSingularStringField(value: v, fieldNumber: 15)
+      } }()
+      try { if let v = _storage._restoringForce {
+        try visitor.visitSingularStringField(value: v, fieldNumber: 16)
+      } }()
+      if _storage._hysteresis != .unspecified {
+        try visitor.visitSingularEnumField(value: _storage._hysteresis, fieldNumber: 17)
+      }
+      if !_storage._sensitivities.isEmpty {
+        try visitor.visitRepeatedMessageField(value: _storage._sensitivities, fieldNumber: 18)
+      }
+      if !_storage._missingOptionalFeatures.isEmpty {
+        try visitor.visitRepeatedMessageField(value: _storage._missingOptionalFeatures, fieldNumber: 19)
+      }
+      if _storage._uncertaintyQuality != .unspecified {
+        try visitor.visitSingularEnumField(value: _storage._uncertaintyQuality, fieldNumber: 20)
+      }
+      if !_storage._evidenceBlake3.isEmpty {
+        try visitor.visitSingularBytesField(value: _storage._evidenceBlake3, fieldNumber: 21)
+      }
+      if _storage._weightEligibility != .unspecified {
+        try visitor.visitSingularEnumField(value: _storage._weightEligibility, fieldNumber: 22)
+      }
+      if _storage._productionUse != .unspecified {
+        try visitor.visitSingularEnumField(value: _storage._productionUse, fieldNumber: 23)
+      }
+      if !_storage._gateEvidenceBlake3.isEmpty {
+        try visitor.visitSingularBytesField(value: _storage._gateEvidenceBlake3, fieldNumber: 24)
+      }
+      try { if let v = _storage._quality {
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 25)
+      } }()
+      if _storage._featureCoveragePpm != 0 {
+        try visitor.visitSingularUInt32Field(value: _storage._featureCoveragePpm, fieldNumber: 26)
+      }
+      if !_storage._sourceHealth.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._sourceHealth, fieldNumber: 27)
+      }
+      try { if let v = _storage._fold {
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 28)
+      } }()
+      if _storage._posteriorSampleCount != 0 {
+        try visitor.visitSingularUInt32Field(value: _storage._posteriorSampleCount, fieldNumber: 29)
+      }
+      if _storage._schemaVersion != 0 {
+        try visitor.visitSingularUInt32Field(value: _storage._schemaVersion, fieldNumber: 30)
+      }
+      if !_storage._availabilityReason.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._availabilityReason, fieldNumber: 31)
+      }
+      if !_storage._modelEvidenceBlake3.isEmpty {
+        try visitor.visitSingularBytesField(value: _storage._modelEvidenceBlake3, fieldNumber: 32)
+      }
+      if !_storage._gateChecks.isEmpty {
+        try visitor.visitRepeatedMessageField(value: _storage._gateChecks, fieldNumber: 33)
+      }
+      if _storage._gatePolicySchemaVersion != 0 {
+        try visitor.visitSingularUInt32Field(value: _storage._gatePolicySchemaVersion, fieldNumber: 34)
+      }
+      if _storage._gateEvaluationSchemaVersion != 0 {
+        try visitor.visitSingularUInt32Field(value: _storage._gateEvaluationSchemaVersion, fieldNumber: 35)
+      }
     }
     try unknownFields.traverse(visitor: &visitor)
   }
 
   public static func ==(lhs: Cmti_Risk_V1_CuspState, rhs: Cmti_Risk_V1_CuspState) -> Bool {
-    if lhs.stateID != rhs.stateID {return false}
-    if lhs.alpha != rhs.alpha {return false}
-    if lhs.beta != rhs.beta {return false}
-    if lhs.foldDistance != rhs.foldDistance {return false}
-    if lhs.availability != rhs.availability {return false}
+    if lhs._storage !== rhs._storage {
+      let storagesAreEqual: Bool = withExtendedLifetime((lhs._storage, rhs._storage)) { (_args: (_StorageClass, _StorageClass)) in
+        let _storage = _args.0
+        let rhs_storage = _args.1
+        if _storage._stateID != rhs_storage._stateID {return false}
+        if _storage._alpha != rhs_storage._alpha {return false}
+        if _storage._beta != rhs_storage._beta {return false}
+        if _storage._foldDistance != rhs_storage._foldDistance {return false}
+        if _storage._availability != rhs_storage._availability {return false}
+        if _storage._asset != rhs_storage._asset {return false}
+        if _storage._asOfTime != rhs_storage._asOfTime {return false}
+        if _storage._normalizedState != rhs_storage._normalizedState {return false}
+        if _storage._cuspRegionProbability != rhs_storage._cuspRegionProbability {return false}
+        if _storage._signedDiscriminant != rhs_storage._signedDiscriminant {return false}
+        if _storage._standardizedDiscriminant != rhs_storage._standardizedDiscriminant {return false}
+        if _storage._equilibria != rhs_storage._equilibria {return false}
+        if _storage._mostLikelyBranch != rhs_storage._mostLikelyBranch {return false}
+        if _storage._branchProbabilities != rhs_storage._branchProbabilities {return false}
+        if _storage._minimumBarrier != rhs_storage._minimumBarrier {return false}
+        if _storage._restoringForce != rhs_storage._restoringForce {return false}
+        if _storage._hysteresis != rhs_storage._hysteresis {return false}
+        if _storage._sensitivities != rhs_storage._sensitivities {return false}
+        if _storage._missingOptionalFeatures != rhs_storage._missingOptionalFeatures {return false}
+        if _storage._uncertaintyQuality != rhs_storage._uncertaintyQuality {return false}
+        if _storage._evidenceBlake3 != rhs_storage._evidenceBlake3 {return false}
+        if _storage._weightEligibility != rhs_storage._weightEligibility {return false}
+        if _storage._productionUse != rhs_storage._productionUse {return false}
+        if _storage._gateEvidenceBlake3 != rhs_storage._gateEvidenceBlake3 {return false}
+        if _storage._quality != rhs_storage._quality {return false}
+        if _storage._featureCoveragePpm != rhs_storage._featureCoveragePpm {return false}
+        if _storage._sourceHealth != rhs_storage._sourceHealth {return false}
+        if _storage._fold != rhs_storage._fold {return false}
+        if _storage._posteriorSampleCount != rhs_storage._posteriorSampleCount {return false}
+        if _storage._schemaVersion != rhs_storage._schemaVersion {return false}
+        if _storage._availabilityReason != rhs_storage._availabilityReason {return false}
+        if _storage._modelEvidenceBlake3 != rhs_storage._modelEvidenceBlake3 {return false}
+        if _storage._gateChecks != rhs_storage._gateChecks {return false}
+        if _storage._gatePolicySchemaVersion != rhs_storage._gatePolicySchemaVersion {return false}
+        if _storage._gateEvaluationSchemaVersion != rhs_storage._gateEvaluationSchemaVersion {return false}
+        return true
+      }
+      if !storagesAreEqual {return false}
+    }
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -1881,6 +3122,80 @@ nonisolated extension Cmti_Risk_V1_CuspServiceGetCuspStateResponse: SwiftProtobu
 
   public static func ==(lhs: Cmti_Risk_V1_CuspServiceGetCuspStateResponse, rhs: Cmti_Risk_V1_CuspServiceGetCuspStateResponse) -> Bool {
     if lhs._cuspState != rhs._cuspState {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Cmti_Risk_V1_CuspServiceGetCuspHistoryRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".CuspServiceGetCuspHistoryRequest"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}asset\0\u{1}limit\0\u{3}before_as_of_time\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularMessageField(value: &self._asset) }()
+      case 2: try { try decoder.decodeSingularUInt32Field(value: &self.limit) }()
+      case 3: try { try decoder.decodeSingularMessageField(value: &self._beforeAsOfTime) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
+    try { if let v = self._asset {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 1)
+    } }()
+    if self.limit != 0 {
+      try visitor.visitSingularUInt32Field(value: self.limit, fieldNumber: 2)
+    }
+    try { if let v = self._beforeAsOfTime {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 3)
+    } }()
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Cmti_Risk_V1_CuspServiceGetCuspHistoryRequest, rhs: Cmti_Risk_V1_CuspServiceGetCuspHistoryRequest) -> Bool {
+    if lhs._asset != rhs._asset {return false}
+    if lhs.limit != rhs.limit {return false}
+    if lhs._beforeAsOfTime != rhs._beforeAsOfTime {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Cmti_Risk_V1_CuspServiceGetCuspHistoryResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".CuspServiceGetCuspHistoryResponse"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}cusp_states\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeRepeatedMessageField(value: &self.cuspStates) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.cuspStates.isEmpty {
+      try visitor.visitRepeatedMessageField(value: self.cuspStates, fieldNumber: 1)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Cmti_Risk_V1_CuspServiceGetCuspHistoryResponse, rhs: Cmti_Risk_V1_CuspServiceGetCuspHistoryResponse) -> Bool {
+    if lhs.cuspStates != rhs.cuspStates {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

@@ -214,7 +214,10 @@ fn descriptor_contains_the_exact_approved_service_and_method_inventory() {
                 "SubscribeForecasts",
             ][..],
         ),
-        ("cmti.risk.v1.CuspService", &["GetCuspState"][..]),
+        (
+            "cmti.risk.v1.CuspService",
+            &["GetCuspHistory", "GetCuspState"][..],
+        ),
         (
             "cmti.risk.v1.AlertService",
             &["ListRules", "SubscribeAlertEvents", "UpsertRule"][..],

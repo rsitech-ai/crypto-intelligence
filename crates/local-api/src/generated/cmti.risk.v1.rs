@@ -50,6 +50,84 @@ pub struct ScenarioDistribution {
     pub values: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct CuspEquilibrium {
+    #[prost(string, tag = "1")]
+    pub root: ::prost::alloc::string::String,
+    #[prost(uint32, tag = "2")]
+    pub multiplicity: u32,
+    #[prost(string, tag = "3")]
+    pub residual: ::prost::alloc::string::String,
+    #[prost(string, tag = "4")]
+    pub condition_proxy: ::prost::alloc::string::String,
+    #[prost(enumeration = "CuspEquilibriumStability", tag = "5")]
+    pub stability: i32,
+    #[prost(string, tag = "6")]
+    pub hessian: ::prost::alloc::string::String,
+    #[prost(string, optional, tag = "7")]
+    pub restoring_force: ::core::option::Option<::prost::alloc::string::String>,
+}
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct CuspBranchProbability {
+    #[prost(enumeration = "CuspBranch", tag = "1")]
+    pub branch: i32,
+    #[prost(uint32, tag = "2")]
+    pub probability_ppm: u32,
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct CuspFeatureSensitivity {
+    #[prost(string, tag = "1")]
+    pub feature_id: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub feature_version: ::prost::alloc::string::String,
+    #[prost(string, tag = "3")]
+    pub alpha_sensitivity: ::prost::alloc::string::String,
+    #[prost(string, tag = "4")]
+    pub beta_sensitivity: ::prost::alloc::string::String,
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct CuspMissingFeature {
+    #[prost(string, tag = "1")]
+    pub feature_id: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub feature_version: ::prost::alloc::string::String,
+    #[prost(string, tag = "3")]
+    pub reason: ::prost::alloc::string::String,
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct CuspFoldState {
+    #[prost(string, tag = "1")]
+    pub distance: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub nearest_alpha: ::prost::alloc::string::String,
+    #[prost(string, tag = "3")]
+    pub nearest_beta: ::prost::alloc::string::String,
+    #[prost(string, tag = "4")]
+    pub fold_parameter: ::prost::alloc::string::String,
+    #[prost(bool, tag = "5")]
+    pub converged: bool,
+    #[prost(uint32, tag = "6")]
+    pub iterations: u32,
+    #[prost(uint32, tag = "7")]
+    pub evaluations: u32,
+    #[prost(string, optional, tag = "8")]
+    pub condition_number: ::core::option::Option<::prost::alloc::string::String>,
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct CuspGateCheck {
+    #[prost(string, tag = "1")]
+    pub kind: ::prost::alloc::string::String,
+    #[prost(bool, tag = "2")]
+    pub passed: bool,
+    #[prost(sint64, tag = "3")]
+    pub observed: i64,
+    #[prost(sint64, optional, tag = "4")]
+    pub minimum: ::core::option::Option<i64>,
+    #[prost(sint64, optional, tag = "5")]
+    pub maximum: ::core::option::Option<i64>,
+    #[prost(string, tag = "6")]
+    pub unit: ::prost::alloc::string::String,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CuspState {
     #[prost(string, tag = "1")]
     pub state_id: ::prost::alloc::string::String,
@@ -61,6 +139,68 @@ pub struct CuspState {
     pub fold_distance: ::prost::alloc::string::String,
     #[prost(enumeration = "super::super::common::v1::AvailabilityState", tag = "5")]
     pub availability: i32,
+    #[prost(message, optional, tag = "6")]
+    pub asset: ::core::option::Option<super::super::common::v1::AssetId>,
+    #[prost(message, optional, tag = "7")]
+    pub as_of_time: ::core::option::Option<super::super::common::v1::UnixNanos>,
+    #[prost(string, tag = "8")]
+    pub normalized_state: ::prost::alloc::string::String,
+    #[prost(string, optional, tag = "9")]
+    pub cusp_region_probability: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(string, optional, tag = "10")]
+    pub signed_discriminant: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(string, optional, tag = "11")]
+    pub standardized_discriminant: ::core::option::Option<
+        ::prost::alloc::string::String,
+    >,
+    #[prost(message, repeated, tag = "12")]
+    pub equilibria: ::prost::alloc::vec::Vec<CuspEquilibrium>,
+    #[prost(enumeration = "CuspBranch", tag = "13")]
+    pub most_likely_branch: i32,
+    #[prost(message, repeated, tag = "14")]
+    pub branch_probabilities: ::prost::alloc::vec::Vec<CuspBranchProbability>,
+    #[prost(string, optional, tag = "15")]
+    pub minimum_barrier: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(string, optional, tag = "16")]
+    pub restoring_force: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(enumeration = "CuspHysteresisState", tag = "17")]
+    pub hysteresis: i32,
+    #[prost(message, repeated, tag = "18")]
+    pub sensitivities: ::prost::alloc::vec::Vec<CuspFeatureSensitivity>,
+    #[prost(message, repeated, tag = "19")]
+    pub missing_optional_features: ::prost::alloc::vec::Vec<CuspMissingFeature>,
+    #[prost(enumeration = "CuspUncertaintyQuality", tag = "20")]
+    pub uncertainty_quality: i32,
+    #[prost(bytes = "vec", tag = "21")]
+    pub evidence_blake3: ::prost::alloc::vec::Vec<u8>,
+    #[prost(enumeration = "CuspWeightEligibility", tag = "22")]
+    pub weight_eligibility: i32,
+    #[prost(enumeration = "CuspProductionUse", tag = "23")]
+    pub production_use: i32,
+    #[prost(bytes = "vec", tag = "24")]
+    pub gate_evidence_blake3: ::prost::alloc::vec::Vec<u8>,
+    #[prost(message, optional, tag = "25")]
+    pub quality: ::core::option::Option<super::super::common::v1::DataQualitySummary>,
+    #[prost(uint32, tag = "26")]
+    pub feature_coverage_ppm: u32,
+    #[prost(string, tag = "27")]
+    pub source_health: ::prost::alloc::string::String,
+    #[prost(message, optional, tag = "28")]
+    pub fold: ::core::option::Option<CuspFoldState>,
+    #[prost(uint32, tag = "29")]
+    pub posterior_sample_count: u32,
+    #[prost(uint32, tag = "30")]
+    pub schema_version: u32,
+    #[prost(string, tag = "31")]
+    pub availability_reason: ::prost::alloc::string::String,
+    #[prost(bytes = "vec", tag = "32")]
+    pub model_evidence_blake3: ::prost::alloc::vec::Vec<u8>,
+    #[prost(message, repeated, tag = "33")]
+    pub gate_checks: ::prost::alloc::vec::Vec<CuspGateCheck>,
+    #[prost(uint32, tag = "34")]
+    pub gate_policy_schema_version: u32,
+    #[prost(uint32, tag = "35")]
+    pub gate_evaluation_schema_version: u32,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct AlertRule {
@@ -115,7 +255,7 @@ pub struct RiskServiceGetCuspStateRequest {
     #[prost(message, optional, tag = "1")]
     pub asset: ::core::option::Option<super::super::common::v1::AssetId>,
 }
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RiskServiceGetCuspStateResponse {
     #[prost(message, optional, tag = "1")]
     pub cusp_state: ::core::option::Option<CuspState>,
@@ -191,10 +331,24 @@ pub struct CuspServiceGetCuspStateRequest {
     #[prost(message, optional, tag = "1")]
     pub asset: ::core::option::Option<super::super::common::v1::AssetId>,
 }
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CuspServiceGetCuspStateResponse {
     #[prost(message, optional, tag = "1")]
     pub cusp_state: ::core::option::Option<CuspState>,
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct CuspServiceGetCuspHistoryRequest {
+    #[prost(message, optional, tag = "1")]
+    pub asset: ::core::option::Option<super::super::common::v1::AssetId>,
+    #[prost(uint32, tag = "2")]
+    pub limit: u32,
+    #[prost(message, optional, tag = "3")]
+    pub before_as_of_time: ::core::option::Option<super::super::common::v1::UnixNanos>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CuspServiceGetCuspHistoryResponse {
+    #[prost(message, repeated, tag = "1")]
+    pub cusp_states: ::prost::alloc::vec::Vec<CuspState>,
 }
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ListRulesRequest {}
@@ -311,6 +465,210 @@ impl ForecastStatus {
             "FORECAST_STATUS_ABSTAINED" => Some(Self::Abstained),
             "FORECAST_STATUS_EXPERIMENTAL" => Some(Self::Experimental),
             "FORECAST_STATUS_SUPPRESSED" => Some(Self::Suppressed),
+            _ => None,
+        }
+    }
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum CuspBranch {
+    Unspecified = 0,
+    Lower = 1,
+    Upper = 2,
+}
+impl CuspBranch {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "CUSP_BRANCH_UNSPECIFIED",
+            Self::Lower => "CUSP_BRANCH_LOWER",
+            Self::Upper => "CUSP_BRANCH_UPPER",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "CUSP_BRANCH_UNSPECIFIED" => Some(Self::Unspecified),
+            "CUSP_BRANCH_LOWER" => Some(Self::Lower),
+            "CUSP_BRANCH_UPPER" => Some(Self::Upper),
+            _ => None,
+        }
+    }
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum CuspHysteresisState {
+    Unspecified = 0,
+    FollowingLower = 1,
+    FollowingUpper = 2,
+    JumpedLowerToUpper = 3,
+    JumpedUpperToLower = 4,
+}
+impl CuspHysteresisState {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "CUSP_HYSTERESIS_STATE_UNSPECIFIED",
+            Self::FollowingLower => "CUSP_HYSTERESIS_STATE_FOLLOWING_LOWER",
+            Self::FollowingUpper => "CUSP_HYSTERESIS_STATE_FOLLOWING_UPPER",
+            Self::JumpedLowerToUpper => "CUSP_HYSTERESIS_STATE_JUMPED_LOWER_TO_UPPER",
+            Self::JumpedUpperToLower => "CUSP_HYSTERESIS_STATE_JUMPED_UPPER_TO_LOWER",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "CUSP_HYSTERESIS_STATE_UNSPECIFIED" => Some(Self::Unspecified),
+            "CUSP_HYSTERESIS_STATE_FOLLOWING_LOWER" => Some(Self::FollowingLower),
+            "CUSP_HYSTERESIS_STATE_FOLLOWING_UPPER" => Some(Self::FollowingUpper),
+            "CUSP_HYSTERESIS_STATE_JUMPED_LOWER_TO_UPPER" => {
+                Some(Self::JumpedLowerToUpper)
+            }
+            "CUSP_HYSTERESIS_STATE_JUMPED_UPPER_TO_LOWER" => {
+                Some(Self::JumpedUpperToLower)
+            }
+            _ => None,
+        }
+    }
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum CuspEquilibriumStability {
+    Unspecified = 0,
+    Stable = 1,
+    Unstable = 2,
+    Marginal = 3,
+}
+impl CuspEquilibriumStability {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "CUSP_EQUILIBRIUM_STABILITY_UNSPECIFIED",
+            Self::Stable => "CUSP_EQUILIBRIUM_STABILITY_STABLE",
+            Self::Unstable => "CUSP_EQUILIBRIUM_STABILITY_UNSTABLE",
+            Self::Marginal => "CUSP_EQUILIBRIUM_STABILITY_MARGINAL",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "CUSP_EQUILIBRIUM_STABILITY_UNSPECIFIED" => Some(Self::Unspecified),
+            "CUSP_EQUILIBRIUM_STABILITY_STABLE" => Some(Self::Stable),
+            "CUSP_EQUILIBRIUM_STABILITY_UNSTABLE" => Some(Self::Unstable),
+            "CUSP_EQUILIBRIUM_STABILITY_MARGINAL" => Some(Self::Marginal),
+            _ => None,
+        }
+    }
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum CuspUncertaintyQuality {
+    Unspecified = 0,
+    ProductionCandidate = 1,
+    Experimental = 2,
+    Unavailable = 3,
+}
+impl CuspUncertaintyQuality {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "CUSP_UNCERTAINTY_QUALITY_UNSPECIFIED",
+            Self::ProductionCandidate => "CUSP_UNCERTAINTY_QUALITY_PRODUCTION_CANDIDATE",
+            Self::Experimental => "CUSP_UNCERTAINTY_QUALITY_EXPERIMENTAL",
+            Self::Unavailable => "CUSP_UNCERTAINTY_QUALITY_UNAVAILABLE",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "CUSP_UNCERTAINTY_QUALITY_UNSPECIFIED" => Some(Self::Unspecified),
+            "CUSP_UNCERTAINTY_QUALITY_PRODUCTION_CANDIDATE" => {
+                Some(Self::ProductionCandidate)
+            }
+            "CUSP_UNCERTAINTY_QUALITY_EXPERIMENTAL" => Some(Self::Experimental),
+            "CUSP_UNCERTAINTY_QUALITY_UNAVAILABLE" => Some(Self::Unavailable),
+            _ => None,
+        }
+    }
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum CuspWeightEligibility {
+    Unspecified = 0,
+    ResearchOnly = 1,
+    EligibleForProductionWeight = 2,
+}
+impl CuspWeightEligibility {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "CUSP_WEIGHT_ELIGIBILITY_UNSPECIFIED",
+            Self::ResearchOnly => "CUSP_WEIGHT_ELIGIBILITY_RESEARCH_ONLY",
+            Self::EligibleForProductionWeight => {
+                "CUSP_WEIGHT_ELIGIBILITY_ELIGIBLE_FOR_PRODUCTION_WEIGHT"
+            }
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "CUSP_WEIGHT_ELIGIBILITY_UNSPECIFIED" => Some(Self::Unspecified),
+            "CUSP_WEIGHT_ELIGIBILITY_RESEARCH_ONLY" => Some(Self::ResearchOnly),
+            "CUSP_WEIGHT_ELIGIBILITY_ELIGIBLE_FOR_PRODUCTION_WEIGHT" => {
+                Some(Self::EligibleForProductionWeight)
+            }
+            _ => None,
+        }
+    }
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum CuspProductionUse {
+    Unspecified = 0,
+    NotUsedInProductionProbability = 1,
+    UsedInProductionProbability = 2,
+}
+impl CuspProductionUse {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "CUSP_PRODUCTION_USE_UNSPECIFIED",
+            Self::NotUsedInProductionProbability => {
+                "CUSP_PRODUCTION_USE_NOT_USED_IN_PRODUCTION_PROBABILITY"
+            }
+            Self::UsedInProductionProbability => {
+                "CUSP_PRODUCTION_USE_USED_IN_PRODUCTION_PROBABILITY"
+            }
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "CUSP_PRODUCTION_USE_UNSPECIFIED" => Some(Self::Unspecified),
+            "CUSP_PRODUCTION_USE_NOT_USED_IN_PRODUCTION_PROBABILITY" => {
+                Some(Self::NotUsedInProductionProbability)
+            }
+            "CUSP_PRODUCTION_USE_USED_IN_PRODUCTION_PROBABILITY" => {
+                Some(Self::UsedInProductionProbability)
+            }
             _ => None,
         }
     }
@@ -1108,6 +1466,13 @@ pub mod cusp_service_server {
             tonic::Response<super::CuspServiceGetCuspStateResponse>,
             tonic::Status,
         >;
+        async fn get_cusp_history(
+            &self,
+            request: tonic::Request<super::CuspServiceGetCuspHistoryRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::CuspServiceGetCuspHistoryResponse>,
+            tonic::Status,
+        >;
     }
     #[derive(Debug)]
     pub struct CuspServiceServer<T> {
@@ -1217,6 +1582,54 @@ pub mod cusp_service_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = GetCuspStateSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/cmti.risk.v1.CuspService/GetCuspHistory" => {
+                    #[allow(non_camel_case_types)]
+                    struct GetCuspHistorySvc<T: CuspService>(pub Arc<T>);
+                    impl<
+                        T: CuspService,
+                    > tonic::server::UnaryService<
+                        super::CuspServiceGetCuspHistoryRequest,
+                    > for GetCuspHistorySvc<T> {
+                        type Response = super::CuspServiceGetCuspHistoryResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<
+                                super::CuspServiceGetCuspHistoryRequest,
+                            >,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as CuspService>::get_cusp_history(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = GetCuspHistorySvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
