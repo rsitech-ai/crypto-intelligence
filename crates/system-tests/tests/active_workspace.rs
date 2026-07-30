@@ -93,6 +93,7 @@ fn active_workspace_contains_only_implemented_packages() {
             "local-api",
             "metadata-store",
             "model-registry",
+            "numerics",
             "observability",
             "orderbook",
             "parquet-store",
