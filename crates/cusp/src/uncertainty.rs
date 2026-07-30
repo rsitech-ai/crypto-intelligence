@@ -2,6 +2,7 @@
 
 use domain::AssetId;
 use nalgebra::{DMatrix, DVector, linalg::SymmetricEigen};
+use serde::Serialize;
 use statrs::distribution::{ContinuousCDF, Normal};
 use thiserror::Error;
 
@@ -14,7 +15,7 @@ const MAX_POSTERIOR_SAMPLES: usize = 10_000;
 const MAX_SAMPLE_VALUES: usize = 1_000_000;
 const MIN_POSTERIOR_SAMPLES: usize = 32;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 pub enum UncertaintyQuality {
     ProductionCandidate,
     Experimental,
@@ -404,6 +405,7 @@ impl LaplaceApproximation {
             laplace_evidence_digest: self.evidence_digest,
             mode: self.mode.clone(),
             parameter_keys: self.parameter_keys.clone(),
+            quality: self.quality(),
             samples,
             digest,
         })
@@ -748,6 +750,7 @@ pub struct PosteriorParameterSamples {
     laplace_evidence_digest: [u8; 32],
     mode: Vec<f64>,
     parameter_keys: Vec<ParameterKey>,
+    quality: UncertaintyQuality,
     samples: Vec<Vec<f64>>,
     digest: [u8; 32],
 }
@@ -775,6 +778,10 @@ impl PosteriorParameterSamples {
 
     pub fn parameter_keys(&self) -> &[ParameterKey] {
         &self.parameter_keys
+    }
+
+    pub const fn quality(&self) -> UncertaintyQuality {
+        self.quality
     }
 
     pub fn samples(&self) -> &[Vec<f64>] {

@@ -100,6 +100,7 @@ fn laplace_samples_controls_and_intervals_are_deterministic_and_bounded() {
     assert_eq!(first.samples(), repeated.samples());
     assert_eq!(first.mode(), fitted.parameter_values());
     assert_eq!(first.parameter_keys(), fitted.parameter_keys());
+    assert_eq!(first.quality(), approximation.quality());
     assert_ne!(first.digest(), alternate.digest());
     assert_eq!(first.effective_samples(), 512);
     assert!(approximation.sample_parameters(73, 31).is_err());
