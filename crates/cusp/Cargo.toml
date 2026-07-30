@@ -12,6 +12,7 @@ feature-registry = { path = "../feature-registry" }
 numerics = { path = "../numerics" }
 semver.workspace = true
 serde.workspace = true
+statrs.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
