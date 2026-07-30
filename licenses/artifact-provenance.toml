@@ -299,7 +299,7 @@ sha256 = "d2c624b28e9ae48ba7702aaa43fb274a7907ae05c9dcf5671fde0108231295ed"
 
 [[category.artifact]]
 path = "fixtures/numerical/cusp_roots.json"
-sha256 = "b7698a5f1f793edeb4ef2e7b6c2eab7b332d21f014ab5bb7c635c6009773fd26"
+sha256 = "cdcf9f2f074690defc6f11a0160c8f8430e61d5c3cff99e3f31f03374fa07983"
 
 [[category.artifact]]
 path = "fixtures/prompts/adversarial/manifest.json"
