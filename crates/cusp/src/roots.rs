@@ -20,13 +20,9 @@ pub struct EquilibriumRoot {
 
 /// Return the sorted unique real roots of `y^3 - beta*y - alpha = 0`.
 pub fn real_equilibria(controls: Controls) -> Result<Vec<EquilibriumRoot>, CuspError> {
-    controls.validate()?;
-    let scale = controls.beta.abs().sqrt().max(controls.alpha.abs().cbrt());
+    let scale = state_scale(controls)?;
     if scale == 0.0 {
         return Ok(vec![root_metadata(0.0, 3, 1.0, 0.0, 0.0)?]);
-    }
-    if !scale.is_finite() {
-        return Err(CuspError::RootCalculation);
     }
 
     let normalized_beta = (controls.beta / scale) / scale;
@@ -55,6 +51,16 @@ pub fn real_equilibria(controls: Controls) -> Result<Vec<EquilibriumRoot>, CuspE
         repeated_roots(normalized_alpha)
     };
     finalize_roots(candidates, scale, normalized_alpha, normalized_beta)
+}
+
+pub(crate) fn state_scale(controls: Controls) -> Result<f64, CuspError> {
+    controls.validate()?;
+    let scale = controls.beta.abs().sqrt().max(controls.alpha.abs().cbrt());
+    if scale.is_finite() {
+        Ok(scale)
+    } else {
+        Err(CuspError::RootCalculation)
+    }
 }
 
 #[derive(Clone, Copy, Debug)]

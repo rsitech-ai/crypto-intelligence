@@ -1,9 +1,15 @@
 //! Approved mathematical convention and validated state for the cusp model.
 
+pub mod barrier;
+pub mod equilibria;
 pub mod potential;
 pub mod roots;
 pub mod types;
 
+pub use barrier::Barrier;
+pub use equilibria::{
+    ClassifiedRoot, EquilibriumSet, EquilibriumTopology, Stability, analyze_equilibria,
+};
 pub use potential::Potential;
 pub use roots::{EquilibriumRoot, real_equilibria};
 pub use types::{AlternativeControls, Controls, CuspState};
@@ -40,6 +46,8 @@ pub enum CuspError {
     RootDomain,
     #[error("cusp root calculation produced an invalid value")]
     RootCalculation,
+    #[error("equilibrium roots do not form a valid cusp topology")]
+    InvalidEquilibriumTopology,
     #[error("unsupported cusp state schema version {found}")]
     UnsupportedSchema { found: u32 },
 }
