@@ -875,7 +875,11 @@ dependencies = [
 name = "cusp"
 version = "0.1.0"
 dependencies = [
+ "domain",
+ "feature-registry",
  "numerics",
+ "quality",
+ "semver",
  "serde",
  "serde_json",
  "thiserror",

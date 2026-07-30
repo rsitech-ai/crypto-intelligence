@@ -7,11 +7,15 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+domain = { path = "../domain" }
+feature-registry = { path = "../feature-registry" }
 numerics = { path = "../numerics" }
+semver.workspace = true
 serde.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
+quality = { path = "../quality" }
 serde_json.workspace = true
 
 [lints]

@@ -1,6 +1,8 @@
 //! Approved mathematical convention and validated state for the cusp model.
 
 pub mod barrier;
+pub mod control_schema;
+pub mod controls;
 pub mod equilibria;
 pub mod fold_distance;
 pub mod potential;
@@ -8,6 +10,15 @@ pub mod roots;
 pub mod types;
 
 pub use barrier::Barrier;
+pub use control_schema::{
+    CoefficientSign, ControlFeature, ControlFeatureKey, ControlSchema, ControlSchemaInput,
+    ControlTarget, FeatureGroup, MAX_CONTROL_FEATURES, MAX_CONTROL_GROUPS,
+};
+pub use controls::{
+    ControlCovariance, ControlDatum, ControlError, ControlEvaluation, ControlMap, ControlMapInput,
+    ControlMissingReason, ControlValue, ControlVector, FeatureCoefficient, FeatureCovariance,
+    FeatureSensitivity, LinearControl, MissingControlFeature,
+};
 pub use equilibria::{
     ClassifiedRoot, EquilibriumSet, EquilibriumTopology, Stability, analyze_equilibria,
 };
