@@ -8,7 +8,7 @@ use crate::{
     fit::{EstimatorKind, EstimatorRole, FitConfig, FitDataset, FitError, ParameterKey, fit},
     uncertainty::{
         ControlIntervals, IntervalEstimate, UncertaintyError, UncertaintyQuality,
-        digest_parameter_samples, percentile_interval, splitmix64,
+        digest_parameter_samples, hash_parameter_keys, percentile_interval, splitmix64,
     },
 };
 
@@ -230,6 +230,7 @@ impl BlockedBootstrap {
             dataset.dataset_manifest_hash(),
             dataset.training_fold_hash(),
             &selection_counts,
+            &parameter_keys,
             &parameter_samples,
             failed_refits,
         );
@@ -319,6 +320,7 @@ fn bootstrap_digest(
     dataset_manifest_hash: [u8; 32],
     training_fold_hash: [u8; 32],
     selection_counts: &[Vec<u32>],
+    parameter_keys: &[ParameterKey],
     parameter_samples: &[Vec<f64>],
     failed_refits: usize,
 ) -> [u8; 32] {
@@ -332,6 +334,7 @@ fn bootstrap_digest(
     let mut hasher = blake3::Hasher::new();
     hasher.update(b"cusp-block-bootstrap-result-v1");
     hash_bootstrap_config(&mut hasher, config);
+    hash_parameter_keys(&mut hasher, parameter_keys);
     hasher.update(&parameter_digest);
     hasher.update(&(failed_refits as u64).to_le_bytes());
     for counts in selection_counts {

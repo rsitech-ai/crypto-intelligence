@@ -7,7 +7,7 @@ use thiserror::Error;
 
 use crate::{
     CoefficientSign, ControlError, ControlVector, Controls,
-    fit::{EstimatorRole, FitError, FitResult},
+    fit::{EstimatorRole, FitError, FitResult, ParameterKey},
 };
 
 const MAX_POSTERIOR_SAMPLES: usize = 10_000;
@@ -145,6 +145,7 @@ impl LaplaceDiagnostics {
 #[derive(Clone, Debug, PartialEq)]
 pub struct LaplaceApproximation {
     mode: Vec<f64>,
+    parameter_keys: Vec<ParameterKey>,
     active_parameter_indices: Vec<usize>,
     inactive_parameter_indices: Vec<usize>,
     parameter_signs: Vec<CoefficientSign>,
@@ -163,9 +164,14 @@ impl LaplaceApproximation {
             return Err(UncertaintyError::NonConvergedFit);
         }
         let mode = fit.parameter_values().to_vec();
+        let parameter_keys = fit.parameter_keys().to_vec();
         let penalized = fit.penalized_parameter_mask();
         let parameter_signs = fit.parameter_signs();
-        if mode.len() != penalized.len() || mode.len() != parameter_signs.len() || mode.is_empty() {
+        if mode.len() != parameter_keys.len()
+            || mode.len() != penalized.len()
+            || mode.len() != parameter_signs.len()
+            || mode.is_empty()
+        {
             return Err(UncertaintyError::Dimension);
         }
         let (active_parameter_indices, inactive_parameter_indices) =
@@ -203,15 +209,16 @@ impl LaplaceApproximation {
         }
         let evidence_digest = laplace_evidence_digest(
             config,
-            fit.dataset_manifest_hash(),
-            fit.training_fold_hash(),
+            fit,
             &mode,
+            &parameter_keys,
             &active_parameter_indices,
             &covariance,
             &diagnostics,
         );
         Ok(Self {
             mode,
+            parameter_keys,
             active_parameter_indices,
             inactive_parameter_indices,
             parameter_signs,
@@ -230,6 +237,10 @@ impl LaplaceApproximation {
 
     pub fn active_parameter_indices(&self) -> &[usize] {
         &self.active_parameter_indices
+    }
+
+    pub fn parameter_keys(&self) -> &[ParameterKey] {
+        &self.parameter_keys
     }
 
     pub fn inactive_parameter_indices(&self) -> &[usize] {
@@ -388,6 +399,11 @@ impl LaplaceApproximation {
         let digest = *hasher.finalize().as_bytes();
         Ok(PosteriorParameterSamples {
             seed,
+            dataset_manifest_hash: self.dataset_manifest_hash,
+            training_fold_hash: self.training_fold_hash,
+            laplace_evidence_digest: self.evidence_digest,
+            mode: self.mode.clone(),
+            parameter_keys: self.parameter_keys.clone(),
             samples,
             digest,
         })
@@ -404,6 +420,7 @@ impl LaplaceApproximation {
         if fit.dataset_manifest_hash() != self.dataset_manifest_hash
             || fit.training_fold_hash() != self.training_fold_hash
             || fit.parameter_values() != self.mode
+            || fit.parameter_keys() != self.parameter_keys
         {
             return Err(UncertaintyError::EvidenceMismatch);
         }
@@ -463,17 +480,17 @@ fn classify_active_set(
 
 fn laplace_evidence_digest(
     config: LaplaceConfig,
-    dataset_manifest_hash: [u8; 32],
-    training_fold_hash: [u8; 32],
+    fit: &FitResult,
     mode: &[f64],
+    parameter_keys: &[ParameterKey],
     active_parameter_indices: &[usize],
     covariance: &DMatrix<f64>,
     diagnostics: &LaplaceDiagnostics,
 ) -> [u8; 32] {
     let mut hasher = blake3::Hasher::new();
     hasher.update(b"cusp-laplace-approximation-v1");
-    hasher.update(&dataset_manifest_hash);
-    hasher.update(&training_fold_hash);
+    hasher.update(&fit.dataset_manifest_hash());
+    hasher.update(&fit.training_fold_hash());
     for value in [
         config.eigenvalue_floor,
         config.candidate_max_regularization,
@@ -500,6 +517,7 @@ fn laplace_evidence_digest(
     for value in mode {
         hasher.update(&value.to_bits().to_le_bytes());
     }
+    hash_parameter_keys(&mut hasher, parameter_keys);
     for index in active_parameter_indices {
         hasher.update(&(*index as u64).to_le_bytes());
     }
@@ -725,6 +743,11 @@ impl ControlIntervals {
 #[derive(Clone, Debug, PartialEq)]
 pub struct PosteriorParameterSamples {
     seed: u64,
+    dataset_manifest_hash: [u8; 32],
+    training_fold_hash: [u8; 32],
+    laplace_evidence_digest: [u8; 32],
+    mode: Vec<f64>,
+    parameter_keys: Vec<ParameterKey>,
     samples: Vec<Vec<f64>>,
     digest: [u8; 32],
 }
@@ -732,6 +755,26 @@ pub struct PosteriorParameterSamples {
 impl PosteriorParameterSamples {
     pub const fn seed(&self) -> u64 {
         self.seed
+    }
+
+    pub const fn dataset_manifest_hash(&self) -> [u8; 32] {
+        self.dataset_manifest_hash
+    }
+
+    pub const fn training_fold_hash(&self) -> [u8; 32] {
+        self.training_fold_hash
+    }
+
+    pub const fn laplace_evidence_digest(&self) -> [u8; 32] {
+        self.laplace_evidence_digest
+    }
+
+    pub fn mode(&self) -> &[f64] {
+        &self.mode
+    }
+
+    pub fn parameter_keys(&self) -> &[ParameterKey] {
+        &self.parameter_keys
     }
 
     pub fn samples(&self) -> &[Vec<f64>] {
@@ -821,6 +864,56 @@ pub(crate) fn digest_parameter_samples(
     *hasher.finalize().as_bytes()
 }
 
+pub(crate) fn hash_parameter_keys(hasher: &mut blake3::Hasher, keys: &[ParameterKey]) {
+    hasher.update(&(keys.len() as u64).to_le_bytes());
+    for key in keys {
+        match key {
+            ParameterKey::AlphaIntercept => {
+                hasher.update(&[1]);
+            }
+            ParameterKey::BetaIntercept => {
+                hasher.update(&[2]);
+            }
+            ParameterKey::AlphaShared(feature) => {
+                hasher.update(&[3]);
+                hash_feature_key(hasher, feature);
+            }
+            ParameterKey::BetaShared(feature) => {
+                hasher.update(&[4]);
+                hash_feature_key(hasher, feature);
+            }
+            ParameterKey::AlphaAsset { asset, feature } => {
+                hasher.update(&[5]);
+                hash_asset(hasher, asset);
+                hash_feature_key(hasher, feature);
+            }
+            ParameterKey::BetaAsset { asset, feature } => {
+                hasher.update(&[6]);
+                hash_asset(hasher, asset);
+                hash_feature_key(hasher, feature);
+            }
+        }
+    }
+}
+
+fn hash_feature_key(hasher: &mut blake3::Hasher, key: &crate::ControlFeatureKey) {
+    hash_bytes(hasher, key.id().as_bytes());
+    hash_bytes(hasher, key.version().to_string().as_bytes());
+}
+
+fn hash_asset(hasher: &mut blake3::Hasher, asset: &AssetId) {
+    hasher.update(&[asset.namespace() as u8]);
+    hash_bytes(hasher, asset.chain_id().as_bytes());
+    hash_bytes(hasher, asset.contract_or_mint().as_bytes());
+    hash_bytes(hasher, asset.canonical_symbol().as_bytes());
+    hasher.update(&asset.generation().to_le_bytes());
+}
+
+fn hash_bytes(hasher: &mut blake3::Hasher, value: &[u8]) {
+    hasher.update(&(value.len() as u64).to_le_bytes());
+    hasher.update(value);
+}
+
 pub(crate) fn splitmix64(mut value: u64) -> u64 {
     value = value.wrapping_add(0x9e37_79b9_7f4a_7c15);
     value = (value ^ (value >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
@@ -828,20 +921,20 @@ pub(crate) fn splitmix64(mut value: u64) -> u64 {
     value ^ (value >> 31)
 }
 
-struct DeterministicNormal {
+pub(crate) struct DeterministicNormal {
     state: u64,
     spare: Option<f64>,
 }
 
 impl DeterministicNormal {
-    const fn new(seed: u64) -> Self {
+    pub(crate) const fn new(seed: u64) -> Self {
         Self {
             state: seed,
             spare: None,
         }
     }
 
-    fn next(&mut self) -> f64 {
+    pub(crate) fn next(&mut self) -> f64 {
         if let Some(value) = self.spare.take() {
             return value;
         }
