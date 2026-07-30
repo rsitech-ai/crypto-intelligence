@@ -875,6 +875,7 @@ dependencies = [
 name = "cusp"
 version = "0.1.0"
 dependencies = [
+ "numerics",
  "serde",
  "serde_json",
  "thiserror",

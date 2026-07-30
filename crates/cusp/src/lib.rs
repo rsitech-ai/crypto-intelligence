@@ -2,6 +2,7 @@
 
 pub mod barrier;
 pub mod equilibria;
+pub mod fold_distance;
 pub mod potential;
 pub mod roots;
 pub mod types;
@@ -9,6 +10,9 @@ pub mod types;
 pub use barrier::Barrier;
 pub use equilibria::{
     ClassifiedRoot, EquilibriumSet, EquilibriumTopology, Stability, analyze_equilibria,
+};
+pub use fold_distance::{
+    ControlWhitening, CovarianceConditioning, FoldDistance, fold_point, nearest_fold,
 };
 pub use potential::Potential;
 pub use roots::{EquilibriumRoot, real_equilibria};
@@ -48,6 +52,10 @@ pub enum CuspError {
     RootCalculation,
     #[error("equilibrium roots do not form a valid cusp topology")]
     InvalidEquilibriumTopology,
+    #[error("control covariance is not finite and strictly positive definite")]
+    InvalidWhitening,
+    #[error("nearest-fold optimization failed its bounded numerical contract")]
+    FoldOptimization,
     #[error("unsupported cusp state schema version {found}")]
     UnsupportedSchema { found: u32 },
 }
