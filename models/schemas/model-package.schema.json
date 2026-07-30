@@ -1,6 +1,367 @@
 {
-  "schema_version": 1,
-  "artifact_id": "models/schemas/model-package.schema.json",
-  "status": "implemented",
-  "local_only": true
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://rsitech.ai/schemas/crypto-intelligence/model-package-v1.json",
+  "title": "Crypto Intelligence signed model package",
+  "description": "Strict wire schema for a version 1 immutable Ed25519-signed model package. Trust keys are supplied externally and are intentionally absent.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "manifest",
+    "package_blake3",
+    "signing_key_id",
+    "signature"
+  ],
+  "properties": {
+    "manifest": {
+      "$ref": "#/$defs/manifest"
+    },
+    "package_blake3": {
+      "$ref": "#/$defs/hash32"
+    },
+    "signing_key_id": {
+      "$ref": "#/$defs/identifier"
+    },
+    "signature": {
+      "type": "array",
+      "minItems": 64,
+      "maxItems": 64,
+      "items": {
+        "$ref": "#/$defs/byte"
+      }
+    }
+  },
+  "$defs": {
+    "byte": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 255
+    },
+    "hash32": {
+      "type": "array",
+      "minItems": 32,
+      "maxItems": 32,
+      "items": {
+        "$ref": "#/$defs/byte"
+      },
+      "not": {
+        "items": {
+          "const": 0
+        }
+      }
+    },
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
+    },
+    "period": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "start_ns",
+        "end_ns"
+      ],
+      "properties": {
+        "start_ns": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "end_ns": {
+          "type": "integer",
+          "minimum": 2
+        }
+      }
+    },
+    "calibration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "method",
+        "version",
+        "evidence_blake3",
+        "validation_period",
+        "effective_sample_size"
+      ],
+      "properties": {
+        "method": {
+          "$ref": "#/$defs/identifier"
+        },
+        "version": {
+          "$ref": "#/$defs/identifier"
+        },
+        "evidence_blake3": {
+          "$ref": "#/$defs/hash32"
+        },
+        "validation_period": {
+          "$ref": "#/$defs/period"
+        },
+        "effective_sample_size": {
+          "type": "integer",
+          "minimum": 8
+        }
+      }
+    },
+    "qualityRequirements": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "minimum_quality_millionths",
+        "minimum_source_count",
+        "minimum_outer_test_positives",
+        "minimum_shadow_positives",
+        "minimum_brier_skill_score",
+        "maximum_log_loss",
+        "calibration_slope_minimum",
+        "calibration_slope_maximum",
+        "calibration_intercept_absolute_maximum"
+      ],
+      "properties": {
+        "minimum_quality_millionths": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "minimum_source_count": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "minimum_outer_test_positives": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "minimum_shadow_positives": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "minimum_brier_skill_score": {
+          "type": "number"
+        },
+        "maximum_log_loss": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "calibration_slope_minimum": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "calibration_slope_maximum": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "calibration_intercept_absolute_maximum": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
+    "runtimeRequirements": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "minimum_runtime_version",
+        "required_capabilities",
+        "minimum_memory_bytes"
+      ],
+      "properties": {
+        "minimum_runtime_version": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]*\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$"
+        },
+        "required_capabilities": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/identifier"
+          }
+        },
+        "minimum_memory_bytes": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "outer_test_evidence_blake3",
+        "observations",
+        "positives",
+        "log_loss",
+        "brier_skill_score",
+        "calibration_intercept",
+        "calibration_slope"
+      ],
+      "properties": {
+        "outer_test_evidence_blake3": {
+          "$ref": "#/$defs/hash32"
+        },
+        "observations": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "positives": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "log_loss": {
+          "type": "number",
+          "minimum": 0
+        },
+        "brier_skill_score": {
+          "type": "number"
+        },
+        "calibration_intercept": {
+          "type": "number"
+        },
+        "calibration_slope": {
+          "type": "number"
+        }
+      }
+    },
+    "manifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "model_id",
+        "semantic_version",
+        "model_family",
+        "supported_assets",
+        "supported_event_types",
+        "supported_horizons_seconds",
+        "training_period",
+        "validation_period",
+        "outer_test_period",
+        "data_hash",
+        "feature_schema_hash",
+        "normalization_hash",
+        "label_definition_hash",
+        "code_commit",
+        "hyperparameters_blake3",
+        "calibration",
+        "quality_requirements",
+        "runtime_requirements",
+        "metrics",
+        "subgroup_metrics_blake3",
+        "limitations",
+        "model_card_blake3",
+        "review_after_ns",
+        "expires_at_ns",
+        "artifact_blake3"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "model_id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "semantic_version": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]*\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$"
+        },
+        "model_family": {
+          "$ref": "#/$defs/identifier"
+        },
+        "supported_assets": {
+          "$ref": "#/$defs/identifierArray"
+        },
+        "supported_event_types": {
+          "$ref": "#/$defs/identifierArray"
+        },
+        "supported_horizons_seconds": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "training_period": {
+          "$ref": "#/$defs/period"
+        },
+        "validation_period": {
+          "$ref": "#/$defs/period"
+        },
+        "outer_test_period": {
+          "$ref": "#/$defs/period"
+        },
+        "data_hash": {
+          "$ref": "#/$defs/hash32"
+        },
+        "feature_schema_hash": {
+          "$ref": "#/$defs/hash32"
+        },
+        "normalization_hash": {
+          "$ref": "#/$defs/hash32"
+        },
+        "label_definition_hash": {
+          "$ref": "#/$defs/hash32"
+        },
+        "code_commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "hyperparameters_blake3": {
+          "$ref": "#/$defs/hash32"
+        },
+        "calibration": {
+          "$ref": "#/$defs/calibration"
+        },
+        "quality_requirements": {
+          "$ref": "#/$defs/qualityRequirements"
+        },
+        "runtime_requirements": {
+          "$ref": "#/$defs/runtimeRequirements"
+        },
+        "metrics": {
+          "$ref": "#/$defs/metrics"
+        },
+        "subgroup_metrics_blake3": {
+          "$ref": "#/$defs/hash32"
+        },
+        "limitations": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024,
+            "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+          }
+        },
+        "model_card_blake3": {
+          "$ref": "#/$defs/hash32"
+        },
+        "review_after_ns": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "expires_at_ns": {
+          "type": "integer",
+          "minimum": 2
+        },
+        "artifact_blake3": {
+          "$ref": "#/$defs/hash32"
+        }
+      }
+    },
+    "identifierArray": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 256,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/identifier"
+      }
+    }
+  }
 }

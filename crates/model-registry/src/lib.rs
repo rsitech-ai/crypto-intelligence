@@ -1,7 +1,19 @@
-//! model-registry production contract.
-pub mod package;
-pub mod state;
-pub mod verification;
+//! Signed, immutable model packages and an auditable fail-closed lifecycle.
 
-#[derive(Clone,Copy,Debug,Eq,PartialEq)] pub struct ContractMetadata { pub schema_version:u32, pub bounded:bool, pub point_in_time:bool }
-impl Default for ContractMetadata { fn default()->Self{Self{schema_version:1,bounded:true,point_in_time:true}} }
+mod package;
+mod state;
+mod verification;
+
+pub use package::{
+    CalibrationDescriptor, MetricSummary, ModelPackageManifest, ModelPackageManifestInput,
+    PackageBuildError, PackagePeriod, PackageSigner, QualityRequirements, RuntimeRequirements,
+    SignedModelPackage,
+};
+pub use state::{
+    IndependentReview, ModelRecord, ModelRegistry, ModelState, PromotionError, ShadowEvidence,
+    TransitionRecord,
+};
+pub use verification::{
+    CompatibilityRequest, CompatiblePackage, PackageVerificationError, TrustedVerifyingKey,
+    VerifiedPackage, verify_compatibility, verify_package,
+};

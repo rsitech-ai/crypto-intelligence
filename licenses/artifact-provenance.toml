@@ -349,7 +349,7 @@ sha256 = "50689e41fe9e002cf594ad226b15ae1b1828130ff6f91f9b4b519abffc7426e0"
 
 [[category.artifact]]
 path = "models/schemas/model-package.schema.json"
-sha256 = "87c4c7520c2b5e92aeff58f3db4a718cab6a36d8afcbf329029900b66daf3e8c"
+sha256 = "61fc3eb9dd8e51ea54b5f63d87a879e868d6a547169f29f2796cea800507cd47"
 
 [[category.artifact]]
 path = "models/trusted-keys.json"

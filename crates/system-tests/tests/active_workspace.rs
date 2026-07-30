@@ -66,6 +66,7 @@ fn active_workspace_contains_only_implemented_packages() {
         package_names,
         BTreeSet::from([
             "baselines",
+            "calibration",
             "capacity",
             "changepoint",
             "config",
@@ -91,6 +92,7 @@ fn active_workspace_contains_only_implemented_packages() {
             "labels",
             "local-api",
             "metadata-store",
+            "model-registry",
             "observability",
             "orderbook",
             "parquet-store",
