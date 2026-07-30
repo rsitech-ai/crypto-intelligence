@@ -86,6 +86,7 @@ fn active_workspace_contains_only_implemented_packages() {
             "feature-engine",
             "feature-registry",
             "fixed-decimal",
+            "hazard",
             "instrument-registry",
             "labels",
             "local-api",

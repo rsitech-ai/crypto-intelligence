@@ -23,6 +23,7 @@ members = [
   "crates/feature-engine",
   "crates/feature-registry",
   "crates/fixed-decimal",
+  "crates/hazard",
   "crates/instrument-registry",
   "crates/labels",
   "crates/local-api",
