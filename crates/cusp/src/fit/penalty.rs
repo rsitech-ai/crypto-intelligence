@@ -21,6 +21,29 @@ pub(super) fn add_smooth_penalty(
     }
 }
 
+pub(super) fn add_smooth_hessian(
+    hessian: &mut [Vec<f64>],
+    layout: &ParameterLayout,
+    config: PenaltyConfig,
+) -> Result<(), FitError> {
+    if hessian.len() != layout.coordinates.len()
+        || hessian
+            .iter()
+            .any(|row| row.len() != layout.coordinates.len())
+    {
+        return Err(FitError::InvalidLayout);
+    }
+    let l2 = config.lambda() * (1.0 - config.l1_ratio());
+    for (index, coordinate) in layout.coordinates.iter().enumerate() {
+        hessian[index][index] += l2 * penalty_weight(*coordinate, config);
+    }
+    if hessian.iter().flatten().all(|value| value.is_finite()) {
+        Ok(())
+    } else {
+        Err(FitError::NonFiniteObjective)
+    }
+}
+
 pub(super) fn composite_value(
     smooth: f64,
     parameters: &[f64],

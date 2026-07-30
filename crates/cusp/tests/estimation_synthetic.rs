@@ -4,7 +4,7 @@ use cusp::{
     analyze_equilibria,
     fit::{
         EstimatorKind, EstimatorRole, FitConfig, FitConfigInput, FitDataset, FitProblem, FitRow,
-        FitTermination, OptimizerConfig, PenaltyConfig, fit,
+        FitTermination, FitTimeRange, OptimizerConfig, PenaltyConfig, fit,
     },
 };
 use domain::{AssetId, AssetNamespace};
@@ -13,6 +13,8 @@ use semver::Version;
 
 const TRUE_ALPHA_COEFFICIENT: f64 = 0.8;
 const TRUE_BETA_COEFFICIENT: f64 = 0.55;
+const BASE_TIME_NS: i64 = 1_700_000_000_000_000_000;
+const STEP_NS: i64 = 60_000_000_000;
 
 #[test]
 fn transition_estimator_recovers_synthetic_control_direction() {
@@ -270,7 +272,16 @@ fn repeated_fit_is_deterministic_and_boundaries_reject_invalid_rows() {
     assert_eq!(first.diagnostics(), second.diagnostics());
     assert_eq!(first.control_map(), second.control_map());
 
-    let row = FitRow::try_new(bitcoin(), vector(0.0, 0.0), 0.0, 0.0, 0.0, 1.0, 1.0);
+    let row = FitRow::try_new(
+        bitcoin(),
+        vector(0.0, 0.0),
+        BASE_TIME_NS,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        1.0,
+    );
     assert!(row.is_err());
 
     let optimizer = FitConfig::fixture(EstimatorKind::StudentTTransition).optimizer();
@@ -360,6 +371,7 @@ fn transition_data_with_delta_time(
             FitRow::try_new(
                 asset,
                 vector(alpha_feature, beta_feature),
+                BASE_TIME_NS + index as i64 * STEP_NS,
                 state,
                 delta_state,
                 delta_time,
@@ -399,6 +411,7 @@ fn stationary_data() -> FitDataset {
             FitRow::try_new(
                 bitcoin(),
                 vector(alpha_feature, beta_feature),
+                BASE_TIME_NS + index as i64 * STEP_NS,
                 state,
                 0.0,
                 1.0,
@@ -412,11 +425,19 @@ fn stationary_data() -> FitDataset {
 }
 
 fn dataset(rows: Vec<FitRow>) -> FitDataset {
+    let start_ns = rows.first().expect("first fit row").event_time_ns();
+    let end_ns = rows
+        .last()
+        .expect("last fit row")
+        .event_time_ns()
+        .checked_add(STEP_NS)
+        .expect("fit range");
     FitDataset::try_new(
         control_schema(),
         [17; 32],
         [23; 32],
         [29; 32],
+        FitTimeRange::try_new(start_ns, end_ns).expect("training range"),
         ControlCovariance::try_new(0.4, 0.05, 0.6).expect("residual covariance"),
         rows,
     )

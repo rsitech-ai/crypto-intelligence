@@ -35,11 +35,66 @@ pub(super) fn objective(problem: &FitProblem, parameters: &[f64]) -> Result<Obje
     Ok(Objective { value, gradient })
 }
 
+pub(super) fn hessian(problem: &FitProblem, parameters: &[f64]) -> Result<Vec<Vec<f64>>, FitError> {
+    let total_weight = problem.rows.iter().map(|row| row.weight).sum::<f64>();
+    if !total_weight.is_finite() || total_weight <= 0.0 {
+        return Err(FitError::InvalidRow);
+    }
+    let dimension = parameters.len();
+    let mut hessian = vec![vec![0.0; dimension]; dimension];
+    for row in &problem.rows {
+        let normalized_weight = row.weight / total_weight;
+        let (alpha, beta) = problem.controls(parameters, row)?;
+        let inverse_temperature = 2.0 / row.innovation_scale.powi(2);
+        let moments = quadrature_moments(
+            alpha,
+            beta,
+            inverse_temperature,
+            problem.config.integration_bound,
+            problem.config.integration_intervals,
+        )?;
+        let alpha_alpha =
+            inverse_temperature.powi(2) * (moments.second_moment - moments.mean.powi(2));
+        let alpha_beta = 0.5
+            * inverse_temperature.powi(2)
+            * (moments.third_moment - moments.mean * moments.second_moment);
+        let beta_beta = 0.25
+            * inverse_temperature.powi(2)
+            * (moments.fourth_moment - moments.second_moment.powi(2));
+        if [alpha_alpha, alpha_beta, beta_beta]
+            .iter()
+            .any(|value| !value.is_finite())
+        {
+            return Err(FitError::NonFiniteObjective);
+        }
+        let design = (0..dimension)
+            .map(|index| problem.control_derivative(index, row))
+            .collect::<Result<Vec<_>, FitError>>()?;
+        for left in 0..dimension {
+            let (left_alpha, left_beta) = design[left];
+            for right in 0..=left {
+                let (right_alpha, right_beta) = design[right];
+                let contribution = normalized_weight
+                    * (alpha_alpha * left_alpha * right_alpha
+                        + alpha_beta * (left_alpha * right_beta + left_beta * right_alpha)
+                        + beta_beta * left_beta * right_beta);
+                hessian[left][right] += contribution;
+                if left != right {
+                    hessian[right][left] += contribution;
+                }
+            }
+        }
+    }
+    Ok(hessian)
+}
+
 #[derive(Clone, Copy, Debug)]
 struct QuadratureMoments {
     log_normalizer: f64,
     mean: f64,
     second_moment: f64,
+    third_moment: f64,
+    fourth_moment: f64,
 }
 
 fn quadrature_moments(
@@ -91,11 +146,15 @@ fn quadrature_moments(
     let mut denominator = 0.0;
     let mut first = 0.0;
     let mut second = 0.0;
+    let mut third = 0.0;
+    let mut fourth = 0.0;
     for (state, log_weight) in log_weights {
         let weight = (log_weight - maximum).exp();
         denominator += weight;
         first = weight.mul_add(state, first);
         second = weight.mul_add(state * state, second);
+        third = weight.mul_add(state.powi(3), third);
+        fourth = weight.mul_add(state.powi(4), fourth);
     }
     if !denominator.is_finite() || denominator <= 0.0 {
         return Err(FitError::NonFiniteObjective);
@@ -103,14 +162,24 @@ fn quadrature_moments(
     let log_normalizer = maximum + denominator.ln() + (step / 3.0).ln();
     let mean = first / denominator;
     let second_moment = second / denominator;
-    if [log_normalizer, mean, second_moment]
-        .iter()
-        .all(|value| value.is_finite())
+    let third_moment = third / denominator;
+    let fourth_moment = fourth / denominator;
+    if [
+        log_normalizer,
+        mean,
+        second_moment,
+        third_moment,
+        fourth_moment,
+    ]
+    .iter()
+    .all(|value| value.is_finite())
     {
         Ok(QuadratureMoments {
             log_normalizer,
             mean,
             second_moment,
+            third_moment,
+            fourth_moment,
         })
     } else {
         Err(FitError::NonFiniteObjective)

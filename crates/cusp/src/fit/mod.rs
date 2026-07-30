@@ -306,6 +306,7 @@ impl FitConfig {
 pub struct FitRow {
     asset: AssetId,
     features: ControlVector,
+    event_time_ns: i64,
     state: f64,
     delta_state: f64,
     delta_time: f64,
@@ -318,15 +319,17 @@ impl FitRow {
     pub fn try_new(
         asset: AssetId,
         features: ControlVector,
+        event_time_ns: i64,
         state: f64,
         delta_state: f64,
         delta_time: f64,
         innovation_scale: f64,
         weight: f64,
     ) -> Result<Self, FitError> {
-        if [state, delta_state, delta_time, innovation_scale, weight]
-            .iter()
-            .any(|value| !value.is_finite())
+        if event_time_ns <= 0
+            || [state, delta_state, delta_time, innovation_scale, weight]
+                .iter()
+                .any(|value| !value.is_finite())
             || delta_time <= 0.0
             || innovation_scale <= 0.0
             || weight <= 0.0
@@ -336,12 +339,68 @@ impl FitRow {
         Ok(Self {
             asset,
             features,
+            event_time_ns,
             state,
             delta_state,
             delta_time,
             innovation_scale,
             weight,
         })
+    }
+
+    pub const fn event_time_ns(&self) -> i64 {
+        self.event_time_ns
+    }
+
+    pub const fn asset(&self) -> &AssetId {
+        &self.asset
+    }
+
+    pub const fn weight(&self) -> f64 {
+        self.weight
+    }
+
+    pub(crate) fn with_weight_multiplier(&self, multiplier: u32) -> Result<Self, FitError> {
+        if multiplier == 0 {
+            return Err(FitError::InvalidRow);
+        }
+        Self::try_new(
+            self.asset.clone(),
+            self.features.clone(),
+            self.event_time_ns,
+            self.state,
+            self.delta_state,
+            self.delta_time,
+            self.innovation_scale,
+            self.weight * f64::from(multiplier),
+        )
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct FitTimeRange {
+    start_ns: i64,
+    end_ns: i64,
+}
+
+impl FitTimeRange {
+    pub fn try_new(start_ns: i64, end_ns: i64) -> Result<Self, FitError> {
+        if start_ns <= 0 || end_ns <= start_ns {
+            return Err(FitError::InvalidTimeRange);
+        }
+        Ok(Self { start_ns, end_ns })
+    }
+
+    pub const fn start_ns(&self) -> i64 {
+        self.start_ns
+    }
+
+    pub const fn end_ns(&self) -> i64 {
+        self.end_ns
+    }
+
+    const fn contains(&self, event_time_ns: i64) -> bool {
+        event_time_ns >= self.start_ns && event_time_ns < self.end_ns
     }
 }
 
@@ -351,6 +410,7 @@ pub struct FitDataset {
     normalization_hash: [u8; 32],
     dataset_manifest_hash: [u8; 32],
     training_fold_hash: [u8; 32],
+    training_time_range: FitTimeRange,
     residual_control_covariance: ControlCovariance,
     rows: Vec<FitRow>,
 }
@@ -361,6 +421,7 @@ impl FitDataset {
         normalization_hash: [u8; 32],
         dataset_manifest_hash: [u8; 32],
         training_fold_hash: [u8; 32],
+        training_time_range: FitTimeRange,
         residual_control_covariance: ControlCovariance,
         rows: Vec<FitRow>,
     ) -> Result<Self, FitError> {
@@ -378,14 +439,26 @@ impl FitDataset {
         if assets.is_empty() || assets.len() > MAX_FIT_ASSETS {
             return Err(FitError::AssetCapacity);
         }
+        let mut previous: Option<(&AssetId, i64)> = None;
         for row in &rows {
+            if !training_time_range.contains(row.event_time_ns) {
+                return Err(FitError::InvalidTimeRange);
+            }
+            if let Some((previous_asset, previous_time)) = previous
+                && (row.event_time_ns < previous_time
+                    || (row.event_time_ns == previous_time && row.asset <= *previous_asset))
+            {
+                return Err(FitError::InvalidRowOrder);
+            }
             normalized_features(&schema, &row.features)?;
+            previous = Some((&row.asset, row.event_time_ns));
         }
         Ok(Self {
             schema,
             normalization_hash,
             dataset_manifest_hash,
             training_fold_hash,
+            training_time_range,
             residual_control_covariance,
             rows,
         })
@@ -407,8 +480,28 @@ impl FitDataset {
         self.training_fold_hash
     }
 
+    pub const fn training_time_range(&self) -> &FitTimeRange {
+        &self.training_time_range
+    }
+
     pub const fn residual_control_covariance(&self) -> ControlCovariance {
         self.residual_control_covariance
+    }
+
+    pub(crate) fn bootstrap_replica(
+        &self,
+        dataset_manifest_hash: [u8; 32],
+        rows: Vec<FitRow>,
+    ) -> Result<Self, FitError> {
+        Self::try_new(
+            self.schema.clone(),
+            self.normalization_hash,
+            dataset_manifest_hash,
+            self.training_fold_hash,
+            self.training_time_range.clone(),
+            self.residual_control_covariance,
+            rows,
+        )
     }
 }
 
@@ -493,6 +586,22 @@ impl Objective {
     }
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
+pub enum ParameterKey {
+    AlphaIntercept,
+    BetaIntercept,
+    AlphaShared(ControlFeatureKey),
+    BetaShared(ControlFeatureKey),
+    AlphaAsset {
+        asset: AssetId,
+        feature: ControlFeatureKey,
+    },
+    BetaAsset {
+        asset: AssetId,
+        feature: ControlFeatureKey,
+    },
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct FitResult {
     control_map: ControlMap,
@@ -501,6 +610,9 @@ pub struct FitResult {
     dataset_manifest_hash: [u8; 32],
     training_fold_hash: [u8; 32],
     candidate_condition_limit: f64,
+    parameters: Vec<f64>,
+    parameter_keys: Vec<ParameterKey>,
+    uncertainty_problem: Box<FitProblem>,
 }
 
 impl FitResult {
@@ -518,6 +630,61 @@ impl FitResult {
 
     pub const fn reference_asset(&self) -> &AssetId {
         &self.reference_asset
+    }
+
+    pub fn parameter_values(&self) -> &[f64] {
+        &self.parameters
+    }
+
+    pub fn parameter_keys(&self) -> &[ParameterKey] {
+        &self.parameter_keys
+    }
+
+    pub const fn dataset_manifest_hash(&self) -> [u8; 32] {
+        self.dataset_manifest_hash
+    }
+
+    pub const fn training_fold_hash(&self) -> [u8; 32] {
+        self.training_fold_hash
+    }
+
+    pub const fn effective_observations(&self) -> usize {
+        self.uncertainty_problem.rows.len()
+    }
+
+    pub fn analytic_hessian(&self) -> Result<Vec<Vec<f64>>, FitError> {
+        self.uncertainty_problem.smooth_hessian(&self.parameters)
+    }
+
+    pub(crate) fn control_map_for_parameters(
+        &self,
+        parameters: &[f64],
+    ) -> Result<ControlMap, FitError> {
+        self.uncertainty_problem.decode_control_map(parameters)
+    }
+
+    pub(crate) fn penalized_parameter_mask(&self) -> Vec<bool> {
+        self.uncertainty_problem
+            .layout
+            .coordinates
+            .iter()
+            .map(|coordinate| {
+                coordinate.scope != CoordinateScope::Intercept
+                    && coordinate.sparse_weight > 0.0
+                    && self.uncertainty_problem.config.penalty.lambda()
+                        * self.uncertainty_problem.config.penalty.l1_ratio()
+                        > 0.0
+            })
+            .collect()
+    }
+
+    pub(crate) fn parameter_signs(&self) -> Vec<CoefficientSign> {
+        self.uncertainty_problem
+            .layout
+            .coordinates
+            .iter()
+            .map(|coordinate| coordinate.sign)
+            .collect()
     }
 
     pub fn into_candidate_artifact(self) -> Result<CandidateFitArtifact, FitError> {
@@ -569,7 +736,7 @@ impl CandidateFitArtifact {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct FitProblem {
     dataset: FitDataset,
     config: FitConfig,
@@ -659,6 +826,17 @@ impl FitProblem {
         Ok(objective)
     }
 
+    pub fn smooth_hessian(&self, parameters: &[f64]) -> Result<Vec<Vec<f64>>, FitError> {
+        self.validate_parameters(parameters)?;
+        let mut hessian = match self.config.estimator {
+            EstimatorKind::StationaryDensity => stationary::hessian(self, parameters)?,
+            EstimatorKind::StudentTTransition => transition::hessian(self, parameters)?,
+        };
+        penalty::add_smooth_hessian(&mut hessian, &self.layout, self.config.penalty)?;
+        validate_hessian(&hessian, parameters.len())?;
+        Ok(hessian)
+    }
+
     fn validate_parameters(&self, parameters: &[f64]) -> Result<(), FitError> {
         if parameters.len() != self.layout.coordinates.len()
             || parameters.iter().any(|value| !value.is_finite())
@@ -671,14 +849,73 @@ impl FitProblem {
     fn fit(self) -> Result<FitResult, FitError> {
         let optimized = optimizer::optimize(&self)?;
         let control_map = self.decode_control_map(&optimized.parameters)?;
+        let parameter_keys = self.parameter_keys()?;
+        let reference_asset = self.assets[0].clone();
+        let dataset_manifest_hash = self.dataset.dataset_manifest_hash;
+        let training_fold_hash = self.dataset.training_fold_hash;
+        let candidate_condition_limit = self.config.optimizer.max_condition_number;
+        let mut uncertainty_problem = self;
+        uncertainty_problem.dataset.rows.clear();
         Ok(FitResult {
             control_map,
             diagnostics: optimized.diagnostics,
-            reference_asset: self.assets[0].clone(),
-            dataset_manifest_hash: self.dataset.dataset_manifest_hash,
-            training_fold_hash: self.dataset.training_fold_hash,
-            candidate_condition_limit: self.config.optimizer.max_condition_number,
+            reference_asset,
+            dataset_manifest_hash,
+            training_fold_hash,
+            candidate_condition_limit,
+            parameters: optimized.parameters,
+            parameter_keys,
+            uncertainty_problem: Box::new(uncertainty_problem),
         })
+    }
+
+    fn parameter_keys(&self) -> Result<Vec<ParameterKey>, FitError> {
+        self.layout
+            .coordinates
+            .iter()
+            .map(|coordinate| {
+                let feature = || {
+                    self.dataset
+                        .schema
+                        .features
+                        .get(coordinate.feature_index)
+                        .map(|value| value.key.clone())
+                        .ok_or(FitError::InvalidLayout)
+                };
+                Ok(match (coordinate.axis, coordinate.scope) {
+                    (ControlAxis::Alpha, CoordinateScope::Intercept) => {
+                        ParameterKey::AlphaIntercept
+                    }
+                    (ControlAxis::Beta, CoordinateScope::Intercept) => ParameterKey::BetaIntercept,
+                    (ControlAxis::Alpha, CoordinateScope::Shared) => {
+                        ParameterKey::AlphaShared(feature()?)
+                    }
+                    (ControlAxis::Beta, CoordinateScope::Shared) => {
+                        ParameterKey::BetaShared(feature()?)
+                    }
+                    (ControlAxis::Alpha, CoordinateScope::Asset(asset_index)) => {
+                        ParameterKey::AlphaAsset {
+                            asset: self
+                                .assets
+                                .get(asset_index)
+                                .cloned()
+                                .ok_or(FitError::InvalidLayout)?,
+                            feature: feature()?,
+                        }
+                    }
+                    (ControlAxis::Beta, CoordinateScope::Asset(asset_index)) => {
+                        ParameterKey::BetaAsset {
+                            asset: self
+                                .assets
+                                .get(asset_index)
+                                .cloned()
+                                .ok_or(FitError::InvalidLayout)?,
+                            feature: feature()?,
+                        }
+                    }
+                })
+            })
+            .collect()
     }
 
     fn decode_control_map(&self, parameters: &[f64]) -> Result<ControlMap, FitError> {
@@ -786,7 +1023,7 @@ pub fn fit(dataset: &FitDataset, config: FitConfig) -> Result<FitResult, FitErro
     FitProblem::try_new(dataset, config)?.fit()
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 struct PreparedRow {
     asset_index: usize,
     normalized_features: Vec<f64>,
@@ -810,7 +1047,7 @@ enum CoordinateScope {
     Asset(usize),
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 struct Coordinate {
     axis: ControlAxis,
     scope: CoordinateScope,
@@ -828,7 +1065,7 @@ impl Coordinate {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 struct ParameterLayout {
     coordinates: Vec<Coordinate>,
 }
@@ -991,12 +1228,34 @@ fn validate_objective(objective: &Objective, dimension: usize) -> Result<(), Fit
     }
 }
 
+fn validate_hessian(hessian: &[Vec<f64>], dimension: usize) -> Result<(), FitError> {
+    if hessian.len() != dimension
+        || hessian.iter().any(|row| row.len() != dimension)
+        || hessian.iter().flatten().any(|value| !value.is_finite())
+    {
+        return Err(FitError::NonFiniteObjective);
+    }
+    for (row, values) in hessian.iter().enumerate() {
+        for (column, value) in values.iter().enumerate().take(row) {
+            let scale = 1.0_f64.max(value.abs()).max(hessian[column][row].abs());
+            if (*value - hessian[column][row]).abs() > 1.0e-10 * scale {
+                return Err(FitError::InvalidLayout);
+            }
+        }
+    }
+    Ok(())
+}
+
 #[derive(Clone, Debug, Error, PartialEq)]
 pub enum FitError {
     #[error("invalid cusp fit configuration")]
     InvalidConfig,
     #[error("cusp fit row is invalid or nonfinite")]
     InvalidRow,
+    #[error("cusp fit rows are not in strict point-in-time order")]
+    InvalidRowOrder,
+    #[error("cusp fit training time range is invalid or does not contain every row")]
+    InvalidTimeRange,
     #[error("cusp fit dataset row capacity is invalid")]
     RowCapacity,
     #[error("cusp fit asset capacity is invalid")]
