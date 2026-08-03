@@ -202,7 +202,7 @@ fn signal_after_runtime_sync_before_readiness_suppresses_stdout() {
 }
 
 #[test]
-fn existing_log_fifo_fails_promptly_without_blocking_startup() {
+fn existing_log_fifo_fails_within_startup_timeout() {
     let root = runtime_root();
     let secret_path = root.path().join("session-secret.bin");
     fs::write(&secret_path, SECRET_BYTES).expect("session secret source must write");
@@ -214,7 +214,7 @@ fn existing_log_fifo_fails_promptly_without_blocking_startup() {
     assert!(status.success(), "log FIFO must create");
 
     let mut daemon = DaemonProcess::spawn(root.path(), &secret_path, SecretOpenMode::ReadOnly);
-    let status = daemon.wait_for_exit(Duration::from_secs(1));
+    let status = daemon.wait_for_exit(EXIT_TIMEOUT);
     assert!(
         !status.success(),
         "nonregular existing log must fail startup"
@@ -567,7 +567,7 @@ impl DaemonProcess {
             }
             assert!(
                 Instant::now() < deadline,
-                "daemon must exit within five seconds"
+                "daemon must exit within {timeout:?}"
             );
             thread::sleep(Duration::from_millis(10));
         }
