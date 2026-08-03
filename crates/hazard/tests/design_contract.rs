@@ -25,13 +25,20 @@ fn available_sample(id: u64, origin_seconds: i64, outcome: HazardOutcome) -> Haz
 }
 
 fn training_set(samples: Vec<HazardSampleInput>) -> Result<HazardTrainingSet, hazard::HazardError> {
+    training_set_with_spec(samples, BucketSpec::v1())
+}
+
+fn training_set_with_spec(
+    samples: Vec<HazardSampleInput>,
+    bucket_spec: BucketSpec,
+) -> Result<HazardTrainingSet, hazard::HazardError> {
     HazardTrainingSet::try_new(HazardTrainingSetInput {
         feature_schema: FeatureSchema::try_new(
             1,
             vec!["realized_volatility".to_owned(), "spread_bps".to_owned()],
         )
         .expect("fixture schema should be valid"),
-        bucket_spec: BucketSpec::v1(),
+        bucket_spec,
         cause_ids: vec![
             "liquidity_vacuum".to_owned(),
             "downside_transition".to_owned(),
@@ -39,6 +46,28 @@ fn training_set(samples: Vec<HazardSampleInput>) -> Result<HazardTrainingSet, ha
         training_cutoff_ns: 100_000 * SECOND_NS,
         samples,
     })
+}
+
+#[test]
+fn production_bucket_version_changes_training_identity_and_risk_set_expansion() {
+    let sample = available_sample(
+        1,
+        1,
+        HazardOutcome::RightCensored {
+            observed_seconds: 900,
+        },
+    );
+    let legacy = training_set_with_spec(vec![sample.clone()], BucketSpec::v1())
+        .expect("legacy training set");
+    let production = training_set_with_spec(vec![sample], BucketSpec::production_v2())
+        .expect("production training set");
+
+    assert_ne!(legacy.evidence_id(), production.evidence_id());
+    assert_eq!(augment_design(&legacy).expect("legacy rows").len(), 1);
+    assert_eq!(
+        augment_design(&production).expect("production rows").len(),
+        15
+    );
 }
 
 #[test]

@@ -430,14 +430,7 @@ fn evidence_id(
     hasher.update(EVIDENCE_DOMAIN);
     hash_u64(&mut hasher, u64::from(feature_schema.version));
     hash_strings(&mut hasher, &feature_schema.feature_ids);
-    hash_u64(&mut hasher, u64::from(bucket_spec.version()));
-    hash_u64(
-        &mut hasher,
-        u64::try_from(bucket_spec.len()).unwrap_or(u64::MAX),
-    );
-    for edge in bucket_spec.edges_seconds() {
-        hash_u64(&mut hasher, *edge);
-    }
+    hasher.update(&bucket_spec.fingerprint());
     hash_strings(&mut hasher, cause_ids);
     hasher.update(&training_cutoff_ns.to_le_bytes());
     hash_u64(
