@@ -105,6 +105,7 @@ fn active_workspace_contains_only_implemented_packages() {
             "raw-wal",
             "regime",
             "replay-engine",
+            "scenarios",
             "system-tests",
             "volatility",
             "xtask",

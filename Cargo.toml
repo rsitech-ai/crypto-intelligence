@@ -42,6 +42,7 @@ members = [
   "crates/raw-wal",
   "crates/regime",
   "crates/replay-engine",
+  "crates/scenarios",
   "crates/system-tests",
   "crates/volatility",
   "xtask",
