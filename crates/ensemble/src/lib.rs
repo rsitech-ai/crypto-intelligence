@@ -1,10 +1,16 @@
 //! Leakage-safe inputs for the calibrated model ensemble.
 
+pub mod ablation;
 pub mod constraints;
 pub mod module_output;
 pub mod oof_matrix;
+pub mod stacker;
 
-pub use constraints::{CuspEligibilityReceipt, MatrixConstraints};
+pub use ablation::{AblatedColumn, AblationStatus, ModuleAblation, ModuleAblationReport};
+pub use constraints::{
+    CuspEligibilityReceipt, MatrixConstraints, MissingValuePolicy, WeightConstraint,
+    WeightConstraints,
+};
 pub use module_output::{
     ModuleAvailability, ModuleDatum, ModuleKind, ModuleOutput, ModuleOutputInput,
     VerifiedModuleOutputInput,
@@ -12,6 +18,11 @@ pub use module_output::{
 pub use oof_matrix::{
     EnsembleSchema, MatrixColumn, MatrixDatum, MatrixLimits, MatrixModuleState, MatrixRow,
     OutOfFoldMatrix, RowModule, TrainingRowInput,
+};
+pub use stacker::{
+    MetaStacker, ModuleVectorInput, StackerConfig, StackerConfigInput, StackerDiagnostics,
+    StackerFitOutcome, StackerFold, StackerPrediction, StackerTargetInput, StackerTargetSchema,
+    StackerTargetSet, StackerTrainingSet,
 };
 
 use thiserror::Error;
@@ -71,6 +82,46 @@ pub enum EnsembleError {
     ColumnCapacity,
     #[error("out-of-fold dense cell capacity exceeded")]
     CellCapacity,
+    #[error("stacker target schema is invalid")]
+    InvalidTargetSchema,
+    #[error("stacker targets do not exactly cover matrix rows")]
+    TargetCoverageMismatch,
+    #[error("stacker target row is duplicated")]
+    DuplicateTarget,
+    #[error("censored or excluded target cannot enter binary stacker training")]
+    TargetNotObserved,
+    #[error("stacker target timing, definition, or row identity is inconsistent")]
+    TargetMismatch,
+    #[error("stacker training contains a duplicate outer fold")]
+    DuplicateStackerFold,
+    #[error("stacker folds have incompatible schema, target, or lock contracts")]
+    IncompatibleStackerFold,
+    #[error("stacker training contains a duplicate row identity")]
+    DuplicateTrainingRow,
+    #[error("binary stacker training requires both observed classes")]
+    InsufficientTargetVariation,
+    #[error("stacker configuration is invalid")]
+    InvalidStackerConfig,
+    #[error("stacker weight constraints are invalid")]
+    InvalidWeightConstraints,
+    #[error("an unlocked stacker column has no observed training support")]
+    UnsupportedMissingColumn,
+    #[error("stacker work capacity exceeded")]
+    StackerWorkCapacity,
+    #[error("stacker optimization failed numerical or descent checks")]
+    StackerOptimizationFailure,
+    #[error("stacker optimization did not converge within its declared budget")]
+    StackerNonConverged,
+    #[error("stacker input schema or column order differs from the fitted model")]
+    StackerSchemaMismatch,
+    #[error("stacker inference input is invalid")]
+    InvalidStackerPrediction,
+    #[error("ablation fit and evaluation evidence overlap")]
+    AblationOverlap,
+    #[error("ablation evaluation is not chronologically later than training knowledge")]
+    AblationChronology,
+    #[error("ablation fit and evaluation contracts are incompatible")]
+    AblationIncompatible,
 }
 
 pub(crate) fn valid_identifier(value: &str) -> bool {

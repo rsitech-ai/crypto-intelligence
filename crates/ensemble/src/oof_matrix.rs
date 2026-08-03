@@ -258,6 +258,16 @@ impl MatrixRow {
     }
 
     #[must_use]
+    pub const fn outcome_end(&self) -> UnixNanos {
+        UnixNanos::new(self.sample.outcome_end_ns())
+    }
+
+    #[must_use]
+    pub const fn outcome_known_at(&self) -> UnixNanos {
+        UnixNanos::new(self.sample.as_known_at_ns())
+    }
+
+    #[must_use]
     pub fn values(&self) -> &[MatrixDatum] {
         &self.values
     }
