@@ -1,12 +1,22 @@
 //! Deterministic fast-state cadence and immutable point-in-time snapshots.
 
+mod features;
 mod scheduler;
 mod snapshot;
+mod trigger_state;
 
+pub use features::{
+    cancellation_burst, completeness_weighted_liquidation_pressure, depth_disappearance,
+    dispersion_acceleration,
+};
 pub use scheduler::{EventTimeliness, FastStateScheduler, TickEvent, TickKind};
 pub use snapshot::{
     CoalescingSnapshotSlot, FastStateSnapshot, FastStateSnapshotInput, MaskedFeatureVector,
     PublishedFastStateSnapshot, SnapshotHealth,
+};
+pub use trigger_state::{
+    TriggerError, TriggerHealth, TriggerMissingness, TriggerState, TriggerStateBuilder,
+    TriggerStateTarget,
 };
 
 use feature_registry::RegistryError;

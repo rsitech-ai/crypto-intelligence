@@ -1030,7 +1030,10 @@ version = "0.1.0"
 dependencies = [
  "blake3",
  "domain",
+ "feature-engine",
  "feature-registry",
+ "fixed-decimal",
+ "instrument-registry",
  "quality",
  "semver",
  "serde_json",
