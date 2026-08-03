@@ -6,6 +6,7 @@ members = [
   "apps/crypto-replay",
   "apps/crypto-evaluate",
   "apps/cryptoriskd",
+  "crates/applicability",
   "crates/baselines",
   "crates/calibration",
   "crates/capacity",

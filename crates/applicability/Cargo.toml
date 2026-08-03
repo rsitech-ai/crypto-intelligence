@@ -7,8 +7,18 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+blake3.workspace = true
+calibration = { path = "../calibration" }
+nalgebra.workspace = true
 serde.workspace = true
 thiserror.workspace = true
+
+[dev-dependencies]
+dataset = { path = "../dataset" }
+hazard = { path = "../hazard" }
+labels = { path = "../labels" }
+semver.workspace = true
+serde_json.workspace = true
 
 [lints]
 workspace = true
