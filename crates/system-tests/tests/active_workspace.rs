@@ -84,6 +84,7 @@ fn active_workspace_contains_only_implemented_packages() {
             "cusp",
             "dataset",
             "domain",
+            "ensemble",
             "event-envelope",
             "fast-state",
             "feature-engine",
