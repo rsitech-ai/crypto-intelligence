@@ -82,7 +82,7 @@ rustix = { version = "1", features = ["fs", "process"] }
 schemars = "0.8"
 semver = { version = "1", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+serde_json = { version = "1", features = ["float_roundtrip"] }
 sha2 = "0.10"
 statrs = { version = "=0.18.0", default-features = false }
 subtle = "2"

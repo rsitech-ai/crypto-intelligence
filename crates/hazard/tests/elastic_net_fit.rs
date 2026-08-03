@@ -61,6 +61,7 @@ fn training_set_with_spec(
         .expect("fixture schema should be valid"),
         bucket_spec,
         cause_ids: vec!["cause_a".to_owned(), "cause_b".to_owned()],
+        cause_definition_hashes: vec![[1; 32], [2; 32]],
         training_cutoff_ns: 100_000 * SECOND_NS,
         samples,
     })
@@ -152,6 +153,8 @@ fn separable_fixture() -> HazardTrainingSet {
 
 fn prediction_input(schema: &FeatureSchema, features: Vec<f64>) -> HazardPredictionInput {
     HazardPredictionInput {
+        entity_id: "asset".to_owned(),
+        episode_cluster_id: "episode".to_owned(),
         feature_schema: schema.clone(),
         origin_time_ns: 200_000 * SECOND_NS,
         as_known_at_ns: 200_000 * SECOND_NS,

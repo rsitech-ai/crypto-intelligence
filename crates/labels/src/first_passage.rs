@@ -306,11 +306,45 @@ impl MarketFrame {
 /// Strictly ordered, uniformly sampled path with explicit knowledge times.
 #[derive(Clone, Debug, PartialEq)]
 pub struct LabelPath {
+    entity_id: String,
+    origin_time_ns: i64,
+    episode_cluster_id: String,
+    provenance_bound: bool,
     frames: Vec<MarketFrame>,
+    evidence_hash: [u8; 32],
 }
 
 impl LabelPath {
     pub fn try_new(frames: Vec<MarketFrameInput>) -> Result<Self, LabelError> {
+        let mut path =
+            Self::try_new_bound("unbound_fixture", 1, "unbound_fixture_episode", frames)?;
+        path.provenance_bound = false;
+        path.evidence_hash = hash_frames(
+            &path.entity_id,
+            path.origin_time_ns,
+            &path.episode_cluster_id,
+            path.provenance_bound,
+            &path.frames,
+        );
+        Ok(path)
+    }
+
+    /// Constructs a production label path whose entity, absolute origin, and
+    /// episode/block cluster are explicit and evidence-hashed.
+    pub fn try_new_bound(
+        entity_id: impl Into<String>,
+        origin_time_ns: i64,
+        episode_cluster_id: impl Into<String>,
+        frames: Vec<MarketFrameInput>,
+    ) -> Result<Self, LabelError> {
+        let entity_id = entity_id.into();
+        let episode_cluster_id = episode_cluster_id.into();
+        if origin_time_ns <= 0
+            || !valid_identifier(&entity_id)
+            || !valid_identifier(&episode_cluster_id)
+        {
+            return Err(LabelError::InvalidFrame);
+        }
         if frames.len() < 2 || frames.len() > MAXIMUM_PATH_FRAMES {
             return Err(LabelError::PathCapacity);
         }
@@ -329,7 +363,38 @@ impl LabelPath {
         {
             return Err(LabelError::InvalidChronology);
         }
-        Ok(Self { frames })
+        let provenance_bound = true;
+        let evidence_hash = hash_frames(
+            &entity_id,
+            origin_time_ns,
+            &episode_cluster_id,
+            provenance_bound,
+            &frames,
+        );
+        Ok(Self {
+            entity_id,
+            origin_time_ns,
+            episode_cluster_id,
+            provenance_bound,
+            frames,
+            evidence_hash,
+        })
+    }
+
+    pub fn entity_id(&self) -> &str {
+        &self.entity_id
+    }
+
+    pub const fn origin_time_ns(&self) -> i64 {
+        self.origin_time_ns
+    }
+
+    pub fn episode_cluster_id(&self) -> &str {
+        &self.episode_cluster_id
+    }
+
+    pub const fn provenance_bound(&self) -> bool {
+        self.provenance_bound
     }
 
     pub fn frames(&self) -> &[MarketFrame] {
@@ -339,6 +404,88 @@ impl LabelPath {
     pub fn origin(&self) -> MarketFrame {
         self.frames[0]
     }
+
+    pub const fn evidence_hash(&self) -> [u8; 32] {
+        self.evidence_hash
+    }
+}
+
+fn hash_frames(
+    entity_id: &str,
+    origin_time_ns: i64,
+    episode_cluster_id: &str,
+    provenance_bound: bool,
+    frames: &[MarketFrame],
+) -> [u8; 32] {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(b"cmti:label-path:v2\0");
+    hash_string(&mut hasher, entity_id);
+    hasher.update(&origin_time_ns.to_le_bytes());
+    hash_string(&mut hasher, episode_cluster_id);
+    hasher.update(&[u8::from(provenance_bound)]);
+    hasher.update(&(frames.len() as u64).to_le_bytes());
+    for frame in frames {
+        hash_market_frame(&mut hasher, *frame);
+    }
+    *hasher.finalize().as_bytes()
+}
+
+fn valid_identifier(identifier: &str) -> bool {
+    !identifier.is_empty()
+        && identifier.len() <= 256
+        && identifier
+            .bytes()
+            .all(|byte| !byte.is_ascii_control() && !byte.is_ascii_whitespace())
+}
+
+fn hash_string(hasher: &mut blake3::Hasher, value: &str) {
+    hasher.update(&(value.len() as u64).to_le_bytes());
+    hasher.update(value.as_bytes());
+}
+
+fn hash_market_frame(hasher: &mut blake3::Hasher, frame: MarketFrame) {
+    hasher.update(&frame.offset_seconds.to_le_bytes());
+    hasher.update(&frame.known_at_offset_seconds.to_le_bytes());
+    for value in [
+        frame.price,
+        frame.volatility,
+        frame.spread_bps,
+        frame.displayed_depth,
+        frame.cancellation_rate,
+        frame.sweep_cost_bps,
+        frame.resiliency_seconds,
+        frame.liquidation_notional,
+        frame.open_interest,
+    ] {
+        match value {
+            Some(value) => {
+                hasher.update(&[1]);
+                hasher.update(&value.to_bits().to_le_bytes());
+            }
+            None => {
+                hasher.update(&[0]);
+            }
+        }
+    }
+    hasher.update(&frame.corroborating_sources.to_le_bytes());
+    hasher.update(&frame.quality_millionths.to_le_bytes());
+    hasher.update(&frame.source_coverage_millionths.to_le_bytes());
+    hasher.update(&frame.liquidation_confidence_millionths.to_le_bytes());
+    hasher.update(&[match frame.source_health {
+        SourceHealthState::Healthy => 1,
+        SourceHealthState::Degraded => 2,
+        SourceHealthState::Unhealthy => 3,
+        SourceHealthState::Quarantined => 4,
+        SourceHealthState::Recovering => 5,
+    }]);
+    hasher.update(&[match frame.eligibility {
+        MarketEligibility::Eligible => 1,
+        MarketEligibility::HaltedOrDelisted => 2,
+        MarketEligibility::InstrumentDefinitionChanged => 3,
+        MarketEligibility::UnresolvedCorrection => 4,
+        MarketEligibility::TimestampIntegrityCompromised => 5,
+    }]);
+    hasher.update(&[u8::from(frame.finalized)]);
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

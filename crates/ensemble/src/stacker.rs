@@ -2,6 +2,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use dataset::OuterFold;
 use labels::{EventType, LabelDefinition, LabelOutcome};
 use nalgebra::{DMatrix, linalg::SymmetricEigen};
 
@@ -651,6 +652,9 @@ pub struct MetaStacker {
     config: StackerConfig,
     diagnostics: StackerDiagnostics,
     training_evidence_hash: [u8; 32],
+    training_cutoff_ns: i64,
+    outer_fold_hash: [u8; 32],
+    model_fitted_at_ns: i64,
     model_id: [u8; 32],
 }
 
@@ -663,6 +667,26 @@ impl MetaStacker {
             StackerFitOutcome::Converged(model) => Ok(*model),
             StackerFitOutcome::NonConverged(_) => Err(EnsembleError::StackerNonConverged),
         }
+    }
+
+    /// Fits and immutably binds this model to the exact outer training fold.
+    pub fn fit_for_outer_fold(
+        training: &StackerTrainingSet,
+        config: StackerConfig,
+        outer_fold: &OuterFold,
+    ) -> Result<Self, EnsembleError> {
+        let mut model = Self::fit(training, config)?;
+        if model.training_cutoff_ns > outer_fold.training().end_ns() {
+            return Err(EnsembleError::FoldMismatch);
+        }
+        model.outer_fold_hash = outer_fold.fold_hash();
+        model.model_fitted_at_ns = outer_fold.training().end_ns();
+        model.model_id = bind_model_to_outer_fold(
+            model.model_id,
+            model.outer_fold_hash,
+            model.model_fitted_at_ns,
+        );
+        Ok(model)
     }
 
     pub fn fit_candidate(
@@ -846,17 +870,32 @@ impl MetaStacker {
         if input.schema_hash != self.schema_hash
             || input.column_ids != self.column_ids
             || input.values.len() != self.column_ids.len()
+            || input.origin_time_ns <= 0
+            || input.as_known_at_ns <= 0
+            || input.as_known_at_ns > input.origin_time_ns
+            || !valid_identifier(&input.entity_id)
+            || !valid_identifier(&input.episode_cluster_id)
         {
             return Err(EnsembleError::StackerSchemaMismatch);
         }
         require_nonzero_digest(&input.evidence_hash)?;
         let (logit, probability) = self.predict_values(&input.values)?;
+        let input_evidence_hash = calculate_input_hash(input);
         let evidence_hash = calculate_prediction_hash(self.model_id, input, logit, probability);
         Ok(StackerPrediction {
             logit,
             probability,
             model_id: self.model_id,
-            input_evidence_hash: input.evidence_hash,
+            training_evidence_hash: self.training_evidence_hash,
+            training_cutoff_ns: self.training_cutoff_ns,
+            target_schema: self.target_schema.clone(),
+            entity_id: input.entity_id.clone(),
+            episode_cluster_id: input.episode_cluster_id.clone(),
+            outer_fold_hash: self.outer_fold_hash,
+            model_fitted_at_ns: self.model_fitted_at_ns,
+            origin_time_ns: input.origin_time_ns,
+            as_known_at_ns: input.as_known_at_ns,
+            input_evidence_hash,
             evidence_hash,
         })
     }
@@ -962,14 +1001,23 @@ impl MetaStacker {
     pub const fn training_evidence_hash(&self) -> [u8; 32] {
         self.training_evidence_hash
     }
+
+    #[must_use]
+    pub const fn training_cutoff_ns(&self) -> i64 {
+        self.training_cutoff_ns
+    }
 }
 
 /// Exact ordered inference vector; missing values retain their reasoned variants.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ModuleVectorInput {
+    pub entity_id: String,
+    pub episode_cluster_id: String,
     pub schema_hash: [u8; 32],
     pub column_ids: Vec<String>,
     pub values: Vec<MatrixDatum>,
+    pub origin_time_ns: i64,
+    pub as_known_at_ns: i64,
     pub evidence_hash: [u8; 32],
 }
 
@@ -979,6 +1027,15 @@ pub struct StackerPrediction {
     logit: f64,
     probability: f64,
     model_id: [u8; 32],
+    training_evidence_hash: [u8; 32],
+    training_cutoff_ns: i64,
+    target_schema: StackerTargetSchema,
+    entity_id: String,
+    episode_cluster_id: String,
+    outer_fold_hash: [u8; 32],
+    model_fitted_at_ns: i64,
+    origin_time_ns: i64,
+    as_known_at_ns: i64,
     input_evidence_hash: [u8; 32],
     evidence_hash: [u8; 32],
 }
@@ -997,6 +1054,51 @@ impl StackerPrediction {
     #[must_use]
     pub const fn model_id(&self) -> [u8; 32] {
         self.model_id
+    }
+
+    #[must_use]
+    pub const fn training_evidence_hash(&self) -> [u8; 32] {
+        self.training_evidence_hash
+    }
+
+    #[must_use]
+    pub const fn training_cutoff_ns(&self) -> i64 {
+        self.training_cutoff_ns
+    }
+
+    #[must_use]
+    pub fn entity_id(&self) -> &str {
+        &self.entity_id
+    }
+
+    #[must_use]
+    pub fn episode_cluster_id(&self) -> &str {
+        &self.episode_cluster_id
+    }
+
+    #[must_use]
+    pub const fn outer_fold_hash(&self) -> [u8; 32] {
+        self.outer_fold_hash
+    }
+
+    #[must_use]
+    pub const fn model_fitted_at_ns(&self) -> i64 {
+        self.model_fitted_at_ns
+    }
+
+    #[must_use]
+    pub const fn target_schema(&self) -> &StackerTargetSchema {
+        &self.target_schema
+    }
+
+    #[must_use]
+    pub const fn origin_time_ns(&self) -> i64 {
+        self.origin_time_ns
+    }
+
+    #[must_use]
+    pub const fn as_known_at_ns(&self) -> i64 {
+        self.as_known_at_ns
     }
 
     #[must_use]
@@ -1546,6 +1648,14 @@ fn build_model(
         config,
         diagnostics,
         training_evidence_hash: training.evidence_hash,
+        training_cutoff_ns: training
+            .examples
+            .iter()
+            .map(|example| example.known_at_ns)
+            .max()
+            .unwrap_or(0),
+        outer_fold_hash: [0; 32],
+        model_fitted_at_ns: 0,
         model_id,
     }
 }
@@ -1685,8 +1795,21 @@ fn calculate_prediction_hash(
     let mut hasher = blake3::Hasher::new();
     hasher.update(PREDICTION_DOMAIN);
     hasher.update(&model_id);
+    hasher.update(&calculate_input_hash(input));
+    hasher.update(&logit.to_bits().to_le_bytes());
+    hasher.update(&probability.to_bits().to_le_bytes());
+    *hasher.finalize().as_bytes()
+}
+
+fn calculate_input_hash(input: &ModuleVectorInput) -> [u8; 32] {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(b"cmti:meta-stacker-input:v1\0");
+    hash_string(&mut hasher, &input.entity_id);
+    hash_string(&mut hasher, &input.episode_cluster_id);
     hasher.update(&input.schema_hash);
     hasher.update(&input.evidence_hash);
+    hasher.update(&input.origin_time_ns.to_le_bytes());
+    hasher.update(&input.as_known_at_ns.to_le_bytes());
     hash_u64(
         &mut hasher,
         u64::try_from(input.column_ids.len()).unwrap_or(u64::MAX),
@@ -1707,8 +1830,19 @@ fn calculate_prediction_hash(
             }
         }
     }
-    hasher.update(&logit.to_bits().to_le_bytes());
-    hasher.update(&probability.to_bits().to_le_bytes());
+    *hasher.finalize().as_bytes()
+}
+
+fn bind_model_to_outer_fold(
+    base_model_id: [u8; 32],
+    outer_fold_hash: [u8; 32],
+    model_fitted_at_ns: i64,
+) -> [u8; 32] {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(b"cmti:meta-stacker-outer-fold:v1\0");
+    hasher.update(&base_model_id);
+    hasher.update(&outer_fold_hash);
+    hasher.update(&model_fitted_at_ns.to_le_bytes());
     *hasher.finalize().as_bytes()
 }
 

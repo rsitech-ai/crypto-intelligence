@@ -40,14 +40,65 @@ pub enum ExclusionReason {
 }
 
 /// Auditable evaluation record for one definition and horizon.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LabelEvaluation {
-    pub outcome: LabelOutcome,
-    pub horizon_seconds: u64,
-    pub outcome_known_at_offset_seconds: u64,
-    pub confidence_millionths: u32,
-    pub source_coverage_millionths: u32,
-    pub definition_hash: [u8; 32],
+    outcome: LabelOutcome,
+    horizon_seconds: u64,
+    outcome_known_at_offset_seconds: u64,
+    confidence_millionths: u32,
+    source_coverage_millionths: u32,
+    definition_hash: [u8; 32],
+    source_evidence_hash: [u8; 32],
+    entity_id: String,
+    origin_time_ns: i64,
+    episode_cluster_id: String,
+    provenance_bound: bool,
+}
+
+impl LabelEvaluation {
+    pub const fn outcome(&self) -> LabelOutcome {
+        self.outcome
+    }
+
+    pub const fn horizon_seconds(&self) -> u64 {
+        self.horizon_seconds
+    }
+
+    pub const fn outcome_known_at_offset_seconds(&self) -> u64 {
+        self.outcome_known_at_offset_seconds
+    }
+
+    pub const fn confidence_millionths(&self) -> u32 {
+        self.confidence_millionths
+    }
+
+    pub const fn source_coverage_millionths(&self) -> u32 {
+        self.source_coverage_millionths
+    }
+
+    pub const fn definition_hash(&self) -> [u8; 32] {
+        self.definition_hash
+    }
+
+    pub const fn source_evidence_hash(&self) -> [u8; 32] {
+        self.source_evidence_hash
+    }
+
+    pub fn entity_id(&self) -> &str {
+        &self.entity_id
+    }
+
+    pub const fn origin_time_ns(&self) -> i64 {
+        self.origin_time_ns
+    }
+
+    pub fn episode_cluster_id(&self) -> &str {
+        &self.episode_cluster_id
+    }
+
+    pub const fn provenance_bound(&self) -> bool {
+        self.provenance_bound
+    }
 }
 
 /// Explicit resolution of competing event families.
@@ -102,7 +153,7 @@ impl LabelEngine {
         }
         Ok(self
             .evaluate_at_horizon(path, self.definition.horizons_seconds()[0])?
-            .outcome)
+            .outcome())
     }
 
     pub fn label_at_horizon(
@@ -110,7 +161,7 @@ impl LabelEngine {
         path: &LabelPath,
         horizon_seconds: u64,
     ) -> Result<LabelOutcome, LabelError> {
-        Ok(self.evaluate_at_horizon(path, horizon_seconds)?.outcome)
+        Ok(self.evaluate_at_horizon(path, horizon_seconds)?.outcome())
     }
 
     pub fn evaluate_at_horizon(
@@ -141,22 +192,38 @@ impl LabelEngine {
             }
         };
         if let Some(reason) = eligibility_exclusion {
-            return Ok(self.excluded(horizon_seconds, reason, origin));
+            return Ok(self.excluded(path, horizon_seconds, reason, origin));
         }
         if !origin.is_trustworthy_at(horizon_seconds, 0, 0) {
-            return Ok(self.excluded(horizon_seconds, ExclusionReason::UnhealthyOrigin, origin));
+            return Ok(self.excluded(
+                path,
+                horizon_seconds,
+                ExclusionReason::UnhealthyOrigin,
+                origin,
+            ));
         }
         if !origin.is_trustworthy_at(horizon_seconds, minimum_quality, minimum_coverage) {
-            return Ok(self.excluded(horizon_seconds, ExclusionReason::LowQualityOrigin, origin));
+            return Ok(self.excluded(
+                path,
+                horizon_seconds,
+                ExclusionReason::LowQualityOrigin,
+                origin,
+            ));
         }
         let Some(origin_price) = origin.price() else {
-            return Ok(self.excluded(horizon_seconds, ExclusionReason::MissingEvidence, origin));
+            return Ok(self.excluded(
+                path,
+                horizon_seconds,
+                ExclusionReason::MissingEvidence,
+                origin,
+            ));
         };
         let duration = self.definition.minimum_duration_seconds();
         let passage = match self.definition.rule() {
             LabelRule::Downside { threshold } => {
                 let Some(log_threshold) = price_log_threshold(threshold, origin) else {
                     return Ok(self.excluded(
+                        path,
                         horizon_seconds,
                         ExclusionReason::InvalidVolatilityScale,
                         origin,
@@ -178,6 +245,7 @@ impl LabelEngine {
             LabelRule::Upside { threshold } => {
                 let Some(log_threshold) = price_log_threshold(threshold, origin) else {
                     return Ok(self.excluded(
+                        path,
                         horizon_seconds,
                         ExclusionReason::InvalidVolatilityScale,
                         origin,
@@ -203,6 +271,7 @@ impl LabelEngine {
             } => {
                 if origin.volatility().is_none() {
                     return Ok(self.excluded(
+                        path,
                         horizon_seconds,
                         ExclusionReason::MissingEvidence,
                         origin,
@@ -237,6 +306,7 @@ impl LabelEngine {
                 ) < minimum_corroborating_sources
                 {
                     return Ok(self.excluded(
+                        path,
                         horizon_seconds,
                         ExclusionReason::InsufficientCorroboration,
                         origin,
@@ -257,6 +327,7 @@ impl LabelEngine {
                 )
                 else {
                     return Ok(self.excluded(
+                        path,
                         horizon_seconds,
                         ExclusionReason::MissingEvidence,
                         origin,
@@ -269,6 +340,7 @@ impl LabelEngine {
                     || origin_resiliency <= 0.0
                 {
                     return Ok(self.excluded(
+                        path,
                         horizon_seconds,
                         ExclusionReason::MissingEvidence,
                         origin,
@@ -307,6 +379,7 @@ impl LabelEngine {
             } => {
                 let Some(price_log_threshold) = price_log_threshold(price_threshold, origin) else {
                     return Ok(self.excluded(
+                        path,
                         horizon_seconds,
                         ExclusionReason::InvalidVolatilityScale,
                         origin,
@@ -320,6 +393,7 @@ impl LabelEngine {
                 ) < minimum_corroborating_sources
                 {
                     return Ok(self.excluded(
+                        path,
                         horizon_seconds,
                         ExclusionReason::InsufficientCorroboration,
                         origin,
@@ -336,6 +410,7 @@ impl LabelEngine {
                     < minimum_confidence_millionths
                 {
                     return Ok(self.excluded(
+                        path,
                         horizon_seconds,
                         ExclusionReason::InsufficientConfidence,
                         origin,
@@ -347,6 +422,7 @@ impl LabelEngine {
                     origin.open_interest(),
                 ) else {
                     return Ok(self.excluded(
+                        path,
                         horizon_seconds,
                         ExclusionReason::MissingEvidence,
                         origin,
@@ -354,6 +430,7 @@ impl LabelEngine {
                 };
                 if origin_spread <= 0.0 || origin_depth <= 0.0 || origin_open_interest <= 0.0 {
                     return Ok(self.excluded(
+                        path,
                         horizon_seconds,
                         ExclusionReason::MissingEvidence,
                         origin,
@@ -415,30 +492,105 @@ impl LabelEngine {
                 .quality_millionths()
                 .min(evidence.source_coverage_millionths()),
         };
+        let definition_hash = self.definition.definition_hash();
         LabelEvaluation {
             outcome: passage.outcome,
             horizon_seconds,
             outcome_known_at_offset_seconds: passage.known_at_offset_seconds,
             confidence_millionths,
             source_coverage_millionths: evidence.source_coverage_millionths(),
-            definition_hash: self.definition.definition_hash(),
+            definition_hash,
+            source_evidence_hash: label_evidence_hash(
+                definition_hash,
+                horizon_seconds,
+                passage.outcome,
+                passage.known_at_offset_seconds,
+                path.evidence_hash(),
+            ),
+            entity_id: path.entity_id().to_owned(),
+            origin_time_ns: path.origin_time_ns(),
+            episode_cluster_id: path.episode_cluster_id().to_owned(),
+            provenance_bound: path.provenance_bound(),
         }
     }
 
     fn excluded(
         &self,
+        path: &LabelPath,
         horizon_seconds: u64,
         reason: ExclusionReason,
         origin: MarketFrame,
     ) -> LabelEvaluation {
+        let definition_hash = self.definition.definition_hash();
+        let outcome = LabelOutcome::Excluded(reason);
+        let known_at = origin.known_at_offset_seconds();
         LabelEvaluation {
-            outcome: LabelOutcome::Excluded(reason),
+            outcome,
             horizon_seconds,
-            outcome_known_at_offset_seconds: origin.known_at_offset_seconds(),
+            outcome_known_at_offset_seconds: known_at,
             confidence_millionths: 0,
             source_coverage_millionths: origin.source_coverage_millionths(),
-            definition_hash: self.definition.definition_hash(),
+            definition_hash,
+            source_evidence_hash: label_evidence_hash(
+                definition_hash,
+                horizon_seconds,
+                outcome,
+                known_at,
+                path.evidence_hash(),
+            ),
+            entity_id: path.entity_id().to_owned(),
+            origin_time_ns: path.origin_time_ns(),
+            episode_cluster_id: path.episode_cluster_id().to_owned(),
+            provenance_bound: path.provenance_bound(),
         }
+    }
+}
+
+fn label_evidence_hash(
+    definition_hash: [u8; 32],
+    horizon_seconds: u64,
+    outcome: LabelOutcome,
+    known_at_offset_seconds: u64,
+    source_hash: [u8; 32],
+) -> [u8; 32] {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(b"cmti:label-evaluation:v1\0");
+    hasher.update(&definition_hash);
+    hasher.update(&horizon_seconds.to_le_bytes());
+    match outcome {
+        LabelOutcome::Occurred { offset_seconds } => {
+            hasher.update(&[1]);
+            hasher.update(&offset_seconds.to_le_bytes());
+        }
+        LabelOutcome::NotOccurred => {
+            hasher.update(&[2]);
+        }
+        LabelOutcome::Censored { observed_seconds } => {
+            hasher.update(&[3]);
+            hasher.update(&observed_seconds.to_le_bytes());
+        }
+        LabelOutcome::Excluded(reason) => {
+            hasher.update(&[4, exclusion_reason_code(reason)]);
+        }
+    }
+    hasher.update(&known_at_offset_seconds.to_le_bytes());
+    hasher.update(&source_hash);
+    *hasher.finalize().as_bytes()
+}
+
+const fn exclusion_reason_code(reason: ExclusionReason) -> u8 {
+    match reason {
+        ExclusionReason::UnhealthyOrigin => 1,
+        ExclusionReason::LowQualityOrigin => 2,
+        ExclusionReason::MissingEvidence => 3,
+        ExclusionReason::InvalidVolatilityScale => 4,
+        ExclusionReason::InsufficientCorroboration => 5,
+        ExclusionReason::InsufficientConfidence => 6,
+        ExclusionReason::HaltedOrDelisted => 7,
+        ExclusionReason::InstrumentDefinitionChanged => 8,
+        ExclusionReason::UnresolvedCorrection => 9,
+        ExclusionReason::TimestampIntegrityCompromised => 10,
+        ExclusionReason::SimultaneousCompetingEvents => 11,
     }
 }
 

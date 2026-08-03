@@ -444,6 +444,8 @@ fn training_mean_missingness_and_inference_schema_are_explicit() {
         })
         .expect("missing volatility row");
     let input = ModuleVectorInput {
+        entity_id: "asset".to_owned(),
+        episode_cluster_id: "episode".to_owned(),
         schema_hash: matrices[0].schema().evidence_hash(),
         column_ids: matrices[0]
             .columns()
@@ -451,6 +453,8 @@ fn training_mean_missingness_and_inference_schema_are_explicit() {
             .map(|column| column.id().to_owned())
             .collect(),
         values: row.values().to_vec(),
+        origin_time_ns: row.origin().value(),
+        as_known_at_ns: row.origin().value(),
         evidence_hash: [0x61; 32],
     };
     let prediction = model.predict(&input).expect("declared mean imputation");
@@ -462,6 +466,39 @@ fn training_mean_missingness_and_inference_schema_are_explicit() {
     assert_eq!(
         model.predict(&wrong_order),
         Err(EnsembleError::StackerSchemaMismatch)
+    );
+}
+
+#[test]
+fn production_stacker_prediction_inherits_fold_from_the_fitted_model() {
+    let (folds, samples) = folds_fixture();
+    let matrices = vec![matrix(&folds[0], &samples)];
+    let target_sets = matrices.iter().map(targets).collect::<Vec<_>>();
+    let training = training_set(&matrices, &target_sets);
+    let config = config(WeightConstraint::NonNegative, 0.01, 20_000, 50_000_000);
+    let unbound = ensemble::MetaStacker::fit(&training, config.clone()).expect("unbound fit");
+    let binding_fold = folds.last().expect("later binding fold");
+    let bound = ensemble::MetaStacker::fit_for_outer_fold(&training, config, binding_fold)
+        .expect("fold-bound fit");
+    assert_ne!(unbound.model_id(), bound.model_id());
+    let row = &matrices[0].rows()[0];
+    let origin = binding_fold.calibration().start_ns();
+    let prediction = bound
+        .predict(&ModuleVectorInput {
+            entity_id: "asset".to_owned(),
+            episode_cluster_id: "fold_bound_episode".to_owned(),
+            schema_hash: bound.schema_hash(),
+            column_ids: bound.column_ids().to_vec(),
+            values: row.values().to_vec(),
+            origin_time_ns: origin,
+            as_known_at_ns: origin,
+            evidence_hash: [0x63; 32],
+        })
+        .expect("prediction");
+    assert_eq!(prediction.outer_fold_hash(), binding_fold.fold_hash());
+    assert_eq!(
+        prediction.model_fitted_at_ns(),
+        binding_fold.training().end_ns()
     );
 }
 
@@ -507,9 +544,13 @@ fn missingness_indicator_distinguishes_absence_from_an_observed_training_mean() 
         })
         .expect("missing volatility row");
     let missing = ModuleVectorInput {
+        entity_id: "asset".to_owned(),
+        episode_cluster_id: "episode".to_owned(),
         schema_hash: model.schema_hash(),
         column_ids: model.column_ids().to_vec(),
         values: row.values().to_vec(),
+        origin_time_ns: row.origin().value(),
+        as_known_at_ns: row.origin().value(),
         evidence_hash: [0x73; 32],
     };
     let mut observed_mean = missing.clone();
@@ -707,9 +748,13 @@ fn locked_module_values_cannot_affect_scores_but_remain_bound_in_prediction_line
 
     let row = &matrices[0].rows()[0];
     let base = ModuleVectorInput {
+        entity_id: "asset".to_owned(),
+        episode_cluster_id: "episode".to_owned(),
         schema_hash: model.schema_hash(),
         column_ids: model.column_ids().to_vec(),
         values: row.values().to_vec(),
+        origin_time_ns: row.origin().value(),
+        as_known_at_ns: row.origin().value(),
         evidence_hash: [0x71; 32],
     };
     let mut altered = base.clone();

@@ -43,6 +43,7 @@ fn training_set_with_spec(
             "liquidity_vacuum".to_owned(),
             "downside_transition".to_owned(),
         ],
+        cause_definition_hashes: vec![[1; 32], [2; 32]],
         training_cutoff_ns: 100_000 * SECOND_NS,
         samples,
     })

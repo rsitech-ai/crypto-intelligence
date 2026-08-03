@@ -230,13 +230,13 @@ fn liquidation_cascade_requires_all_conditions_and_records_confidence() {
         .evaluate_at_horizon(&complete, 180)
         .expect("cascade evaluation");
     assert_eq!(
-        evaluation.outcome,
+        evaluation.outcome(),
         LabelOutcome::Occurred { offset_seconds: 60 }
     );
-    assert_eq!(evaluation.outcome_known_at_offset_seconds, 120);
-    assert_eq!(evaluation.confidence_millionths, 900_000);
+    assert_eq!(evaluation.outcome_known_at_offset_seconds(), 120);
+    assert_eq!(evaluation.confidence_millionths(), 900_000);
     assert_eq!(
-        evaluation.definition_hash,
+        evaluation.definition_hash(),
         cascade.definition().definition_hash()
     );
 
