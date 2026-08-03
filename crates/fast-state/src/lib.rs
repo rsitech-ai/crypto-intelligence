@@ -1,8 +1,56 @@
-//! fast-state production contract.
-pub mod features;
-pub mod scheduler;
-pub mod snapshot;
-pub mod trigger_state;
+//! Deterministic fast-state cadence and immutable point-in-time snapshots.
 
-#[derive(Clone,Copy,Debug,Eq,PartialEq)] pub struct ContractMetadata { pub schema_version:u32, pub bounded:bool, pub point_in_time:bool }
-impl Default for ContractMetadata { fn default()->Self{Self{schema_version:1,bounded:true,point_in_time:true}} }
+mod scheduler;
+mod snapshot;
+
+pub use scheduler::{EventTimeliness, FastStateScheduler, TickEvent, TickKind};
+pub use snapshot::{
+    CoalescingSnapshotSlot, FastStateSnapshot, FastStateSnapshotInput, MaskedFeatureVector,
+    PublishedFastStateSnapshot, SnapshotHealth,
+};
+
+use feature_registry::RegistryError;
+use thiserror::Error;
+
+/// Fail-closed scheduler and snapshot errors.
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+pub enum FastStateError {
+    #[error("invalid fast-state scheduler configuration")]
+    InvalidScheduler,
+    #[error("fast-state clock regressed from {current_ns} to {attempted_ns}")]
+    ClockRegression { current_ns: i64, attempted_ns: i64 },
+    #[error("fast-state tick backlog capacity reached")]
+    TickBacklogCapacity,
+    #[error("fast-state counter overflow")]
+    CounterOverflow,
+    #[error("fast-state scheduler is cancelled")]
+    Cancelled,
+    #[error("event time must be nonnegative")]
+    InvalidEventTime,
+    #[error("event time is ahead of the scheduler")]
+    EventAheadOfScheduler,
+    #[error("fast-state snapshot has invalid point-in-time ordering")]
+    InvalidSnapshotTime,
+    #[error("fast-state publication requires a one-second publication tick")]
+    PublicationRequiresPublishedTick,
+    #[error("fast-state publication tick and snapshot time differ")]
+    PublicationTimeMismatch,
+    #[error("fast-state snapshot feature vector is empty or exceeds its bound")]
+    InvalidFeatureCount,
+    #[error("fast-state snapshot contains an invalid feature observation: {0}")]
+    InvalidFeatureObservation(#[from] RegistryError),
+    #[error("fast-state snapshot contains a duplicate feature observation")]
+    DuplicateFeatureObservation,
+    #[error("fast-state snapshot mixes entity identities")]
+    MixedSnapshotEntity,
+    #[error("fast-state snapshot contains a non-float model input")]
+    UnsupportedFeatureValue,
+    #[error("fast-state snapshot evidence could not be encoded")]
+    EvidenceEncoding,
+    #[error("fast-state UI snapshot regressed")]
+    SnapshotRegression,
+    #[error("fast-state same-event correction does not monotonically advance revisions")]
+    SnapshotCorrectionMismatch,
+    #[error("fast-state UI slot received a different entity identity")]
+    SnapshotEntityMismatch,
+}
