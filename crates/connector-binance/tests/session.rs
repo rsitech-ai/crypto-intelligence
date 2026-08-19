@@ -3,13 +3,14 @@ use std::time::Duration;
 
 use connector_binance::{
     BinanceConfig, BinanceConnector, BinanceInput, BinanceMarket, BinanceSessionRecord,
-    BinanceSessionRoute, bounded_session_channel,
+    BinanceSessionRoute, BinanceStreamContract, bounded_session_channel,
 };
 use connector_core::{
     BookStreamKey, BoundedNormalizedChannel, CancellationChannel, ConnectorCommand,
     ConnectorCommandChannel, ConnectorContext, ConnectorState, ConnectorTermination,
-    DurableRawCaptureChannel, DurableRawCaptureClient, DurableRawCaptureReceiver, LifecycleChannel,
-    MarketDataConnector, RecoverableDisconnect, WalRejectionReason, wal_stream_source_identity,
+    DerivativeStream, DurableRawCaptureChannel, DurableRawCaptureClient, DurableRawCaptureReceiver,
+    LifecycleChannel, MarketDataConnector, RecoverableDisconnect, WalRejectionReason,
+    wal_stream_source_identity,
 };
 use domain::{
     AssetId, AssetNamespace, ContractKind, ContractValueUnit, InstrumentDefinition,
@@ -30,10 +31,7 @@ const SPOT_DEPTH: &[u8] =
     include_bytes!("../../../fixtures/exchanges/binance/spot-depth-update.json");
 const SPOT_SNAPSHOT: &[u8] =
     include_bytes!("../../../fixtures/exchanges/binance/spot-depth-snapshot.json");
-const USDM_DEPTH: &[u8] =
-    include_bytes!("../../../fixtures/exchanges/binance/usdm-depth-update.json");
-const USDM_SNAPSHOT: &[u8] =
-    include_bytes!("../../../fixtures/exchanges/binance/usdm-depth-snapshot.json");
+const USDM_MARK: &[u8] = include_bytes!("../../../fixtures/exchanges/binance/usdm-mark-price.json");
 const RECEIVE_TIME: UnixNanos = UnixNanos::new(1_672_515_782_137_000_000);
 const CONNECTION_START: UnixNanos = UnixNanos::new(1_672_515_700_000_000_000);
 
@@ -161,6 +159,7 @@ fn usdm_book_config() -> BookConfig {
 
 fn raw_channel(
     directory: &tempfile::TempDir,
+    contract: BinanceStreamContract,
 ) -> (
     DurableRawCaptureClient,
     DurableRawCaptureReceiver,
@@ -173,8 +172,12 @@ fn raw_channel(
         "installation",
         "build",
         vec![
-            StreamDescriptor::new(7, wal_stream_source_identity(&source()), "spot-trades")
-                .expect("stream"),
+            StreamDescriptor::new(
+                7,
+                wal_stream_source_identity(&source()),
+                contract.wal_stream_name(),
+            )
+            .expect("stream"),
         ],
     )
     .expect("segment");
@@ -234,7 +237,8 @@ async fn run_once() -> (
     ConnectorTermination,
 ) {
     let directory = tempfile::tempdir().expect("WAL directory");
-    let (raw_client, raw_receiver, writer) = raw_channel(&directory);
+    let (raw_client, raw_receiver, writer) =
+        raw_channel(&directory, BinanceStreamContract::SpotMarket);
     let wal_task = tokio::spawn(acknowledge_all(raw_receiver, writer, None));
     let (input_sender, input_receiver) = bounded_session_channel(2).expect("input");
     input_sender.send(record(1, 10)).await.expect("send");
@@ -243,6 +247,7 @@ async fn run_once() -> (
     let config = BinanceConfig::try_new(
         source(),
         NonZeroU32::new(7).expect("stream"),
+        BinanceStreamContract::SpotMarket,
         catalog(),
         NonZeroU64::new(1).expect("subscription"),
         CONNECTION_START,
@@ -314,9 +319,81 @@ async fn repeated_raw_first_ingestion_produces_the_same_canonical_event() {
 }
 
 #[tokio::test]
+async fn live_derivative_outputs_retain_connector_and_catalog_authority() {
+    let directory = tempfile::tempdir().expect("WAL directory");
+    let (raw_client, raw_receiver, writer) =
+        raw_channel(&directory, BinanceStreamContract::UsdMMarkPrice);
+    let wal_task = tokio::spawn(acknowledge_all(raw_receiver, writer, None));
+    let (input_sender, input_receiver) = bounded_session_channel(2).expect("input");
+    input_sender
+        .send(routed_record(
+            BinanceSessionRoute::Native(BinanceInput::UsdMMarkPriceWebSocket),
+            1,
+            10,
+            USDM_MARK,
+        ))
+        .await
+        .expect("send mark");
+    drop(input_sender);
+
+    let connector = BinanceConnector::try_new(
+        BinanceConfig::try_new(
+            source(),
+            NonZeroU32::new(7).expect("stream"),
+            BinanceStreamContract::UsdMMarkPrice,
+            catalog(),
+            NonZeroU64::new(1).expect("subscription"),
+            CONNECTION_START,
+            "derivative-authority-test",
+        )
+        .expect("config"),
+        input_receiver,
+    )
+    .expect("connector");
+    let (control, _interrupt) = CancellationChannel::channel();
+    let (_commands, command_receiver) =
+        ConnectorCommandChannel::bounded(2, control).expect("commands");
+    let (normalized_sink, mut normalized_receiver) = BoundedNormalizedChannel::new(4, 64 * 1024)
+        .expect("normalized")
+        .split();
+    let (lifecycle_sink, _lifecycle_receiver) = LifecycleChannel::bounded(8).expect("lifecycle");
+    let context = ConnectorContext::new(
+        source(),
+        NonZeroU64::new(1).expect("connection"),
+        command_receiver,
+        raw_client,
+        normalized_sink,
+        lifecycle_sink,
+    );
+
+    let termination = Box::new(connector).run(context).await;
+    assert_eq!(
+        termination,
+        ConnectorTermination::RecoverableDisconnect(RecoverableDisconnect::RemoteClosed)
+    );
+    assert_eq!(wal_task.await.expect("WAL join"), 1);
+    let mut streams = Vec::new();
+    while let Some(output) = normalized_receiver.recv().await {
+        let receipt = output
+            .derivative_receipt()
+            .expect("live derivative authority must survive publication");
+        assert_eq!(receipt.event(), output.event());
+        assert_eq!(receipt.catalog_as_known_at(), UnixNanos::new(1));
+        assert_ne!(receipt.catalog_digest(), &[0; 32]);
+        assert_ne!(receipt.definition_hash(), &[0; 32]);
+        streams.push(receipt.stream());
+    }
+    assert_eq!(
+        streams,
+        vec![DerivativeStream::MarkIndex, DerivativeStream::Funding]
+    );
+}
+
+#[tokio::test]
 async fn recovered_wal_record_replays_to_the_identical_canonical_event() {
     let directory = tempfile::tempdir().expect("WAL directory");
-    let (raw_client, raw_receiver, writer) = raw_channel(&directory);
+    let (raw_client, raw_receiver, writer) =
+        raw_channel(&directory, BinanceStreamContract::SpotMarket);
     let wal_task = tokio::spawn(acknowledge_all(raw_receiver, writer, None));
     let (input_sender, input_receiver) = bounded_session_channel(2).expect("input");
     input_sender.send(record(1, 10)).await.expect("send");
@@ -326,6 +403,7 @@ async fn recovered_wal_record_replays_to_the_identical_canonical_event() {
         BinanceConfig::try_new(
             source(),
             NonZeroU32::new(7).expect("stream"),
+            BinanceStreamContract::SpotMarket,
             std::sync::Arc::clone(&catalog),
             NonZeroU64::MIN,
             CONNECTION_START,
@@ -369,7 +447,10 @@ async fn recovered_wal_record_replays_to_the_identical_canonical_event() {
     let mut replayed = Vec::new();
     recovered
         .visit_verified_records(|record| {
-            assert_eq!(record.stream_name(), "spot-trades");
+            assert_eq!(
+                record.stream_name(),
+                BinanceStreamContract::SpotMarket.wal_stream_name()
+            );
             let reference =
                 connector_core::DurableRawReference::try_from_recovered(source(), &record)
                     .expect("durable replay reference");
@@ -402,7 +483,8 @@ async fn recovered_wal_record_replays_to_the_identical_canonical_event() {
 #[tokio::test]
 async fn book_session_reaches_healthy_and_recovers_only_after_a_fresh_snapshot() {
     let directory = tempfile::tempdir().expect("WAL directory");
-    let (raw_client, raw_receiver, writer) = raw_channel(&directory);
+    let (raw_client, raw_receiver, writer) =
+        raw_channel(&directory, BinanceStreamContract::SpotMarket);
     let wal_task = tokio::spawn(acknowledge_all(raw_receiver, writer, None));
     let (input_sender, input_receiver) = bounded_session_channel(8).expect("input");
     let gap = String::from_utf8(SPOT_DEPTH.to_vec())
@@ -462,6 +544,7 @@ async fn book_session_reaches_healthy_and_recovers_only_after_a_fresh_snapshot()
         BinanceConfig::try_new(
             source(),
             NonZeroU32::new(7).expect("stream"),
+            BinanceStreamContract::SpotMarket,
             catalog(),
             NonZeroU64::MIN,
             CONNECTION_START,
@@ -533,131 +616,48 @@ async fn book_session_reaches_healthy_and_recovers_only_after_a_fresh_snapshot()
     );
 }
 
-#[tokio::test]
-async fn multi_book_session_waits_until_every_configured_book_is_synchronized() {
-    let directory = tempfile::tempdir().expect("WAL directory");
-    let (raw_client, raw_receiver, writer) = raw_channel(&directory);
-    let wal_task = tokio::spawn(acknowledge_all(raw_receiver, writer, None));
-    let (input_sender, input_receiver) = bounded_session_channel(8).expect("input");
-    for record in [
-        routed_record(
-            BinanceSessionRoute::Native(BinanceInput::SpotWebSocket),
-            1,
-            10,
-            SPOT_DEPTH,
-        ),
-        routed_record(
-            BinanceSessionRoute::DepthSnapshot {
-                market: BinanceMarket::Spot,
-                symbol: "BTCUSDT".to_owned(),
-            },
-            2,
-            20,
-            SPOT_SNAPSHOT,
-        ),
-        routed_record(
-            BinanceSessionRoute::Native(BinanceInput::UsdMPublicWebSocket),
-            3,
-            30,
-            USDM_DEPTH,
-        ),
-        routed_record(
-            BinanceSessionRoute::DepthSnapshot {
-                market: BinanceMarket::UsdMarginedPerpetual,
-                symbol: "BTCUSDT".to_owned(),
-            },
-            4,
-            40,
-            USDM_SNAPSHOT,
-        ),
-    ] {
-        input_sender.send(record).await.expect("send");
-    }
-    drop(input_sender);
-
-    let connector = BinanceConnector::try_new(
-        BinanceConfig::try_new(
-            source(),
-            NonZeroU32::new(7).expect("stream"),
-            catalog(),
-            NonZeroU64::MIN,
-            CONNECTION_START,
-            "multi-book-session-test",
-        )
-        .expect("config")
-        .with_book(BinanceMarket::Spot, spot_book_config())
-        .expect("spot book")
-        .with_book(BinanceMarket::UsdMarginedPerpetual, usdm_book_config())
-        .expect("USD-M book"),
-        input_receiver,
-    )
-    .expect("connector");
-    let (control, _interrupt) = CancellationChannel::channel();
-    let (_commands, command_receiver) =
-        ConnectorCommandChannel::bounded(1, control).expect("commands");
-    let (normalized_sink, mut normalized_receiver) = BoundedNormalizedChannel::with_book_streams(
-        8,
-        512 * 1024,
-        NonZeroUsize::new(2).expect("capacity"),
-        [
-            BookStreamKey::new(source(), spot_book_config().instrument, NonZeroU64::MIN),
-            BookStreamKey::new(source(), usdm_book_config().instrument, NonZeroU64::MIN),
-        ],
-    )
-    .expect("normalized")
-    .split();
-    let (lifecycle_sink, mut lifecycle_receiver) = LifecycleChannel::bounded(8).expect("lifecycle");
-    let context = ConnectorContext::new(
+#[test]
+fn one_session_cannot_mix_books_from_distinct_wal_stream_contracts() {
+    let spot = BinanceConfig::try_new(
         source(),
+        NonZeroU32::new(7).expect("stream"),
+        BinanceStreamContract::SpotMarket,
+        catalog(),
         NonZeroU64::MIN,
-        command_receiver,
-        raw_client,
-        normalized_sink,
-        lifecycle_sink,
+        CONNECTION_START,
+        "spot-book-contract-test",
+    )
+    .expect("config")
+    .with_book(BinanceMarket::Spot, spot_book_config())
+    .expect("spot book");
+    assert!(
+        spot.with_book(BinanceMarket::UsdMarginedPerpetual, usdm_book_config())
+            .is_err()
     );
-    let connector_task = tokio::spawn(Box::new(connector).run(context));
-    let output_task = tokio::spawn(async move {
-        let mut count = 0;
-        while normalized_receiver.recv().await.is_some() {
-            count += 1;
-        }
-        count
-    });
 
-    assert_eq!(
-        connector_task.await.expect("connector join"),
-        ConnectorTermination::RecoverableDisconnect(RecoverableDisconnect::RemoteClosed)
-    );
-    assert_eq!(wal_task.await.expect("WAL join"), 4);
-    assert_eq!(output_task.await.expect("output join"), 4);
-    let mut events = Vec::new();
-    while let Some(event) = lifecycle_receiver.recv().await {
-        events.push(event);
-    }
-    assert_eq!(
-        events.iter().map(|event| event.to()).collect::<Vec<_>>(),
-        vec![
-            ConnectorState::Connecting,
-            ConnectorState::AuthenticatingOrSubscribing,
-            ConnectorState::Synchronizing,
-            ConnectorState::Healthy,
-            ConnectorState::BackingOff,
-        ]
-    );
-    assert_eq!(
-        events
-            .iter()
-            .find(|event| event.to() == ConnectorState::Healthy)
-            .expect("healthy transition")
-            .observed_at(),
-        UnixNanos::new(RECEIVE_TIME.value() + 4)
+    let usdm = BinanceConfig::try_new(
+        source(),
+        NonZeroU32::new(7).expect("stream"),
+        BinanceStreamContract::UsdMDepth,
+        catalog(),
+        NonZeroU64::MIN,
+        CONNECTION_START,
+        "usdm-book-contract-test",
+    )
+    .expect("config")
+    .with_book(BinanceMarket::UsdMarginedPerpetual, usdm_book_config())
+    .expect("USD-M book");
+    assert!(
+        usdm.with_book(BinanceMarket::Spot, spot_book_config())
+            .is_err()
     );
 }
 
 #[tokio::test]
 async fn rejected_wal_record_produces_no_normalized_output() {
     let directory = tempfile::tempdir().expect("WAL directory");
-    let (raw_client, mut raw_receiver, _writer) = raw_channel(&directory);
+    let (raw_client, mut raw_receiver, _writer) =
+        raw_channel(&directory, BinanceStreamContract::SpotMarket);
     let (input_sender, input_receiver) = bounded_session_channel(1).expect("input");
     input_sender.send(record(1, 10)).await.expect("send");
 
@@ -665,6 +665,7 @@ async fn rejected_wal_record_produces_no_normalized_output() {
         BinanceConfig::try_new(
             source(),
             NonZeroU32::new(7).expect("stream"),
+            BinanceStreamContract::SpotMarket,
             catalog(),
             NonZeroU64::new(1).expect("subscription"),
             CONNECTION_START,
@@ -706,7 +707,8 @@ async fn rejected_wal_record_produces_no_normalized_output() {
 #[tokio::test]
 async fn shutdown_interrupts_normalized_backpressure_without_orphaning_the_session() {
     let directory = tempfile::tempdir().expect("WAL directory");
-    let (raw_client, raw_receiver, writer) = raw_channel(&directory);
+    let (raw_client, raw_receiver, writer) =
+        raw_channel(&directory, BinanceStreamContract::SpotMarket);
     let (notify_sender, mut notify_receiver) = tokio::sync::mpsc::channel(2);
     let wal_task = tokio::spawn(acknowledge_all(raw_receiver, writer, Some(notify_sender)));
     let (input_sender, input_receiver) = bounded_session_channel(2).expect("input");
@@ -717,6 +719,7 @@ async fn shutdown_interrupts_normalized_backpressure_without_orphaning_the_sessi
         BinanceConfig::try_new(
             source(),
             NonZeroU32::new(7).expect("stream"),
+            BinanceStreamContract::SpotMarket,
             catalog(),
             NonZeroU64::new(1).expect("subscription"),
             CONNECTION_START,
@@ -762,12 +765,14 @@ async fn shutdown_interrupts_normalized_backpressure_without_orphaning_the_sessi
 #[tokio::test]
 async fn session_renews_before_the_venue_connection_lifetime() {
     let directory = tempfile::tempdir().expect("WAL directory");
-    let (raw_client, raw_receiver, writer) = raw_channel(&directory);
+    let (raw_client, raw_receiver, writer) =
+        raw_channel(&directory, BinanceStreamContract::SpotMarket);
     let wal_task = tokio::spawn(acknowledge_all(raw_receiver, writer, None));
     let (_input_sender, input_receiver) = bounded_session_channel(1).expect("input");
     let config = BinanceConfig::try_new(
         source(),
         NonZeroU32::new(7).expect("stream"),
+        BinanceStreamContract::SpotMarket,
         catalog(),
         NonZeroU64::new(1).expect("subscription"),
         CONNECTION_START,
@@ -821,12 +826,14 @@ async fn session_renews_before_the_venue_connection_lifetime() {
 #[tokio::test]
 async fn heartbeat_loss_degrades_and_disconnects_the_session() {
     let directory = tempfile::tempdir().expect("WAL directory");
-    let (raw_client, raw_receiver, writer) = raw_channel(&directory);
+    let (raw_client, raw_receiver, writer) =
+        raw_channel(&directory, BinanceStreamContract::SpotMarket);
     let wal_task = tokio::spawn(acknowledge_all(raw_receiver, writer, None));
     let (_input_sender, input_receiver) = bounded_session_channel(1).expect("input");
     let config = BinanceConfig::try_new(
         source(),
         NonZeroU32::new(7).expect("stream"),
+        BinanceStreamContract::SpotMarket,
         catalog(),
         NonZeroU64::MIN,
         CONNECTION_START,
@@ -888,6 +895,7 @@ fn session_channel_rejects_zero_and_unbounded_record_capacity() {
         BinanceConfig::try_new(
             source(),
             NonZeroU32::MIN,
+            BinanceStreamContract::SpotMarket,
             catalog(),
             NonZeroU64::MIN,
             CONNECTION_START,
@@ -902,7 +910,8 @@ fn session_channel_rejects_zero_and_unbounded_record_capacity() {
 #[tokio::test]
 async fn a_record_for_another_wal_stream_fails_before_raw_capture() {
     let directory = tempfile::tempdir().expect("WAL directory");
-    let (raw_client, mut raw_receiver, _writer) = raw_channel(&directory);
+    let (raw_client, mut raw_receiver, _writer) =
+        raw_channel(&directory, BinanceStreamContract::SpotMarket);
     let (input_sender, input_receiver) = bounded_session_channel(1).expect("input");
     input_sender
         .send(
@@ -923,6 +932,7 @@ async fn a_record_for_another_wal_stream_fails_before_raw_capture() {
         BinanceConfig::try_new(
             source(),
             NonZeroU32::new(7).expect("stream"),
+            BinanceStreamContract::SpotMarket,
             catalog(),
             NonZeroU64::MIN,
             CONNECTION_START,
@@ -958,7 +968,8 @@ async fn a_record_for_another_wal_stream_fails_before_raw_capture() {
 #[tokio::test]
 async fn schema_violation_is_not_mislabeled_as_repeated() {
     let directory = tempfile::tempdir().expect("WAL directory");
-    let (raw_client, raw_receiver, writer) = raw_channel(&directory);
+    let (raw_client, raw_receiver, writer) =
+        raw_channel(&directory, BinanceStreamContract::SpotMarket);
     let wal_task = tokio::spawn(acknowledge_all(raw_receiver, writer, None));
     let (input_sender, input_receiver) = bounded_session_channel(1).expect("input");
     input_sender
@@ -980,6 +991,7 @@ async fn schema_violation_is_not_mislabeled_as_repeated() {
         BinanceConfig::try_new(
             source(),
             NonZeroU32::new(7).expect("stream"),
+            BinanceStreamContract::SpotMarket,
             catalog(),
             NonZeroU64::MIN,
             CONNECTION_START,
@@ -1030,12 +1042,14 @@ async fn schema_violation_is_not_mislabeled_as_repeated() {
 #[tokio::test]
 async fn lifecycle_output_failure_is_not_hidden_by_remote_close() {
     let directory = tempfile::tempdir().expect("WAL directory");
-    let (raw_client, _raw_receiver, _writer) = raw_channel(&directory);
+    let (raw_client, _raw_receiver, _writer) =
+        raw_channel(&directory, BinanceStreamContract::SpotMarket);
     let (input_sender, input_receiver) = bounded_session_channel(1).expect("input");
     let connector = BinanceConnector::try_new(
         BinanceConfig::try_new(
             source(),
             NonZeroU32::new(7).expect("stream"),
+            BinanceStreamContract::SpotMarket,
             catalog(),
             NonZeroU64::MIN,
             CONNECTION_START,

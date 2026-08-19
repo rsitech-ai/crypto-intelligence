@@ -26,6 +26,48 @@ def load_helper_module():
 
 
 class RunBoundedTests(unittest.TestCase):
+    def test_verifier_diagnostic_pattern_does_not_treat_changed_as_a_hang(
+        self,
+    ) -> None:
+        verifier = (ROOT / "scripts" / "verify-foundation-runtime.sh").read_text()
+        assignment = next(
+            (
+                line
+                for line in verifier.splitlines()
+                if line.startswith("readonly runtime_diagnostic_pattern=")
+            ),
+            None,
+        )
+        self.assertIsNotNone(assignment)
+        assert assignment is not None
+        pattern = assignment.split("=", 1)[1].strip().strip("'")
+
+        normal = subprocess.run(
+            ["rg", "-q", pattern],
+            input='{"event":"source_quality_changed","level":"info"}\n',
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        warning = subprocess.run(
+            ["rg", "-q", pattern],
+            input='{"event":"source_quality_changed","level":"warn"}\n',
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        panic = subprocess.run(
+            ["rg", "-q", pattern],
+            input="thread worker panicked at invariant\n",
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+
+        self.assertEqual(normal.returncode, 1)
+        self.assertEqual(warning.returncode, 0)
+        self.assertEqual(panic.returncode, 0)
+
     def test_permission_denied_group_probe_is_treated_as_still_existing(self) -> None:
         helper_module = load_helper_module()
         with mock.patch.object(

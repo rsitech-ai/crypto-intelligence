@@ -1,16 +1,193 @@
-use std::num::{NonZeroU32, NonZeroU64, NonZeroUsize};
+use std::{
+    fs::File,
+    num::{NonZeroU32, NonZeroU64, NonZeroUsize},
+    os::fd::AsFd,
+};
 
 use collector_runtime::{
     AdmissionError, AdmissionLimits, CollectorSupervisor, CoverageTier, OfferOutcome,
-    OverflowAction, QueueClass, QueueTracker, RetryDecision, RetryPolicy, ShutdownActions,
-    ShutdownError, ShutdownPhase, SourcePolicy, SupervisorHarness, execute_shutdown,
+    OperationalQualityEvent, OperationalQualitySampleInput, OverflowAction, QueueClass,
+    QueueTracker, RetryDecision, RetryPolicy, ShutdownActions, ShutdownError, ShutdownPhase,
+    SourcePolicy, SupervisorHarness, execute_shutdown,
 };
-use connector_core::{ConnectorCommand, ResynchronizationReason};
+use connector_core::{Completeness, ConnectorCommand, ResynchronizationReason, StreamClass};
 use domain::{SourceId, SourceKind, UnixNanos};
 use quality::SourceHealthState;
 
 fn source(name: &str, generation: u32) -> SourceId {
     SourceId::new(SourceKind::Exchange, name, generation).expect("source")
+}
+
+#[test]
+fn operational_receipts_bind_supervisor_health_epoch_and_knowledge_time() {
+    let mismatched_source = source("bybit", 1);
+    let mut mismatched_supervisor =
+        CollectorSupervisor::try_new(AdmissionLimits::try_new(1, 0, 0, 1).expect("limits"))
+            .expect("supervisor");
+    mismatched_supervisor
+        .admit(
+            mismatched_source.clone(),
+            SourcePolicy::new(CoverageTier::A, NonZeroU32::MIN),
+            RetryPolicy::try_new(3, 100, 1_000, 0, 1).expect("retry"),
+        )
+        .expect("admit");
+    assert_eq!(
+        mismatched_supervisor.bind_source_completeness(
+            &mismatched_source,
+            &connector_binance::binance_capabilities().expect("capabilities"),
+            StreamClass::Liquidations,
+        ),
+        Err(AdmissionError::SourceCompletenessAuthorityMismatch)
+    );
+
+    let source = source("binance", 1);
+    let mut supervisor =
+        CollectorSupervisor::try_new(AdmissionLimits::try_new(1, 0, 0, 1).expect("limits"))
+            .expect("supervisor");
+    supervisor
+        .admit(
+            source.clone(),
+            SourcePolicy::new(CoverageTier::A, NonZeroU32::MIN),
+            RetryPolicy::try_new(3, 100, 1_000, 0, 1).expect("retry"),
+        )
+        .expect("admit");
+    supervisor
+        .mark_healthy(&source, UnixNanos::new(10))
+        .expect("healthy transition");
+    supervisor
+        .record_operational_event(
+            &source,
+            OperationalQualityEvent::Recovery,
+            UnixNanos::new(10),
+        )
+        .expect("collector-recorded recovery");
+    supervisor
+        .record_operational_event(
+            &source,
+            OperationalQualityEvent::SequenceGap,
+            UnixNanos::new(20),
+        )
+        .expect("end-boundary event");
+    let sample = OperationalQualitySampleInput {
+        window_start: UnixNanos::new(1),
+        window_end: UnixNanos::new(20),
+        last_trusted_event_time: UnixNanos::new(19),
+        receive_wall_time: UnixNanos::new(21),
+        as_known_at: UnixNanos::new(21),
+        stale_after_ns: 10,
+        feed_jitter_ns: 1,
+        clock_skew_estimate_ns: -1,
+    };
+    assert_eq!(
+        supervisor.issue_operational_quality_receipt(&source, sample),
+        Err(AdmissionError::SourceCompletenessNotConfigured)
+    );
+    assert_eq!(
+        supervisor.bind_source_completeness(
+            &source,
+            &connector_binance::binance_capabilities().expect("capabilities"),
+            StreamClass::OptionBooks,
+        ),
+        Err(AdmissionError::InvalidSourceCompleteness)
+    );
+    supervisor
+        .bind_source_completeness(
+            &source,
+            &connector_binance::binance_capabilities().expect("capabilities"),
+            StreamClass::MarkAndIndex,
+        )
+        .expect("bind connector completeness");
+    assert_eq!(
+        supervisor.bind_source_completeness(
+            &source,
+            &connector_binance::binance_capabilities().expect("capabilities"),
+            StreamClass::Liquidations,
+        ),
+        Err(AdmissionError::SourceCompletenessAlreadyConfigured)
+    );
+    let receipt = supervisor
+        .issue_operational_quality_receipt(&source, sample)
+        .expect("sealed receipt");
+    assert_eq!(receipt.source(), &source);
+    assert_eq!(receipt.connection_epoch(), NonZeroU64::MIN);
+    assert_eq!(receipt.source_health(), SourceHealthState::Healthy);
+    assert_eq!(receipt.stream(), StreamClass::MarkAndIndex);
+    assert_eq!(
+        receipt.completeness(),
+        Completeness::VenueReportedComplete {
+            delivery_uncertainty: true,
+        }
+    );
+    assert_eq!(receipt.sample(), sample);
+    assert_eq!(receipt.recovery_count(), 1);
+    assert_eq!(
+        receipt.sequence_gap_count(),
+        0,
+        "half-open window must exclude an event at window_end"
+    );
+
+    assert_eq!(
+        supervisor
+            .retire_operational_events_before(&source, UnixNanos::new(20))
+            .expect("retire finalized history"),
+        1
+    );
+    assert_eq!(
+        supervisor.record_operational_event(
+            &source,
+            OperationalQualityEvent::Reconnect,
+            UnixNanos::new(19),
+        ),
+        Err(AdmissionError::OperationalEventBeforeRetirement)
+    );
+    assert_eq!(
+        supervisor.issue_operational_quality_receipt(&source, sample),
+        Err(AdmissionError::InvalidOperationalQualitySample),
+        "a receipt must not silently undercount retired history"
+    );
+    let retained_sample = OperationalQualitySampleInput {
+        window_start: UnixNanos::new(20),
+        window_end: UnixNanos::new(21),
+        last_trusted_event_time: UnixNanos::new(20),
+        receive_wall_time: UnixNanos::new(21),
+        as_known_at: UnixNanos::new(21),
+        ..sample
+    };
+    assert_eq!(
+        supervisor
+            .issue_operational_quality_receipt(&source, retained_sample)
+            .expect("watermark event retained")
+            .sequence_gap_count(),
+        1
+    );
+    assert_eq!(
+        supervisor.retire_operational_events_before(&source, UnixNanos::new(19)),
+        Err(AdmissionError::InvalidOperationalEventRetirement)
+    );
+
+    let mut future_health = sample;
+    future_health.as_known_at = UnixNanos::new(9);
+    assert_eq!(
+        supervisor.issue_operational_quality_receipt(&source, future_health),
+        Err(AdmissionError::InvalidOperationalQualitySample)
+    );
+    let data_volume =
+        File::open(tempfile::tempdir().expect("temp volume").path()).expect("open temp volume");
+    assert_eq!(
+        supervisor.issue_storage_pressure_receipt(UnixNanos::new(1)),
+        Err(AdmissionError::StoragePressureProbeNotConfigured)
+    );
+    supervisor
+        .bind_data_volume(data_volume.as_fd())
+        .expect("bind data volume");
+    assert_eq!(
+        supervisor.bind_data_volume(data_volume.as_fd()),
+        Err(AdmissionError::StoragePressureProbeAlreadyConfigured)
+    );
+    assert_eq!(
+        supervisor.issue_storage_pressure_receipt(UnixNanos::new(0)),
+        Err(AdmissionError::InvalidOperationalQualitySample)
+    );
 }
 
 #[tokio::test]

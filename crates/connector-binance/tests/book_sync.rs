@@ -119,6 +119,7 @@ fn session(connection: u64, subscription: u64) -> BookSession {
 
 async fn durable_reference(
     payload: &[u8],
+    stream_name: &str,
     connection_epoch: u64,
     record_sequence: u64,
     receive_monotonic_ns: u64,
@@ -135,7 +136,7 @@ async fn durable_reference(
         "installation",
         "build",
         vec![
-            StreamDescriptor::new(7, wal_stream_source_identity(&source()), "fixture")
+            StreamDescriptor::new(7, wal_stream_source_identity(&source()), stream_name)
                 .expect("stream"),
         ],
     )
@@ -219,7 +220,8 @@ async fn depth_output(
     record: u64,
     monotonic: u64,
 ) -> NormalizedOutput {
-    let reference = durable_reference(raw, connection, record, monotonic).await;
+    let reference =
+        durable_reference(raw, input.wal_stream_name(), connection, record, monotonic).await;
     let parsed = parse_durable_native_message(input, raw, &reference).expect("durable depth parse");
     let mut events = normalize_native_message(parsed, &context(catalog, &reference, subscription))
         .expect("normalize depth");
@@ -236,7 +238,14 @@ async fn snapshot_output(
     record: u64,
     monotonic: u64,
 ) -> NormalizedOutput {
-    let reference = durable_reference(raw, connection, record, monotonic).await;
+    let reference = durable_reference(
+        raw,
+        market.snapshot_wal_stream_name(),
+        connection,
+        record,
+        monotonic,
+    )
+    .await;
     let parsed = parse_durable_depth_snapshot(market, "BTCUSDT", raw, &reference)
         .expect("durable snapshot parse");
     let event = normalize_depth_snapshot(parsed, &context(catalog, &reference, subscription))
@@ -423,7 +432,7 @@ async fn usd_m_uses_native_previous_final_sequence_continuity() {
     sync.start_session(active).expect("session");
     let first = depth_output(
         &catalog,
-        BinanceInput::UsdMPublicWebSocket,
+        BinanceInput::UsdMDepthWebSocket,
         USDM_DEPTH,
         7,
         11,
@@ -454,7 +463,7 @@ async fn usd_m_uses_native_previous_final_sequence_continuity() {
         .replace("\"pu\": 149", "\"pu\": 158");
     let wrong_previous = depth_output(
         &catalog,
-        BinanceInput::UsdMPublicWebSocket,
+        BinanceInput::UsdMDepthWebSocket,
         wrong_previous_raw.as_bytes(),
         7,
         11,

@@ -68,7 +68,7 @@ fn capabilities_input() -> ConnectorCapabilitiesInput {
         ],
         checksum_support: ChecksumSupport::NotSupported,
         stream_completeness: CompletenessProfile::binance(),
-        liquidation_completeness: Completeness::SampledLatestPerSymbolWindow {
+        liquidation_completeness: Completeness::SampledLargestPerSymbolWindow {
             window_ms: NonZeroU32::new(1_000).expect("nonzero"),
         },
         funding_fields: FundingFields::from_bits(
@@ -445,7 +445,7 @@ fn lifecycle_tracker_enforces_cause_attribution_and_consecutive_history() {
 fn venue_liquidation_completeness_preserves_exact_semantics() {
     assert_eq!(
         CompletenessProfile::binance().get(StreamClass::Liquidations),
-        Completeness::SampledLatestPerSymbolWindow {
+        Completeness::SampledLargestPerSymbolWindow {
             window_ms: NonZeroU32::new(1_000).expect("nonzero")
         }
     );
@@ -535,7 +535,7 @@ fn venue_capabilities_fail_closed_on_official_semantic_contradictions() {
     );
 
     let mut invalid = bybit_capabilities_input();
-    invalid.liquidation_completeness = Completeness::SampledLatestPerSymbolWindow {
+    invalid.liquidation_completeness = Completeness::SampledLargestPerSymbolWindow {
         window_ms: NonZeroU32::new(1_000).expect("nonzero"),
     };
     assert_eq!(

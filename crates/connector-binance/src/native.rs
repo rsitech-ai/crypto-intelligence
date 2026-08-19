@@ -18,16 +18,46 @@ const MAX_PLAUSIBLE_MILLISECONDS: u64 = i64::MAX as u64 / 1_000_000;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BinanceInput {
     SpotWebSocket,
-    UsdMMarketWebSocket,
-    UsdMPublicWebSocket,
+    UsdMAggregateTradeWebSocket,
+    UsdMMarkPriceWebSocket,
+    UsdMLiquidationWebSocket,
+    UsdMDepthWebSocket,
     UsdMOpenInterestRest,
     SystemStatusRest,
+}
+
+impl BinanceInput {
+    /// Canonical WAL stream contract for this transport route.
+    ///
+    /// Spot and USD-M public book snapshots share the corresponding market
+    /// stream because snapshot and incremental records form one recovery
+    /// protocol. Other provider transports remain separate.
+    pub const fn wal_stream_name(self) -> &'static str {
+        match self {
+            Self::SpotWebSocket => "binance-spot-market-v1",
+            Self::UsdMAggregateTradeWebSocket => "binance-usdm-aggregate-trade-v1",
+            Self::UsdMMarkPriceWebSocket => "binance-usdm-mark-price-v1",
+            Self::UsdMLiquidationWebSocket => "binance-usdm-liquidation-v1",
+            Self::UsdMDepthWebSocket => "binance-usdm-depth-v1",
+            Self::UsdMOpenInterestRest => "binance-usdm-open-interest-v1",
+            Self::SystemStatusRest => "binance-system-status-v1",
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BinanceMarket {
     Spot,
     UsdMarginedPerpetual,
+}
+
+impl BinanceMarket {
+    pub const fn snapshot_wal_stream_name(self) -> &'static str {
+        match self {
+            Self::Spot => BinanceInput::SpotWebSocket.wal_stream_name(),
+            Self::UsdMarginedPerpetual => BinanceInput::UsdMDepthWebSocket.wal_stream_name(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -197,6 +227,8 @@ pub enum NativeParseError {
     InvalidValue,
     #[error("native payload does not match the acknowledged raw WAL record")]
     RawPayloadMismatch,
+    #[error("native route does not match the acknowledged WAL stream contract")]
+    RawStreamMismatch,
 }
 
 pub fn parse_native_message(
@@ -211,8 +243,10 @@ pub fn parse_native_message(
         .map(str::to_owned);
     match input {
         BinanceInput::SpotWebSocket => parse_spot(value, event.as_deref()),
-        BinanceInput::UsdMMarketWebSocket => parse_usdm_market(value, event.as_deref()),
-        BinanceInput::UsdMPublicWebSocket => parse_usdm_public(value, event.as_deref()),
+        BinanceInput::UsdMAggregateTradeWebSocket => parse_usdm_trade(value, event.as_deref()),
+        BinanceInput::UsdMMarkPriceWebSocket => parse_usdm_mark(value, event.as_deref()),
+        BinanceInput::UsdMLiquidationWebSocket => parse_usdm_liquidation(value, event.as_deref()),
+        BinanceInput::UsdMDepthWebSocket => parse_usdm_depth(value, event.as_deref()),
         BinanceInput::UsdMOpenInterestRest => parse_open_interest(value),
         BinanceInput::SystemStatusRest => parse_system_status(value),
     }
@@ -226,6 +260,9 @@ pub fn parse_durable_native_message(
     let raw_payload_hash = *blake3::hash(raw).as_bytes();
     if &raw_payload_hash != reference.payload_hash() {
         return Err(NativeParseError::RawPayloadMismatch);
+    }
+    if reference.stream_name() != input.wal_stream_name() {
+        return Err(NativeParseError::RawStreamMismatch);
     }
     Ok(DurableBinanceMessage {
         message: parse_native_message(input, raw)?,
@@ -289,6 +326,9 @@ pub fn parse_durable_depth_snapshot(
     if &raw_payload_hash != reference.payload_hash() {
         return Err(NativeParseError::RawPayloadMismatch);
     }
+    if reference.stream_name() != market.snapshot_wal_stream_name() {
+        return Err(NativeParseError::RawStreamMismatch);
+    }
     Ok(DurableDepthSnapshot {
         snapshot: parse_depth_snapshot(market, symbol, raw)?,
         raw_payload_hash,
@@ -323,24 +363,34 @@ fn parse_spot(value: Value, event: Option<&str>) -> Result<BinanceMessage, Nativ
     }
 }
 
-fn parse_usdm_market(
-    value: Value,
-    event: Option<&str>,
-) -> Result<BinanceMessage, NativeParseError> {
+fn parse_usdm_trade(value: Value, event: Option<&str>) -> Result<BinanceMessage, NativeParseError> {
     match event {
         Some("aggTrade") => parse_trade(value, BinanceMarket::UsdMarginedPerpetual),
-        Some("markPriceUpdate") => parse_mark_price(value),
-        Some("forceOrder") => parse_liquidation(value),
-        Some("depthUpdate") => Err(NativeParseError::WrongRoute),
-        Some(_) => Err(NativeParseError::UnsupportedEvent),
+        Some(_) => Err(NativeParseError::WrongRoute),
         None => Err(NativeParseError::MalformedJson),
     }
 }
 
-fn parse_usdm_public(
+fn parse_usdm_mark(value: Value, event: Option<&str>) -> Result<BinanceMessage, NativeParseError> {
+    match event {
+        Some("markPriceUpdate") => parse_mark_price(value),
+        Some(_) => Err(NativeParseError::WrongRoute),
+        None => Err(NativeParseError::MalformedJson),
+    }
+}
+
+fn parse_usdm_liquidation(
     value: Value,
     event: Option<&str>,
 ) -> Result<BinanceMessage, NativeParseError> {
+    match event {
+        Some("forceOrder") => parse_liquidation(value),
+        Some(_) => Err(NativeParseError::WrongRoute),
+        None => Err(NativeParseError::MalformedJson),
+    }
+}
+
+fn parse_usdm_depth(value: Value, event: Option<&str>) -> Result<BinanceMessage, NativeParseError> {
     match event {
         Some("depthUpdate") => parse_depth(value, BinanceMarket::UsdMarginedPerpetual),
         Some(_) => Err(NativeParseError::WrongRoute),

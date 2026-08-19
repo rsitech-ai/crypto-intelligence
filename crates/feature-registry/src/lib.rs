@@ -10,9 +10,9 @@ use serde::Serialize;
 use thiserror::Error;
 
 pub use definition::{
-    DurationNanos, EntityScope, EventTimePolicy, FeatureDefinition, FeatureDefinitionInput,
-    FeatureDocumentation, FeatureId, FeatureStatus, FeatureValueType, FormulaHash,
-    InputRequirement, MissingnessPolicy, NormalizationKind, NormalizationPolicy,
+    DurationNanos, EntityScope, EventTimePolicy, FeatureConsumptionRole, FeatureDefinition,
+    FeatureDefinitionInput, FeatureDocumentation, FeatureId, FeatureStatus, FeatureValueType,
+    FormulaHash, InputRequirement, MissingnessPolicy, NormalizationKind, NormalizationPolicy,
     QualityRequirement, QualityScore, WindowDefinition, WindowId, WindowKind, WindowParameter,
 };
 pub use observation::{
@@ -23,8 +23,8 @@ pub use observation::{
 };
 
 const MAX_REGISTRY_DEFINITIONS: usize = 4_096;
-const SNAPSHOT_SCHEMA_VERSION: u32 = 2;
-const SNAPSHOT_HASH_DOMAIN: &[u8] = b"crypto-intelligence/feature-registry-snapshot/v2";
+const SNAPSHOT_SCHEMA_VERSION: u32 = 3;
+const SNAPSHOT_HASH_DOMAIN: &[u8] = b"crypto-intelligence/feature-registry-snapshot/v3";
 
 /// Fail-closed feature-contract errors.
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
@@ -85,6 +85,8 @@ pub enum RegistryError {
     UnexpectedSource,
     #[error("feature observation has no registered definition")]
     UnknownDefinition,
+    #[error("feature definition is not eligible for predictive model input")]
+    DefinitionNotModelEligible,
     #[error("feature observation entity does not match its definition")]
     EntityScopeMismatch,
     #[error("feature observation entity identity is invalid")]
@@ -165,6 +167,32 @@ impl FeatureRegistry {
             .ok()
             .and_then(|()| self.definitions.get(id))
             .and_then(|versions| versions.get(version))
+    }
+
+    pub fn ensure_model_input(
+        &self,
+        id: &FeatureId,
+        version: &Version,
+    ) -> Result<&FeatureDefinition, RegistryError> {
+        let definition = self
+            .get(id, version)
+            .ok_or(RegistryError::UnknownDefinition)?;
+        if definition.consumption_role() != FeatureConsumptionRole::ModelEligible {
+            return Err(RegistryError::DefinitionNotModelEligible);
+        }
+        Ok(definition)
+    }
+
+    /// Validates both the feature contract and its predictive-consumption role.
+    ///
+    /// Training and serving input builders must use this boundary instead of
+    /// the general audit/persistence validator.
+    pub fn validate_model_input_observation(
+        &self,
+        observation: &FeatureObservation,
+    ) -> Result<(), RegistryError> {
+        self.ensure_model_input(observation.feature_id(), observation.feature_version())?;
+        self.validate_observation(observation)
     }
 
     pub fn register(&mut self, definition: FeatureDefinition) -> Result<(), RegistryError> {
@@ -356,6 +384,11 @@ fn entity_matches(scope: EntityScope, entity: &FeatureEntity) -> bool {
         (EntityScope::Instrument, FeatureEntity::Instrument(_))
             | (EntityScope::Asset, FeatureEntity::Asset(_))
             | (EntityScope::AssetPair, FeatureEntity::AssetPair(_, _))
+            | (EntityScope::AssetSource, FeatureEntity::AssetSource(_, _))
+            | (
+                EntityScope::AssetSourcePair,
+                FeatureEntity::AssetSourcePair(_, _, _)
+            )
             | (EntityScope::Venue, FeatureEntity::Venue(_))
             | (EntityScope::Source, FeatureEntity::Source(_))
             | (EntityScope::Global, FeatureEntity::Global)

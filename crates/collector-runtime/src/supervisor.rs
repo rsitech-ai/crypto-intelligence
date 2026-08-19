@@ -4,9 +4,12 @@ use std::{
     collections::{BTreeSet, HashMap, VecDeque},
     future::Future,
     num::{NonZeroU32, NonZeroU64, NonZeroUsize},
+    os::fd::{AsFd, BorrowedFd, OwnedFd},
 };
 
-use connector_core::{ConnectorCommand, ResynchronizationReason};
+use connector_core::{
+    Completeness, ConnectorCapabilities, ConnectorCommand, ResynchronizationReason, StreamClass,
+};
 use domain::{SourceId, SourceKind, UnixNanos};
 use quality::{QualityCause, QualityError, SourceHealthState, SourceHealthTracker};
 use serde::{Deserialize, Serialize};
@@ -18,6 +21,7 @@ pub const MAX_INSTRUMENTS_PER_TIER: u32 = 10_000;
 pub const MAX_RETRY_ATTEMPTS: u32 = 64;
 pub const MAX_RETRY_DELAY_MS: u64 = 86_400_000;
 pub const MAX_PENDING_QUALITY_EVENTS: usize = 65_536;
+pub const MAX_OPERATIONAL_EVENTS_PER_SOURCE: usize = 65_536;
 const MAX_JITTER_BASIS_POINTS: u16 = 10_000;
 const QUALITY_EVENTS_PER_SOURCE: usize = 16;
 
@@ -436,6 +440,172 @@ struct SourceEntry {
     epoch: NonZeroU64,
     next_command_id: NonZeroU64,
     quality: SourceHealthTracker,
+    operational_events: VecDeque<OperationalQualityEventRecord>,
+    operational_events_retired_before: Option<UnixNanos>,
+    configured_completeness: Option<(StreamClass, Completeness)>,
+}
+
+/// One collector-observed operational event.
+///
+/// Counts in an [`OperationalQualityReceipt`] are derived from these
+/// timestamped events over the sealed half-open window `[start, end)`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum OperationalQualityEvent {
+    SequenceGap,
+    ChecksumFailure,
+    Reconnect,
+    Recovery,
+    Correction,
+    Revision,
+    RawToNormalizedRejection,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct OperationalQualityEventRecord {
+    kind: OperationalQualityEvent,
+    observed_at: UnixNanos,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct OperationalQualityCounters {
+    sequence_gap_count: u64,
+    checksum_failure_count: u64,
+    reconnect_count: u64,
+    recovery_count: u64,
+    correction_count: u64,
+    revision_count: u64,
+    raw_to_normalized_rejection_count: u64,
+}
+
+fn count_operational_events(
+    events: &VecDeque<OperationalQualityEventRecord>,
+    window_start: UnixNanos,
+    window_end: UnixNanos,
+) -> Result<OperationalQualityCounters, AdmissionError> {
+    let mut counters = OperationalQualityCounters::default();
+    for event in events
+        .iter()
+        .filter(|event| event.observed_at >= window_start && event.observed_at < window_end)
+    {
+        let counter = match event.kind {
+            OperationalQualityEvent::SequenceGap => &mut counters.sequence_gap_count,
+            OperationalQualityEvent::ChecksumFailure => &mut counters.checksum_failure_count,
+            OperationalQualityEvent::Reconnect => &mut counters.reconnect_count,
+            OperationalQualityEvent::Recovery => &mut counters.recovery_count,
+            OperationalQualityEvent::Correction => &mut counters.correction_count,
+            OperationalQualityEvent::Revision => &mut counters.revision_count,
+            OperationalQualityEvent::RawToNormalizedRejection => {
+                &mut counters.raw_to_normalized_rejection_count
+            }
+        };
+        *counter = checked_increment(*counter)?;
+    }
+    Ok(counters)
+}
+
+/// Collector timing and completeness evidence for one finalized window.
+///
+/// Source identity, connection epoch, and health are derived by the active
+/// supervisor when it seals the sample. Operational counts are intentionally
+/// absent: callers must record timestamped events with the supervisor.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct OperationalQualitySampleInput {
+    pub window_start: UnixNanos,
+    pub window_end: UnixNanos,
+    pub last_trusted_event_time: UnixNanos,
+    pub receive_wall_time: UnixNanos,
+    pub as_known_at: UnixNanos,
+    pub stale_after_ns: u64,
+    pub feed_jitter_ns: u64,
+    pub clock_skew_estimate_ns: i64,
+}
+
+/// Opaque operational-quality evidence sealed by the collector supervisor.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OperationalQualityReceipt {
+    source: SourceId,
+    connection_epoch: NonZeroU64,
+    source_health: SourceHealthState,
+    stream: StreamClass,
+    completeness: Completeness,
+    sample: OperationalQualitySampleInput,
+    counters: OperationalQualityCounters,
+}
+
+impl OperationalQualityReceipt {
+    pub const fn source(&self) -> &SourceId {
+        &self.source
+    }
+
+    pub const fn connection_epoch(&self) -> NonZeroU64 {
+        self.connection_epoch
+    }
+
+    pub const fn source_health(&self) -> SourceHealthState {
+        self.source_health
+    }
+
+    pub const fn stream(&self) -> StreamClass {
+        self.stream
+    }
+
+    pub const fn completeness(&self) -> Completeness {
+        self.completeness
+    }
+
+    pub const fn sample(&self) -> OperationalQualitySampleInput {
+        self.sample
+    }
+
+    pub const fn sequence_gap_count(&self) -> u64 {
+        self.counters.sequence_gap_count
+    }
+
+    pub const fn checksum_failure_count(&self) -> u64 {
+        self.counters.checksum_failure_count
+    }
+
+    pub const fn reconnect_count(&self) -> u64 {
+        self.counters.reconnect_count
+    }
+
+    pub const fn recovery_count(&self) -> u64 {
+        self.counters.recovery_count
+    }
+
+    pub const fn correction_count(&self) -> u64 {
+        self.counters.correction_count
+    }
+
+    pub const fn revision_count(&self) -> u64 {
+        self.counters.revision_count
+    }
+
+    pub const fn raw_to_normalized_rejection_count(&self) -> u64 {
+        self.counters.raw_to_normalized_rejection_count
+    }
+}
+
+/// Opaque point-in-time pressure ratio for the validated local data volume.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct StoragePressureReceipt {
+    used_bytes: u64,
+    capacity_bytes: NonZeroU64,
+    as_known_at: UnixNanos,
+}
+
+impl StoragePressureReceipt {
+    pub const fn used_bytes(self) -> u64 {
+        self.used_bytes
+    }
+
+    pub const fn capacity_bytes(self) -> NonZeroU64 {
+        self.capacity_bytes
+    }
+
+    pub const fn as_known_at(self) -> UnixNanos {
+        self.as_known_at
+    }
 }
 
 pub struct CollectorSupervisor {
@@ -444,6 +614,7 @@ pub struct CollectorSupervisor {
     sources: HashMap<SourceId, SourceEntry>,
     quality_events: VecDeque<quality::QualityEvent>,
     quality_event_capacity: usize,
+    data_volume: Option<OwnedFd>,
 }
 
 impl CollectorSupervisor {
@@ -459,6 +630,7 @@ impl CollectorSupervisor {
             sources: HashMap::new(),
             quality_events: VecDeque::with_capacity(quality_event_capacity),
             quality_event_capacity,
+            data_volume: None,
         })
     }
 
@@ -501,6 +673,9 @@ impl CollectorSupervisor {
                 epoch,
                 next_command_id: NonZeroU64::MIN,
                 quality: SourceHealthTracker::new(source, epoch),
+                operational_events: VecDeque::new(),
+                operational_events_retired_before: None,
+                configured_completeness: None,
             },
         );
         self.admitted_by_tier[index] = admitted;
@@ -524,6 +699,192 @@ impl CollectorSupervisor {
             .get(source)
             .map(|entry| entry.quality.state())
             .ok_or(AdmissionError::UnknownSource)
+    }
+
+    /// Binds one connector-owned stream completeness contract to a source.
+    ///
+    /// Completeness is derived from the validated capability record rather
+    /// than accepted as caller-selected data. The source must name the same
+    /// venue, and the binding is immutable for the admitted generation.
+    pub fn bind_source_completeness(
+        &mut self,
+        source: &SourceId,
+        capabilities: &ConnectorCapabilities,
+        stream: StreamClass,
+    ) -> Result<(), AdmissionError> {
+        let entry = self
+            .sources
+            .get_mut(source)
+            .ok_or(AdmissionError::UnknownSource)?;
+        if source.kind() != SourceKind::Exchange || source.name() != capabilities.venue().as_str() {
+            return Err(AdmissionError::SourceCompletenessAuthorityMismatch);
+        }
+        let completeness = capabilities.completeness().get(stream);
+        if completeness == Completeness::NotSupported {
+            return Err(AdmissionError::InvalidSourceCompleteness);
+        }
+        if entry.configured_completeness.is_some() {
+            return Err(AdmissionError::SourceCompletenessAlreadyConfigured);
+        }
+        entry.configured_completeness = Some((stream, completeness));
+        Ok(())
+    }
+
+    /// Records one supervisor-observed operational event.
+    ///
+    /// Event time is monotonic per source and bounded in memory. The receipt
+    /// issuer, rather than its caller, derives window counts from this ledger.
+    pub fn record_operational_event(
+        &mut self,
+        source: &SourceId,
+        kind: OperationalQualityEvent,
+        observed_at: UnixNanos,
+    ) -> Result<(), AdmissionError> {
+        let entry = self
+            .sources
+            .get_mut(source)
+            .ok_or(AdmissionError::UnknownSource)?;
+        if entry
+            .operational_events_retired_before
+            .is_some_and(|retired_before| observed_at < retired_before)
+        {
+            return Err(AdmissionError::OperationalEventBeforeRetirement);
+        }
+        if observed_at.value() <= 0
+            || entry
+                .operational_events
+                .back()
+                .is_some_and(|previous| observed_at < previous.observed_at)
+        {
+            return Err(AdmissionError::NonMonotonicOperationalEventTime);
+        }
+        if entry.operational_events.len() >= MAX_OPERATIONAL_EVENTS_PER_SOURCE {
+            return Err(AdmissionError::OperationalEventCapacity);
+        }
+        entry
+            .operational_events
+            .push_back(OperationalQualityEventRecord { kind, observed_at });
+        Ok(())
+    }
+
+    /// Retires events that can no longer contribute to a future feature window.
+    ///
+    /// The caller may advance this watermark only after every window ending at
+    /// or before `retain_from` is durably finalized. Events at the watermark
+    /// remain available because feature windows are half-open.
+    pub fn retire_operational_events_before(
+        &mut self,
+        source: &SourceId,
+        retain_from: UnixNanos,
+    ) -> Result<usize, AdmissionError> {
+        let entry = self
+            .sources
+            .get_mut(source)
+            .ok_or(AdmissionError::UnknownSource)?;
+        if retain_from.value() <= 0
+            || entry
+                .operational_events_retired_before
+                .is_some_and(|previous| retain_from < previous)
+        {
+            return Err(AdmissionError::InvalidOperationalEventRetirement);
+        }
+        let mut retired = 0_usize;
+        while entry
+            .operational_events
+            .front()
+            .is_some_and(|event| event.observed_at < retain_from)
+        {
+            entry.operational_events.pop_front();
+            retired = retired
+                .checked_add(1)
+                .ok_or(AdmissionError::CounterExhausted)?;
+        }
+        entry.operational_events_retired_before = Some(retain_from);
+        Ok(retired)
+    }
+
+    /// Seals a sample with supervisor-owned source identity, connection epoch,
+    /// and current health state.
+    pub fn issue_operational_quality_receipt(
+        &self,
+        source: &SourceId,
+        sample: OperationalQualitySampleInput,
+    ) -> Result<OperationalQualityReceipt, AdmissionError> {
+        let entry = self
+            .sources
+            .get(source)
+            .ok_or(AdmissionError::UnknownSource)?;
+        let (stream, completeness) = entry
+            .configured_completeness
+            .ok_or(AdmissionError::SourceCompletenessNotConfigured)?;
+        if sample.window_start.value() <= 0
+            || sample.window_end <= sample.window_start
+            || sample.last_trusted_event_time.value() <= 0
+            || sample.receive_wall_time < sample.last_trusted_event_time
+            || sample.receive_wall_time > sample.as_known_at
+            || sample.last_trusted_event_time > sample.as_known_at
+            || sample.as_known_at < sample.window_end
+            || sample.stale_after_ns == 0
+            || entry
+                .operational_events_retired_before
+                .is_some_and(|retired_before| sample.window_start < retired_before)
+            || entry
+                .quality
+                .last_observed_at()
+                .is_some_and(|observed_at| observed_at > sample.as_known_at)
+        {
+            return Err(AdmissionError::InvalidOperationalQualitySample);
+        }
+        let counters = count_operational_events(
+            &entry.operational_events,
+            sample.window_start,
+            sample.window_end,
+        )?;
+        Ok(OperationalQualityReceipt {
+            source: source.clone(),
+            connection_epoch: entry.epoch,
+            source_health: entry.quality.state(),
+            stream,
+            completeness,
+            sample,
+            counters,
+        })
+    }
+
+    /// Binds the supervisor to the configured local data volume exactly once.
+    ///
+    /// The descriptor is duplicated so later receipt issuance cannot be
+    /// redirected by replacing a path or supplying a different filesystem.
+    pub fn bind_data_volume(&mut self, data_volume: BorrowedFd<'_>) -> Result<(), AdmissionError> {
+        if self.data_volume.is_some() {
+            return Err(AdmissionError::StoragePressureProbeAlreadyConfigured);
+        }
+        validate_data_volume(data_volume)?;
+        self.data_volume = Some(
+            rustix::io::dup(data_volume).map_err(|_| AdmissionError::StoragePressureProbeFailed)?,
+        );
+        Ok(())
+    }
+
+    /// Measures and seals point-in-time pressure for the bound local data
+    /// volume.
+    pub fn issue_storage_pressure_receipt(
+        &self,
+        as_known_at: UnixNanos,
+    ) -> Result<StoragePressureReceipt, AdmissionError> {
+        if as_known_at.value() <= 0 {
+            return Err(AdmissionError::InvalidOperationalQualitySample);
+        }
+        let data_volume = self
+            .data_volume
+            .as_ref()
+            .ok_or(AdmissionError::StoragePressureProbeNotConfigured)?;
+        let (used_bytes, capacity_bytes) = validate_data_volume(data_volume.as_fd())?;
+        Ok(StoragePressureReceipt {
+            used_bytes,
+            capacity_bytes,
+            as_known_at,
+        })
     }
 
     pub fn mark_healthy(
@@ -872,6 +1233,30 @@ pub enum ShutdownError {
     StepFailed(ShutdownPhase),
 }
 
+fn validate_data_volume(data_volume: BorrowedFd<'_>) -> Result<(u64, NonZeroU64), AdmissionError> {
+    let filesystem = rustix::fs::fstatvfs(data_volume)
+        .map_err(|_| AdmissionError::StoragePressureProbeFailed)?;
+    let fragment_size = if filesystem.f_frsize == 0 {
+        filesystem.f_bsize
+    } else {
+        filesystem.f_frsize
+    };
+    let capacity = filesystem
+        .f_blocks
+        .checked_mul(fragment_size)
+        .ok_or(AdmissionError::StoragePressureProbeOverflow)?;
+    let available = filesystem
+        .f_bavail
+        .checked_mul(fragment_size)
+        .ok_or(AdmissionError::StoragePressureProbeOverflow)?;
+    let capacity_bytes =
+        NonZeroU64::new(capacity).ok_or(AdmissionError::StoragePressureProbeFailed)?;
+    let used_bytes = capacity
+        .checked_sub(available)
+        .ok_or(AdmissionError::StoragePressureProbeFailed)?;
+    Ok((used_bytes, capacity_bytes))
+}
+
 #[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
 pub enum AdmissionError {
     #[error("queue capacity is invalid")]
@@ -892,6 +1277,16 @@ pub enum AdmissionError {
     InvalidRetryPolicy,
     #[error("source identity is invalid")]
     InvalidSource,
+    #[error("operational quality sample is invalid")]
+    InvalidOperationalQualitySample,
+    #[error("source completeness contract is invalid")]
+    InvalidSourceCompleteness,
+    #[error("source completeness contract is not configured")]
+    SourceCompletenessNotConfigured,
+    #[error("source completeness contract is already configured")]
+    SourceCompletenessAlreadyConfigured,
+    #[error("source completeness authority does not match the admitted venue")]
+    SourceCompletenessAuthorityMismatch,
     #[error("source is already supervised")]
     DuplicateSource,
     #[error("source is not supervised")]
@@ -910,6 +1305,22 @@ pub enum AdmissionError {
     ObservationTimeExhausted,
     #[error("source failure observation time did not advance")]
     NonMonotonicFailureTime,
+    #[error("operational event time moved backwards")]
+    NonMonotonicOperationalEventTime,
+    #[error("operational event predates the finalized retirement watermark")]
+    OperationalEventBeforeRetirement,
+    #[error("bounded operational event ledger is full")]
+    OperationalEventCapacity,
+    #[error("operational event retirement watermark is invalid")]
+    InvalidOperationalEventRetirement,
+    #[error("local data-volume pressure probe is not configured")]
+    StoragePressureProbeNotConfigured,
+    #[error("local data-volume pressure probe is already configured")]
+    StoragePressureProbeAlreadyConfigured,
+    #[error("local data-volume pressure probe failed")]
+    StoragePressureProbeFailed,
+    #[error("local data-volume pressure probe overflowed")]
+    StoragePressureProbeOverflow,
     #[error("quality publication queue is full")]
     QualityPublicationBackpressure,
     #[error("queue produced an outcome incompatible with its class")]

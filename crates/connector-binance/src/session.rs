@@ -18,9 +18,9 @@ use thiserror::Error;
 use tokio::sync::mpsc;
 
 use crate::{
-    BinanceBookSynchronizer, BinanceInput, BinanceMarket, MAX_NATIVE_PAYLOAD_BYTES,
-    NormalizationContext, binance_capabilities, normalize_depth_snapshot, normalize_native_message,
-    parse_durable_depth_snapshot, parse_durable_native_message,
+    BinanceBookSynchronizer, BinanceInput, BinanceMarket, BinanceNormalizedEvent,
+    MAX_NATIVE_PAYLOAD_BYTES, NormalizationContext, binance_capabilities, normalize_depth_snapshot,
+    normalize_native_with_authority, parse_durable_depth_snapshot, parse_durable_native_message,
 };
 
 const BINANCE_SOURCE: &str = "binance";
@@ -38,6 +38,79 @@ pub enum BinanceSessionRoute {
         market: BinanceMarket,
         symbol: String,
     },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BinanceStreamContract {
+    SpotMarket,
+    UsdMAggregateTrade,
+    UsdMDepth,
+    UsdMMarkPrice,
+    UsdMLiquidation,
+    UsdMOpenInterest,
+    SystemStatus,
+}
+
+impl BinanceStreamContract {
+    pub const fn wal_stream_name(self) -> &'static str {
+        match self {
+            Self::SpotMarket => BinanceInput::SpotWebSocket.wal_stream_name(),
+            Self::UsdMAggregateTrade => BinanceInput::UsdMAggregateTradeWebSocket.wal_stream_name(),
+            Self::UsdMDepth => BinanceInput::UsdMDepthWebSocket.wal_stream_name(),
+            Self::UsdMMarkPrice => BinanceInput::UsdMMarkPriceWebSocket.wal_stream_name(),
+            Self::UsdMLiquidation => BinanceInput::UsdMLiquidationWebSocket.wal_stream_name(),
+            Self::UsdMOpenInterest => BinanceInput::UsdMOpenInterestRest.wal_stream_name(),
+            Self::SystemStatus => BinanceInput::SystemStatusRest.wal_stream_name(),
+        }
+    }
+
+    fn accepts_route(self, route: &BinanceSessionRoute) -> bool {
+        matches!(
+            (self, route),
+            (
+                Self::SpotMarket,
+                BinanceSessionRoute::Native(BinanceInput::SpotWebSocket)
+            ) | (
+                Self::SpotMarket,
+                BinanceSessionRoute::DepthSnapshot {
+                    market: BinanceMarket::Spot,
+                    ..
+                }
+            ) | (
+                Self::UsdMAggregateTrade,
+                BinanceSessionRoute::Native(BinanceInput::UsdMAggregateTradeWebSocket)
+            ) | (
+                Self::UsdMDepth,
+                BinanceSessionRoute::Native(BinanceInput::UsdMDepthWebSocket)
+            ) | (
+                Self::UsdMDepth,
+                BinanceSessionRoute::DepthSnapshot {
+                    market: BinanceMarket::UsdMarginedPerpetual,
+                    ..
+                }
+            ) | (
+                Self::UsdMMarkPrice,
+                BinanceSessionRoute::Native(BinanceInput::UsdMMarkPriceWebSocket)
+            ) | (
+                Self::UsdMLiquidation,
+                BinanceSessionRoute::Native(BinanceInput::UsdMLiquidationWebSocket)
+            ) | (
+                Self::UsdMOpenInterest,
+                BinanceSessionRoute::Native(BinanceInput::UsdMOpenInterestRest)
+            ) | (
+                Self::SystemStatus,
+                BinanceSessionRoute::Native(BinanceInput::SystemStatusRest)
+            )
+        )
+    }
+
+    const fn accepts_book(self, market: BinanceMarket) -> bool {
+        matches!(
+            (self, market),
+            (Self::SpotMarket, BinanceMarket::Spot)
+                | (Self::UsdMDepth, BinanceMarket::UsdMarginedPerpetual)
+        )
+    }
 }
 
 /// One bounded transport record with collector timestamps fixed before WAL capture.
@@ -136,6 +209,7 @@ pub fn bounded_session_channel(
 pub struct BinanceConfig {
     source: SourceId,
     stream_id: NonZeroU32,
+    stream_contract: BinanceStreamContract,
     catalog: Arc<CatalogSnapshot>,
     subscription_epoch: NonZeroU64,
     connection_started_at: UnixNanos,
@@ -155,6 +229,7 @@ impl BinanceConfig {
     pub fn try_new(
         source: SourceId,
         stream_id: NonZeroU32,
+        stream_contract: BinanceStreamContract,
         catalog: Arc<CatalogSnapshot>,
         subscription_epoch: NonZeroU64,
         connection_started_at: UnixNanos,
@@ -174,6 +249,7 @@ impl BinanceConfig {
         Ok(Self {
             source,
             stream_id,
+            stream_contract,
             catalog,
             subscription_epoch,
             connection_started_at,
@@ -211,6 +287,9 @@ impl BinanceConfig {
         market: BinanceMarket,
         config: BookConfig,
     ) -> Result<Self, BinanceSessionError> {
+        if !self.stream_contract.accepts_book(market) {
+            return Err(BinanceSessionError::InvalidConfig);
+        }
         BinanceBookSynchronizer::try_new(market, config.clone())
             .map_err(|_| BinanceSessionError::InvalidConfig)?;
         if self
@@ -369,6 +448,7 @@ impl BinanceConnector {
                 .as_mut()
                 .reset(tokio::time::Instant::now() + self.config.heartbeat_timeout);
             if record.stream_id != self.config.stream_id
+                || !self.config.stream_contract.accepts_route(&record.route)
                 || record.record_sequence.get() <= last_record_sequence
                 || record.receive_wall_time < self.config.connection_started_at
             {
@@ -395,6 +475,9 @@ impl BinanceConnector {
                 Ok(reference) => reference,
                 Err(termination) => return termination,
             };
+            if reference.stream_name() != self.config.stream_contract.wal_stream_name() {
+                return ConnectorTermination::Fatal(FatalConnectorError::InvalidConfiguration);
+            }
             let normalization = match NormalizationContext::try_new(
                 &self.config.catalog,
                 &reference,
@@ -414,7 +497,7 @@ impl BinanceConnector {
                         Ok(parsed) => parsed,
                         Err(_) => return schema_termination(&mut context, last_observed_at).await,
                     };
-                    match normalize_native_message(parsed, &normalization) {
+                    match normalize_native_with_authority(parsed, &normalization) {
                         Ok(events) => events,
                         Err(_) => return schema_termination(&mut context, last_observed_at).await,
                     }
@@ -428,13 +511,21 @@ impl BinanceConnector {
                             }
                         };
                     match normalize_depth_snapshot(parsed, &normalization) {
-                        Ok(event) => vec![event],
+                        Ok(event) => vec![BinanceNormalizedEvent::Plain(event)],
                         Err(_) => return schema_termination(&mut context, last_observed_at).await,
                     }
                 }
             };
             for event in events {
-                let output = match NormalizedOutput::try_new(reference.clone(), event) {
+                let output = match event {
+                    BinanceNormalizedEvent::Plain(event) => {
+                        NormalizedOutput::try_new(reference.clone(), event)
+                    }
+                    BinanceNormalizedEvent::Derivative(receipt) => {
+                        NormalizedOutput::try_new_derivative(reference.clone(), *receipt)
+                    }
+                };
+                let output = match output {
                     Ok(output) => output,
                     Err(_) => {
                         return ConnectorTermination::Quarantined(

@@ -28,6 +28,46 @@ const USDM_OPEN_INTEREST: &[u8] =
     include_bytes!("../../../fixtures/exchanges/binance/usdm-open-interest.json");
 const USDM_LIQUIDATION: &[u8] =
     include_bytes!("../../../fixtures/exchanges/binance/usdm-liquidation.json");
+const SYSTEM_STATUS: &[u8] =
+    include_bytes!("../../../fixtures/exchanges/binance/system-status.json");
+
+#[test]
+fn every_certified_native_fixture_has_exactly_one_parser_route() {
+    let inputs = [
+        BinanceInput::SpotWebSocket,
+        BinanceInput::UsdMAggregateTradeWebSocket,
+        BinanceInput::UsdMMarkPriceWebSocket,
+        BinanceInput::UsdMLiquidationWebSocket,
+        BinanceInput::UsdMDepthWebSocket,
+        BinanceInput::UsdMOpenInterestRest,
+        BinanceInput::SystemStatusRest,
+    ];
+    for (payload, expected) in [
+        (SPOT_AGGREGATE_TRADE, BinanceInput::SpotWebSocket),
+        (SPOT_BOOK_TICKER, BinanceInput::SpotWebSocket),
+        (SPOT_DEPTH, BinanceInput::SpotWebSocket),
+        (
+            USDM_AGGREGATE_TRADE,
+            BinanceInput::UsdMAggregateTradeWebSocket,
+        ),
+        (USDM_MARK_PRICE, BinanceInput::UsdMMarkPriceWebSocket),
+        (USDM_LIQUIDATION, BinanceInput::UsdMLiquidationWebSocket),
+        (USDM_DEPTH, BinanceInput::UsdMDepthWebSocket),
+        (USDM_OPEN_INTEREST, BinanceInput::UsdMOpenInterestRest),
+        (SYSTEM_STATUS, BinanceInput::SystemStatusRest),
+    ] {
+        let accepted = inputs
+            .iter()
+            .copied()
+            .filter(|input| parse_native_message(*input, payload).is_ok())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            accepted,
+            vec![expected],
+            "provider payload must not be relabelable across parser routes"
+        );
+    }
+}
 
 #[test]
 fn connector_owned_capabilities_are_truthful_and_market_specific() {
@@ -58,7 +98,7 @@ fn connector_owned_capabilities_are_truthful_and_market_specific() {
     );
     assert_eq!(
         capabilities.completeness().get(StreamClass::Liquidations),
-        Completeness::SampledLatestPerSymbolWindow {
+        Completeness::SampledLargestPerSymbolWindow {
             window_ms: core::num::NonZeroU32::new(1_000).expect("nonzero"),
         }
     );
@@ -127,10 +167,11 @@ fn spot_native_fixtures_preserve_exact_wire_semantics() {
 
 #[test]
 fn usd_m_native_fixtures_preserve_routes_category_and_previous_final() {
-    let BinanceMessage::AggregateTrade(trade) =
-        parse_native_message(BinanceInput::UsdMMarketWebSocket, USDM_AGGREGATE_TRADE)
-            .expect("USD-M aggregate trade")
-    else {
+    let BinanceMessage::AggregateTrade(trade) = parse_native_message(
+        BinanceInput::UsdMAggregateTradeWebSocket,
+        USDM_AGGREGATE_TRADE,
+    )
+    .expect("USD-M aggregate trade") else {
         panic!("wrong USD-M aggregate-trade variant");
     };
     assert_eq!(trade.market, BinanceMarket::UsdMarginedPerpetual);
@@ -141,7 +182,7 @@ fn usd_m_native_fixtures_preserve_routes_category_and_previous_final() {
     );
 
     let BinanceMessage::DepthUpdate(depth) =
-        parse_native_message(BinanceInput::UsdMPublicWebSocket, USDM_DEPTH).expect("USD-M depth")
+        parse_native_message(BinanceInput::UsdMDepthWebSocket, USDM_DEPTH).expect("USD-M depth")
     else {
         panic!("wrong USD-M depth variant");
     };
@@ -155,7 +196,7 @@ fn usd_m_native_fixtures_preserve_routes_category_and_previous_final() {
     );
 
     let BinanceMessage::MarkPrice(mark) =
-        parse_native_message(BinanceInput::UsdMMarketWebSocket, USDM_MARK_PRICE)
+        parse_native_message(BinanceInput::UsdMMarkPriceWebSocket, USDM_MARK_PRICE)
             .expect("USD-M mark price")
     else {
         panic!("wrong USD-M mark-price variant");
@@ -175,7 +216,7 @@ fn usd_m_native_fixtures_preserve_routes_category_and_previous_final() {
     assert_eq!(open_interest.quantity.to_string(), "10659.509");
 
     let BinanceMessage::Liquidation(liquidation) =
-        parse_native_message(BinanceInput::UsdMMarketWebSocket, USDM_LIQUIDATION)
+        parse_native_message(BinanceInput::UsdMLiquidationWebSocket, USDM_LIQUIDATION)
             .expect("USD-M liquidation")
     else {
         panic!("wrong USD-M liquidation variant");
@@ -205,11 +246,11 @@ fn parser_accepts_field_order_but_rejects_undocumented_schema_drift() {
 #[test]
 fn parser_rejects_wrong_route_market_category_numeric_timestamp_and_size_boundaries() {
     assert_eq!(
-        parse_native_message(BinanceInput::UsdMMarketWebSocket, USDM_DEPTH),
+        parse_native_message(BinanceInput::UsdMMarkPriceWebSocket, USDM_DEPTH),
         Err(NativeParseError::WrongRoute)
     );
     assert_eq!(
-        parse_native_message(BinanceInput::UsdMPublicWebSocket, USDM_MARK_PRICE),
+        parse_native_message(BinanceInput::UsdMDepthWebSocket, USDM_MARK_PRICE),
         Err(NativeParseError::WrongRoute)
     );
 
@@ -217,7 +258,7 @@ fn parser_rejects_wrong_route_market_category_numeric_timestamp_and_size_boundar
         .expect("fixture utf8")
         .replacen("\"st\": 1", "\"st\": 2", 1);
     assert_eq!(
-        parse_native_message(BinanceInput::UsdMPublicWebSocket, coin_m.as_bytes()),
+        parse_native_message(BinanceInput::UsdMDepthWebSocket, coin_m.as_bytes()),
         Err(NativeParseError::UnsupportedMarketCategory)
     );
 
@@ -266,7 +307,7 @@ fn parser_rejects_missing_required_duplicate_and_inconsistent_fields() {
     let missing_futures_normal_quantity = br#"{"e":"aggTrade","E":1672515782136,"s":"BTCUSDT","a":5933014,"p":"16695.14","q":"0.005","f":100,"l":105,"T":1672515782136,"m":true,"st":1}"#;
     assert_eq!(
         parse_native_message(
-            BinanceInput::UsdMMarketWebSocket,
+            BinanceInput::UsdMAggregateTradeWebSocket,
             missing_futures_normal_quantity
         ),
         Err(NativeParseError::MalformedJson)
@@ -283,7 +324,7 @@ fn parser_rejects_missing_required_duplicate_and_inconsistent_fields() {
         .replacen("\"ps\": \"BTCUSDT\",\n  ", "", 1);
     assert_eq!(
         parse_native_message(
-            BinanceInput::UsdMPublicWebSocket,
+            BinanceInput::UsdMDepthWebSocket,
             missing_futures_pair.as_bytes()
         ),
         Err(NativeParseError::MalformedJson)
@@ -294,7 +335,7 @@ fn parser_rejects_missing_required_duplicate_and_inconsistent_fields() {
         .replacen("1672531200000", "1672515782135", 1);
     assert_eq!(
         parse_native_message(
-            BinanceInput::UsdMMarketWebSocket,
+            BinanceInput::UsdMMarkPriceWebSocket,
             funding_before_observation.as_bytes()
         ),
         Err(NativeParseError::InvalidTimestamp)

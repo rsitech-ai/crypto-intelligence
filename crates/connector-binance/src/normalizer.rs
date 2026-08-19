@@ -1,7 +1,9 @@
 use std::cmp::Reverse;
 use std::num::NonZeroU64;
 
-use connector_core::DurableRawReference;
+use connector_core::{
+    DerivativeAuthorityError, DerivativeNormalizationReceipt, DerivativeStream, DurableRawReference,
+};
 use domain::{InstrumentId, ProductType, SourceKind, UnixNanos, VenueId};
 use event_envelope::{
     BookDelta, BookLevel, BookSnapshot, EventEnvelope, EventError, FundingObservation,
@@ -76,6 +78,11 @@ impl<'a> NormalizationContext<'a> {
         if !catalog.verify_integrity() {
             return Err(NormalizationError::InvalidContext("catalog integrity"));
         }
+        if catalog.as_known_at() > normalization_timestamp {
+            return Err(NormalizationError::InvalidContext(
+                "catalog knowledge ordering",
+            ));
+        }
 
         Ok(Self {
             catalog,
@@ -104,6 +111,12 @@ pub enum NormalizationError {
     RawPayloadMismatch,
     #[error("durable Binance message is not an aggregate trade")]
     ExpectedAggregateTrade,
+    #[error("durable Binance message is not a derivative observation")]
+    ExpectedDerivativeObservation,
+    #[error("Binance capability contract is invalid")]
+    CapabilityContract,
+    #[error("derivative normalization authority is invalid: {0}")]
+    DerivativeAuthority(#[from] DerivativeAuthorityError),
 }
 
 /// Opaque evidence minted only after a durable raw Binance aggregate-trade
@@ -138,22 +151,144 @@ impl BinanceTradeNormalizationReceipt {
     }
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+// Keep the common plain event inline while preventing the catalog-bearing
+// derivative receipt from inflating every normalized session item.
+#[allow(clippy::large_enum_variant)]
+pub enum BinanceNormalizedEvent {
+    Plain(EventEnvelope),
+    Derivative(Box<DerivativeNormalizationReceipt>),
+}
+
+impl BinanceNormalizedEvent {
+    pub const fn event(&self) -> &EventEnvelope {
+        match self {
+            Self::Plain(event) => event,
+            Self::Derivative(receipt) => receipt.event(),
+        }
+    }
+}
+
 pub fn normalize_native_message(
     message: DurableBinanceMessage,
     context: &NormalizationContext<'_>,
 ) -> Result<Vec<EventEnvelope>, NormalizationError> {
+    normalize_native_with_authority(message, context)?
+        .into_iter()
+        .map(|event| match event {
+            BinanceNormalizedEvent::Plain(event) => Ok(event),
+            BinanceNormalizedEvent::Derivative(_) => {
+                Err(NormalizationError::ExpectedDerivativeObservation)
+            }
+        })
+        .collect()
+}
+
+pub fn normalize_native_with_authority(
+    message: DurableBinanceMessage,
+    context: &NormalizationContext<'_>,
+) -> Result<Vec<BinanceNormalizedEvent>, NormalizationError> {
     let message = validated_native_message(message, context)?;
+    normalize_plain_or_derivative(message, context)
+}
+
+fn normalize_plain_or_derivative(
+    message: BinanceMessage,
+    context: &NormalizationContext<'_>,
+) -> Result<Vec<BinanceNormalizedEvent>, NormalizationError> {
     match message {
-        BinanceMessage::AggregateTrade(value) => normalize_trade(value, context),
-        BinanceMessage::BookTicker(value) => normalize_book_ticker(value, context),
-        BinanceMessage::DepthUpdate(value) => normalize_depth(value, context),
-        BinanceMessage::MarkPrice(value) => normalize_mark_price(value, context),
-        BinanceMessage::OpenInterest(value) => normalize_open_interest(value, context),
-        BinanceMessage::Liquidation(value) => normalize_liquidation(value, context),
+        BinanceMessage::MarkPrice(_)
+        | BinanceMessage::OpenInterest(_)
+        | BinanceMessage::Liquidation(_) => {
+            normalize_validated_derivative(message, context).map(|receipts| {
+                receipts
+                    .into_iter()
+                    .map(|receipt| BinanceNormalizedEvent::Derivative(Box::new(receipt)))
+                    .collect()
+            })
+        }
+        BinanceMessage::AggregateTrade(value) => normalize_trade(value, context).map(|events| {
+            events
+                .into_iter()
+                .map(BinanceNormalizedEvent::Plain)
+                .collect()
+        }),
+        BinanceMessage::BookTicker(value) => normalize_book_ticker(value, context).map(|events| {
+            events
+                .into_iter()
+                .map(BinanceNormalizedEvent::Plain)
+                .collect()
+        }),
+        BinanceMessage::DepthUpdate(value) => normalize_depth(value, context).map(|events| {
+            events
+                .into_iter()
+                .map(BinanceNormalizedEvent::Plain)
+                .collect()
+        }),
         BinanceMessage::VenueStatus { state, message } => {
-            normalize_venue_status(state, message, context)
+            normalize_venue_status(state, message, context).map(|events| {
+                events
+                    .into_iter()
+                    .map(BinanceNormalizedEvent::Plain)
+                    .collect()
+            })
         }
     }
+}
+
+pub fn normalize_derivative_with_receipts(
+    message: DurableBinanceMessage,
+    context: &NormalizationContext<'_>,
+) -> Result<Vec<DerivativeNormalizationReceipt>, NormalizationError> {
+    let normalized = validated_native_message(message, context)?;
+    normalize_validated_derivative(normalized, context)
+}
+
+fn normalize_validated_derivative(
+    normalized: BinanceMessage,
+    context: &NormalizationContext<'_>,
+) -> Result<Vec<DerivativeNormalizationReceipt>, NormalizationError> {
+    let (events, streams) = match normalized {
+        BinanceMessage::MarkPrice(value) => (
+            normalize_mark_price(value, context)?,
+            vec![DerivativeStream::MarkIndex, DerivativeStream::Funding],
+        ),
+        BinanceMessage::OpenInterest(value) => (
+            normalize_open_interest(value, context)?,
+            vec![DerivativeStream::OpenInterest],
+        ),
+        BinanceMessage::Liquidation(value) => (
+            normalize_liquidation(value, context)?,
+            vec![DerivativeStream::Liquidation],
+        ),
+        BinanceMessage::AggregateTrade(_)
+        | BinanceMessage::BookTicker(_)
+        | BinanceMessage::DepthUpdate(_)
+        | BinanceMessage::VenueStatus { .. } => {
+            return Err(NormalizationError::ExpectedDerivativeObservation);
+        }
+    };
+    if events.len() != streams.len() {
+        return Err(NormalizationError::ExpectedDerivativeObservation);
+    }
+    let capabilities =
+        crate::binance_capabilities().map_err(|_| NormalizationError::CapabilityContract)?;
+    events
+        .into_iter()
+        .zip(streams)
+        .map(|(event, stream)| {
+            let receipt = DerivativeNormalizationReceipt::try_from_verified(
+                &capabilities,
+                context.raw,
+                context.catalog,
+                event,
+            )?;
+            if receipt.stream() != stream {
+                return Err(NormalizationError::ExpectedDerivativeObservation);
+            }
+            Ok(receipt)
+        })
+        .collect()
 }
 
 pub fn normalize_trade_with_receipt(

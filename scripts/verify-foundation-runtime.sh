@@ -6,6 +6,7 @@ readonly script_dir
 workspace_root="$(cd -- "${script_dir}/.." && pwd)"
 readonly workspace_root
 readonly target_readiness_label="runtime-proven foundation slice"
+readonly runtime_diagnostic_pattern='"level":"(error|warn)"|\b(panic|panicked|crash|crashed|hang|hung)\b'
 evidence_output="${workspace_root}/release/evidence/foundation-runtime-verification.json"
 
 usage() {
@@ -523,7 +524,7 @@ for run_number in 1 2; do
   fi
 
   if [[ -s "${stderr_file}" ]] \
-    || rg -n '"level":"(error|warn)"|panic|crash|hang' \
+    || rg -n "${runtime_diagnostic_pattern}" \
       "${runtime_root}/logs/cmti.jsonl" "${stdout_file}" "${stderr_file}" \
       >/dev/null 2>&1
   then
@@ -939,10 +940,10 @@ then
 fi
 for generated_root in "${app_runtime_roots[@]-}"; do
   if [[ -f "${generated_root}/logs/cmti.jsonl" ]] \
-    && rg -n '"level":"(error|warn)"|panic|crash|hang|secret|token' \
+    && rg -n "${runtime_diagnostic_pattern}|\b(secret|token)\b" \
       "${generated_root}/logs/cmti.jsonl" >/dev/null 2>&1
   then
-    rg -n '"level":"(error|warn)"|panic|crash|hang|secret|token' \
+    rg -n "${runtime_diagnostic_pattern}|\b(secret|token)\b" \
       "${generated_root}/logs/cmti.jsonl" \
       >> "${temporary_root}/app-daemon-log-findings.txt"
     record_blocker "native-app-runtime:daemon-log-finding"

@@ -187,6 +187,7 @@ pub struct WalAppendProof {
     metadata: RecordMetadata,
     payload_hash: [u8; 32],
     stream_source_name: String,
+    stream_name: String,
     segment_device: u64,
     segment_inode: u64,
     prologue_length: u64,
@@ -212,6 +213,10 @@ impl WalAppendProof {
 
     pub fn stream_source_name(&self) -> &str {
         &self.stream_source_name
+    }
+
+    pub fn stream_name(&self) -> &str {
+        &self.stream_name
     }
 }
 
@@ -816,14 +821,14 @@ impl SegmentedWalWriter {
         if !self.active_metadata.contains_stream(metadata.stream_id) {
             return Err(SegmentError::UndeclaredStream(metadata.stream_id).into());
         }
-        let stream_source_name = self
+        let stream = self
             .active_metadata
             .streams()
             .iter()
             .find(|stream| stream.stream_id() == metadata.stream_id)
-            .ok_or(SegmentError::UndeclaredStream(metadata.stream_id))?
-            .source_name()
-            .to_owned();
+            .ok_or(SegmentError::UndeclaredStream(metadata.stream_id))?;
+        let stream_source_name = stream.source_name().to_owned();
+        let stream_name = stream.stream_name().to_owned();
         let frame_length = u64::try_from(frame::encoded_length(metadata, payload.len())?)
             .map_err(|_| ManagerError::Inactive)?;
         let projected_length = self
@@ -907,6 +912,7 @@ impl SegmentedWalWriter {
                 metadata,
                 payload_hash: *blake3::hash(payload).as_bytes(),
                 stream_source_name,
+                stream_name,
                 segment_device,
                 segment_inode,
                 prologue_length,

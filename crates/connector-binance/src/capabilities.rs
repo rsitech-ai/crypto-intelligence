@@ -27,7 +27,7 @@ pub fn binance_capabilities() -> Result<ConnectorCapabilities, CapabilityError> 
         ],
         checksum_support: ChecksumSupport::NotSupported,
         stream_completeness: CompletenessProfile::binance(),
-        liquidation_completeness: Completeness::SampledLatestPerSymbolWindow {
+        liquidation_completeness: Completeness::SampledLargestPerSymbolWindow {
             window_ms: nonzero(1_000),
         },
         funding_fields: FundingFields::from_bits(
@@ -111,7 +111,7 @@ pub fn binance_capabilities() -> Result<ConnectorCapabilities, CapabilityError> 
         recovery_method: RecoveryMethod::ReconnectAndResnapshot,
         source_timestamp_precision: SourceTimestampPrecision::Milliseconds,
         known_limitations: vec![
-            "USD-M liquidations expose only the latest order per symbol per 1000 ms".to_owned(),
+            "USD-M liquidations expose only the largest order per symbol per 1000 ms".to_owned(),
             "delivery completeness remains subject to transport loss".to_owned(),
         ],
         terms_reference: "https://www.binance.com/en/terms".to_owned(),

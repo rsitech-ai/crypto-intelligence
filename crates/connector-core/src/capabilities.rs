@@ -161,7 +161,7 @@ pub enum Completeness {
         push_cadence_ms: NonZeroU32,
         delivery_uncertainty: bool,
     },
-    SampledLatestPerSymbolWindow {
+    SampledLargestPerSymbolWindow {
         window_ms: NonZeroU32,
     },
     Partial {
@@ -223,7 +223,7 @@ impl CompletenessProfile {
         values[StreamClass::OpenInterest.index()] = Completeness::VenueReportedComplete {
             delivery_uncertainty: true,
         };
-        values[StreamClass::Liquidations.index()] = Completeness::SampledLatestPerSymbolWindow {
+        values[StreamClass::Liquidations.index()] = Completeness::SampledLargestPerSymbolWindow {
             window_ms: NonZeroU32::new(1_000).expect("1000 is nonzero"),
         };
         values[StreamClass::VenueStatus.index()] = Completeness::VenueReportedComplete {
@@ -851,7 +851,7 @@ fn validate_binance_profile(
 ) -> Result<(), CapabilityError> {
     validate_initial_venue_surface(input, completeness)?;
     if input.liquidation_completeness
-        != (Completeness::SampledLatestPerSymbolWindow {
+        != (Completeness::SampledLargestPerSymbolWindow {
             window_ms: NonZeroU32::new(1_000).expect("1000 is nonzero"),
         })
         || !matches!(input.connection_lifetime, ConnectionLifetime::Finite { .. })

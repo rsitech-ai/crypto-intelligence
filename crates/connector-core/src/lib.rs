@@ -6,6 +6,7 @@
 
 mod capabilities;
 mod channel;
+mod derivative_authority;
 mod lifecycle;
 mod parser;
 mod raw_capture;
@@ -13,6 +14,7 @@ mod termination;
 
 pub use capabilities::*;
 pub use channel::*;
+pub use derivative_authority::*;
 pub use lifecycle::*;
 pub use parser::*;
 pub use raw_capture::*;
@@ -273,6 +275,9 @@ fn map_normalized_error(error: ChannelError) -> ConnectorTermination {
             ConnectorTermination::CapacityRejected(CapacityRejection::NormalizedOutput)
         }
         ChannelError::ReceiverClosed => ConnectorTermination::LocalOutputFailed,
+        ChannelError::DerivativeRawAuthorityMismatch => {
+            ConnectorTermination::Quarantined(QuarantineReason::IntegrityViolation)
+        }
         ChannelError::InvalidCapacity
         | ChannelError::CommandSequenceRegression
         | ChannelError::RawSourceMismatch
@@ -280,6 +285,7 @@ fn map_normalized_error(error: ChannelError) -> ConnectorTermination {
         | ChannelError::RawPayloadHashMismatch
         | ChannelError::RawReceiveWallTimeMismatch
         | ChannelError::RawReceiveMonotonicTimeMismatch
+        | ChannelError::DerivativeAuthorityRequired
         | ChannelError::EventEncodingFailed
         | ChannelError::StatePoisoned
         | ChannelError::InvalidationCapacityExceeded

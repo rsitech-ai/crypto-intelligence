@@ -260,7 +260,7 @@ fn run_binance(arguments: Arguments) -> Result<String, String> {
     }
     let liquidation = capabilities.completeness().get(StreamClass::Liquidations);
     if liquidation
-        != (Completeness::SampledLatestPerSymbolWindow {
+        != (Completeness::SampledLargestPerSymbolWindow {
             window_ms: std::num::NonZeroU32::new(1_000).expect("constant nonzero"),
         })
     {
@@ -277,7 +277,7 @@ fn run_binance(arguments: Arguments) -> Result<String, String> {
         manifest_sha256: sha256_hex(&manifest_bytes),
         connector_version: capabilities.connector_version().to_owned(),
         trade_semantics: "aggregate".to_owned(),
-        liquidation_completeness: "sampled_latest_per_symbol_window_1000ms".to_owned(),
+        liquidation_completeness: "sampled_largest_per_symbol_window_1000ms".to_owned(),
         fixture_count: fixture_hashes.len(),
         fixtures: fixture_hashes,
         checks: [
@@ -1049,17 +1049,21 @@ fn validate_fixture(fixture: &ManifestFixture, raw: &[u8]) -> Result<(), String>
         ("spot", "websocket", "depth_update") => {
             require_message(BinanceInput::SpotWebSocket, raw, "depth_update")
         }
-        ("usd_m", "market_websocket", "aggregate_trade") => {
-            require_message(BinanceInput::UsdMMarketWebSocket, raw, "aggregate_trade")
-        }
+        ("usd_m", "market_websocket", "aggregate_trade") => require_message(
+            BinanceInput::UsdMAggregateTradeWebSocket,
+            raw,
+            "aggregate_trade",
+        ),
         ("usd_m", "public_websocket", "depth_update") => {
-            require_message(BinanceInput::UsdMPublicWebSocket, raw, "depth_update")
+            require_message(BinanceInput::UsdMDepthWebSocket, raw, "depth_update")
         }
-        ("usd_m", "market_websocket", "mark_index_funding") => {
-            require_message(BinanceInput::UsdMMarketWebSocket, raw, "mark_index_funding")
-        }
+        ("usd_m", "market_websocket", "mark_index_funding") => require_message(
+            BinanceInput::UsdMMarkPriceWebSocket,
+            raw,
+            "mark_index_funding",
+        ),
         ("usd_m", "market_websocket", "sampled_liquidation") => require_message(
-            BinanceInput::UsdMMarketWebSocket,
+            BinanceInput::UsdMLiquidationWebSocket,
             raw,
             "sampled_liquidation",
         ),
@@ -1823,7 +1827,7 @@ fn production_gates() -> Vec<CertificationGate> {
             14,
             "data-completeness metadata",
             "pass",
-            "capability is sampled-latest-per-symbol-window at 1000 ms",
+            "capability is sampled-largest-per-symbol-window at 1000 ms",
         ),
         (
             15,

@@ -10,10 +10,13 @@ publish.workspace = true
 connector-core = { path = "../connector-core" }
 domain = { path = "../domain" }
 quality = { path = "../quality" }
+rustix.workspace = true
 serde.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
+connector-binance = { path = "../connector-binance" }
+tempfile.workspace = true
 tokio.workspace = true
 
 [lints]

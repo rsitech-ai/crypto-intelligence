@@ -176,6 +176,10 @@ impl SourceHealthTracker {
         self.state
     }
 
+    pub const fn last_observed_at(&self) -> Option<UnixNanos> {
+        self.last_observed_at
+    }
+
     pub fn ensure_sequence_capacity(&self, additional_events: usize) -> Result<(), QualityError> {
         let additional_events =
             u64::try_from(additional_events).map_err(|_| QualityError::SequenceExhausted)?;

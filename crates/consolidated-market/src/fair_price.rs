@@ -634,6 +634,10 @@ impl IncludedVenue {
         self.quote.book_provenance.as_ref()
     }
 
+    pub const fn instrument_provenance(&self) -> &InstrumentProvenance {
+        &self.quote.instrument_provenance
+    }
+
     pub const fn effective_weight(&self) -> Ppm {
         self.effective_weight
     }

@@ -14,42 +14,49 @@ id = "spot_websocket_streams"
 url = "https://github.com/binance/binance-spot-api-docs/blob/master/web-socket-streams.md"
 scope = "spot aggregate trade, book ticker, and diff depth fields"
 snapshot = "fixtures/exchanges/binance/documentation-review.toml"
-snapshot_sha256 = "779df1d602cc56fd81d0a9a265e1068dba9ceb65d2bba5d7c0507ee116896d81"
+snapshot_sha256 = "c9d88806bf2b425fe724f347fc0c6b7e6e36aded5d0cdb2d2c59f9fd9dd82173"
 
 [[source]]
 id = "usd_m_market_streams"
 url = "https://developers.binance.com/en/docs/catalog/core-trading-derivatives-trading-usd-s-m-futures/api/ws-streams/market"
 scope = "USD-M aggregate trade, mark price, and sampled liquidation fields"
 snapshot = "fixtures/exchanges/binance/documentation-review.toml"
-snapshot_sha256 = "779df1d602cc56fd81d0a9a265e1068dba9ceb65d2bba5d7c0507ee116896d81"
+snapshot_sha256 = "c9d88806bf2b425fe724f347fc0c6b7e6e36aded5d0cdb2d2c59f9fd9dd82173"
+
+[[source]]
+id = "usd_m_change_log"
+url = "https://developers.binance.com/en/docs/derivatives/change-log"
+scope = "2026 largest-liquidation-per-symbol sampling semantics"
+snapshot = "fixtures/exchanges/binance/documentation-review.toml"
+snapshot_sha256 = "c9d88806bf2b425fe724f347fc0c6b7e6e36aded5d0cdb2d2c59f9fd9dd82173"
 
 [[source]]
 id = "usd_m_public_streams"
 url = "https://developers.binance.com/en/docs/catalog/core-trading-derivatives-trading-usd-s-m-futures/api/ws-streams/public"
 scope = "USD-M diff depth fields and previous-final sequence semantics"
 snapshot = "fixtures/exchanges/binance/documentation-review.toml"
-snapshot_sha256 = "779df1d602cc56fd81d0a9a265e1068dba9ceb65d2bba5d7c0507ee116896d81"
+snapshot_sha256 = "c9d88806bf2b425fe724f347fc0c6b7e6e36aded5d0cdb2d2c59f9fd9dd82173"
 
 [[source]]
 id = "usd_m_rest_market_data"
 url = "https://developers.binance.com/en/docs/catalog/core-trading-derivatives-trading-usd-s-m-futures/api/rest-api/market-data"
 scope = "USD-M open-interest and exchange-information response fields"
 snapshot = "fixtures/exchanges/binance/documentation-review.toml"
-snapshot_sha256 = "779df1d602cc56fd81d0a9a265e1068dba9ceb65d2bba5d7c0507ee116896d81"
+snapshot_sha256 = "c9d88806bf2b425fe724f347fc0c6b7e6e36aded5d0cdb2d2c59f9fd9dd82173"
 
 [[source]]
 id = "spot_rest_api"
 url = "https://github.com/binance/binance-spot-api-docs/blob/master/rest-api.md"
 scope = "spot exchange-information response fields"
 snapshot = "fixtures/exchanges/binance/documentation-review.toml"
-snapshot_sha256 = "779df1d602cc56fd81d0a9a265e1068dba9ceb65d2bba5d7c0507ee116896d81"
+snapshot_sha256 = "c9d88806bf2b425fe724f347fc0c6b7e6e36aded5d0cdb2d2c59f9fd9dd82173"
 
 [[source]]
 id = "wallet_system_status"
 url = "https://developers.binance.com/en/docs/catalog/core-trading-wallet/api/rest-api/others#system-status"
 scope = "venue system-status response fields and status-code meanings"
 snapshot = "fixtures/exchanges/binance/documentation-review.toml"
-snapshot_sha256 = "779df1d602cc56fd81d0a9a265e1068dba9ceb65d2bba5d7c0507ee116896d81"
+snapshot_sha256 = "c9d88806bf2b425fe724f347fc0c6b7e6e36aded5d0cdb2d2c59f9fd9dd82173"
 
 [[fixture]]
 path = "fixtures/exchanges/binance/spot-aggregate-trade.json"

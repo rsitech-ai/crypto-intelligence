@@ -82,6 +82,18 @@ pub enum FeatureStatus {
     Experimental,
 }
 
+/// Machine-enforced boundary for how a feature may be consumed.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FeatureConsumptionRole {
+    /// May be used as a predictive model input.
+    ModelEligible,
+    /// May be used to express confidence/uncertainty, but not as a predictor.
+    UncertaintyOnly,
+    /// May only gate computation, publication, or serving.
+    GatingOnly,
+}
+
 /// Serialized value representation produced by a feature.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -100,6 +112,8 @@ pub enum EntityScope {
     Instrument,
     Asset,
     AssetPair,
+    AssetSource,
+    AssetSourcePair,
     Venue,
     Source,
     Global,
@@ -467,6 +481,7 @@ pub struct FeatureDefinitionInput {
     pub id: FeatureId,
     pub version: Version,
     pub status: FeatureStatus,
+    pub consumption_role: FeatureConsumptionRole,
     pub value_type: FeatureValueType,
     pub entities: EntityScope,
     pub required_inputs: Vec<InputRequirement>,
@@ -488,6 +503,7 @@ pub struct FeatureDefinition {
     id: FeatureId,
     version: Version,
     status: FeatureStatus,
+    consumption_role: FeatureConsumptionRole,
     value_type: FeatureValueType,
     entities: EntityScope,
     required_inputs: Vec<InputRequirement>,
@@ -549,6 +565,7 @@ impl FeatureDefinition {
             id: input.id,
             version: input.version,
             status: input.status,
+            consumption_role: input.consumption_role,
             value_type: input.value_type,
             entities: input.entities,
             required_inputs: input.required_inputs,
@@ -575,6 +592,10 @@ impl FeatureDefinition {
 
     pub const fn status(&self) -> FeatureStatus {
         self.status
+    }
+
+    pub const fn consumption_role(&self) -> FeatureConsumptionRole {
+        self.consumption_role
     }
 
     pub const fn value_type(&self) -> FeatureValueType {
