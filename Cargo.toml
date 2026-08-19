@@ -6,6 +6,7 @@ members = [
   "apps/crypto-replay",
   "apps/crypto-evaluate",
   "apps/cryptoriskd",
+  "crates/baselines",
   "crates/capacity",
   "crates/connector-binance",
   "crates/connector-bybit",
@@ -73,6 +74,7 @@ semver = { version = "1", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
+statrs = { version = "=0.18.0", default-features = false }
 subtle = "2"
 tempfile = "3"
 thiserror = "2"

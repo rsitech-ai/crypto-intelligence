@@ -1,5 +1,8 @@
-//! baselines production contract.
+//! Auditable historical, seasonal, regime-conditioned, and rolling event baselines.
+
 pub mod base_rate;
 
-#[derive(Clone,Copy,Debug,Eq,PartialEq)] pub struct ContractMetadata { pub schema_version:u32, pub bounded:bool, pub point_in_time:bool }
-impl Default for ContractMetadata { fn default()->Self{Self{schema_version:1,bounded:true,point_in_time:true}} }
+pub use base_rate::{
+    BaseRateConfig, BaseRateEstimate, BaseRateModel, BaseRateQuery, BaselineError,
+    BetaBinomialEstimate, EstimateKind, Observation, ObservationInput, beta_binomial_estimate,
+};
