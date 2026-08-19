@@ -80,6 +80,23 @@ class SecurityAuditTests(unittest.TestCase):
             {finding["path"] for finding in report["findings"]},
         )
 
+    def test_generated_build_outputs_are_not_repository_evidence(self) -> None:
+        report = self.run_audit(
+            {
+                "target/debug/generated.toml": (
+                    "pass" + 'word = "generated-not-repository-source"\n'
+                ),
+                ".build/generated.swift": (
+                    "let pass" + 'word = "generated-not-repository-source"\n'
+                ),
+            }
+        )
+
+        self.assertFalse(
+            {"target/debug/generated.toml", ".build/generated.swift"}
+            & {finding["path"] for finding in report["findings"]}
+        )
+
     def test_verified_upstream_tls_test_password_is_narrowly_excluded(self) -> None:
         report = self.run_audit(
             {

@@ -9,7 +9,7 @@ use hmac::{Hmac, Mac};
 use sha2::Sha256;
 use thiserror::Error;
 use tonic::{
-    Request,
+    Request, Status,
     metadata::{BinaryMetadataValue, MetadataValue},
 };
 use zeroize::Zeroizing;
@@ -22,6 +22,7 @@ pub const SESSION_DESCRIPTOR_METADATA_KEY: &str = "cmti-session-bin";
 pub const TOKEN_METADATA_KEY: &str = "cmti-token-bin";
 
 const SESSION_SECRET_LENGTH: usize = 32;
+const AUTHENTICATION_FAILED: &str = "authentication failed";
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -130,6 +131,61 @@ impl SessionAuthenticator {
         }
         token_result
     }
+}
+
+/// Shared fail-closed authenticator for every non-public local RPC service.
+///
+/// The same immutable descriptor, secret-backed authenticator, and clock must
+/// be used by all services mounted by one loopback server.
+#[derive(Clone)]
+pub(crate) struct RequestAuthenticator {
+    expected_descriptor: SessionDescriptor,
+    authenticator: Arc<SessionAuthenticator>,
+    clock: Arc<dyn Clock>,
+}
+
+impl RequestAuthenticator {
+    pub(crate) fn new(
+        expected_descriptor: SessionDescriptor,
+        authenticator: Arc<SessionAuthenticator>,
+        clock: Arc<dyn Clock>,
+    ) -> Self {
+        Self {
+            expected_descriptor,
+            authenticator,
+            clock,
+        }
+    }
+
+    pub(crate) fn authenticate<T>(&self, request: &Request<T>) -> Result<(), Status> {
+        let descriptor_metadata = request
+            .metadata()
+            .get_bin(SESSION_DESCRIPTOR_METADATA_KEY)
+            .ok_or_else(authentication_failed)?;
+        let descriptor_bytes = descriptor_metadata
+            .to_bytes()
+            .map_err(|_| authentication_failed())?;
+        let descriptor = SessionDescriptor::from_canonical_bytes(&descriptor_bytes)
+            .map_err(|_| authentication_failed())?;
+        if descriptor != self.expected_descriptor {
+            return Err(authentication_failed());
+        }
+
+        let token_metadata = request
+            .metadata()
+            .get_bin(TOKEN_METADATA_KEY)
+            .ok_or_else(authentication_failed)?;
+        let token = token_metadata
+            .to_bytes()
+            .map_err(|_| authentication_failed())?;
+        self.authenticator
+            .validate_at(&descriptor, &token, self.clock.unix_seconds())
+            .map_err(|_| authentication_failed())
+    }
+}
+
+fn authentication_failed() -> Status {
+    Status::unauthenticated(AUTHENTICATION_FAILED)
 }
 
 /// Adds canonical descriptor and sensitive binary token metadata to a request.

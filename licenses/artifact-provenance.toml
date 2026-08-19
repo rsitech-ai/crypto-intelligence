@@ -26,6 +26,10 @@ path = "fixtures/chains/ethereum/manifest.toml"
 sha256 = "38ea6d05b7e4b161cd065f900717aa1e0c481174a61c76d2e053f5dbbc0fcf1a"
 
 [[category.artifact]]
+path = "fixtures/evaluation/cusp-v1/ablation-input.json"
+sha256 = "3bcc504cb77312356dc2344dd2cfcca5dc03bef324c4c737911af44f57bdf87a"
+
+[[category.artifact]]
 path = "fixtures/exchanges/binance/manifest.toml"
 sha256 = "f7d1906b494dda6c991de0e43285891ec32694ee71c30b8f721beb842f9026a8"
 

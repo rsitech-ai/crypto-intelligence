@@ -65,8 +65,9 @@ meaning. Rust constructors and deserialization re-run those semantic checks.
 - This card defines the control-map boundary. Phase 3 Tasks 7–9 now supply
   bounded offline estimator candidates plus active-set Laplace and fold-bound
   blocked-bootstrap uncertainty and frozen-coefficient online structural
-  inference, but feature/hyperparameter selection evidence still belongs to
-  nested walk-forward evaluation.
+  inference. Task 10 supplies a versioned nested walk-forward ablation gate,
+  but broader feature/hyperparameter selection evidence still belongs to the
+  later ensemble and model-promotion workflow.
 - Fixed-size covariance propagation is in-memory and capped at 64 features.
 - A positive-definite covariance is required; singular estimates must be
   regularized during training with that decision recorded by later fit
@@ -74,6 +75,13 @@ meaning. Rust constructors and deserialization re-run those semantic checks.
 - Online snapshots remain research surfaces: absent feature covariance,
   experimental parameter uncertainty, optional missingness, or degraded source
   quality is explicit and cannot be promoted to research-available status.
-- Phase 3 RPC exposure, ablation validation, calibration, shadow operation, and
-  release gates remain incomplete. Task 9 structural availability does not
-  itself grant production eligibility.
+- The authenticated loopback Cusp RPC and bounded history store are implemented
+  and wire-tested with a published fixture. Retention stores only the validated
+  served projection, not the bounded-but-large posterior draw set, and applies
+  per-asset plus global asset/model/record caps. The production daemon does not
+  yet feed live Cusp snapshots into that store; fixture transport proof is not
+  live-source or production-runtime proof.
+- Task 10 ablation eligibility permits only a later stacker review and never
+  assigns a production weight. Calibration integration, live shadow operation,
+  independent promotion approval, signing/notarization, and release gates
+  remain incomplete.

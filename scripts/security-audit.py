@@ -102,6 +102,7 @@ def main() -> int:
             not path.is_file()
             or ".git" in path.parts
             or ".build" in path.parts
+            or "target" in path.parts
             or "__pycache__" in path.parts
         ):
             continue

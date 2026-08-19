@@ -798,7 +798,9 @@ dependencies = [
  "capacity",
  "clap",
  "config",
+ "cusp",
  "hex",
+ "libc",
  "serde",
  "serde_json",
  "tempfile",
@@ -1591,11 +1593,16 @@ checksum = "32a66949e030da00e8c7d4434b251670a91556f4144941d37452769c25d58a53"
 name = "local-api"
 version = "0.1.0"
 dependencies = [
+ "cusp",
  "domain",
+ "feature-registry",
  "fixed-decimal",
+ "hex",
  "hmac",
  "prost",
  "prost-build",
+ "quality",
+ "semver",
  "serde",
  "sha2",
  "thiserror",

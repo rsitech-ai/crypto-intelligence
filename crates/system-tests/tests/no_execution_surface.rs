@@ -11,6 +11,9 @@ use serde_json::Value;
 #[path = "../../../build-support/generated_binding_policy.rs"]
 mod generated_binding_policy;
 
+// Phase 3 mounts the read-only Cusp observation service in the active local
+// runtime. Its numerical/model dependencies are explicit here; network feature
+// ownership and execution-authority terms remain independently denied below.
 const APPROVED_FOUNDATION_DEPENDENCIES: &[&str] = &[
     "blake3",
     "capacity",
@@ -20,14 +23,18 @@ const APPROVED_FOUNDATION_DEPENDENCIES: &[&str] = &[
     "connector-binance",
     "connector-core",
     "crc32c",
+    "cusp",
     "domain",
     "event-envelope",
+    "feature-registry",
     "fixed-decimal",
     "hex",
     "hmac",
     "instrument-registry",
     "libc",
     "local-api",
+    "nalgebra",
+    "numerics",
     "observability",
     "orderbook",
     "prost",
@@ -37,9 +44,11 @@ const APPROVED_FOUNDATION_DEPENDENCIES: &[&str] = &[
     "raw-wal",
     "rustix",
     "schemars",
+    "semver",
     "serde",
     "serde_json",
     "sha2",
+    "statrs",
     "thiserror",
     "tokio",
     "tokio-stream",
@@ -2306,6 +2315,7 @@ fn active_runtime_exposes_market_observation_but_no_execution_authority() {
             "CatalogService.GetInstrument",
             "CatalogService.ListAssets",
             "CatalogService.ListVenues",
+            "CuspService.GetCuspHistory",
             "CuspService.GetCuspState",
             "DataQualityService.SubscribeQuality",
             "ExportService.CreateExport",

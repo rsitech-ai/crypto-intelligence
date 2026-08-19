@@ -22,6 +22,7 @@ use local_api::{
             SubscribeAssetStateRequest, SubscribeAssetStateResponse, SubscribeVenueStateRequest,
             SubscribeVenueStateResponse,
         },
+        risk_v1::{CuspServiceGetCuspStateRequest, CuspServiceGetCuspStateResponse},
     },
     server::{LoopbackServer, MarketSnapshot, ServerError, ServerLimits},
     session::{SessionDescriptor, TOKEN_LIFETIME_SECONDS},
@@ -81,6 +82,29 @@ impl HealthTestClient {
 
 struct MarketTestClient {
     inner: Grpc<Channel>,
+}
+
+struct CuspTestClient {
+    inner: Grpc<Channel>,
+}
+
+impl CuspTestClient {
+    async fn get_cusp_state(
+        &mut self,
+        request: impl IntoRequest<CuspServiceGetCuspStateRequest>,
+    ) -> Result<Response<CuspServiceGetCuspStateResponse>, Status> {
+        self.inner
+            .ready()
+            .await
+            .map_err(|_| Status::unavailable("loopback transport unavailable"))?;
+        self.inner
+            .unary(
+                request.into_request(),
+                PathAndQuery::from_static("/cmti.risk.v1.CuspService/GetCuspState"),
+                tonic_prost::ProstCodec::default(),
+            )
+            .await
+    }
 }
 
 impl MarketTestClient {
@@ -221,6 +245,12 @@ async fn connect(address: SocketAddr) -> (HealthTestClient, MarketTestClient) {
     )
 }
 
+async fn connect_cusp(address: SocketAddr) -> CuspTestClient {
+    CuspTestClient {
+        inner: Grpc::new(channel(address).await),
+    }
+}
+
 async fn channel(address: SocketAddr) -> Channel {
     Endpoint::from_shared(format!("http://{address}"))
         .expect("loopback endpoint must be valid")
@@ -283,6 +313,50 @@ async fn liveness_is_unauthenticated_and_wire_minimal() {
         .expect_err("snapshot must reject missing metadata");
     assert_eq!(unauthenticated.code(), Code::Unauthenticated);
     assert_eq!(unauthenticated.message(), "authentication failed");
+
+    server
+        .shutdown()
+        .await
+        .expect("server must shut down cleanly");
+}
+
+#[tokio::test]
+async fn cusp_service_is_mounted_and_requires_the_same_session_authentication() {
+    let session = descriptor();
+    let client_authenticator = SessionAuthenticator::new(secret());
+    let token = client_authenticator.token(&session);
+    let server = LoopbackServer::spawn(
+        "127.0.0.1:0".parse().expect("bind address must parse"),
+        secret(),
+        session.clone(),
+        snapshot(),
+    )
+    .await
+    .expect("exact loopback bind must start");
+    let mut cusp = connect_cusp(server.local_addr()).await;
+
+    let unauthenticated = cusp
+        .get_cusp_state(CuspServiceGetCuspStateRequest {
+            asset: Some(requested_asset()),
+        })
+        .await
+        .expect_err("cusp state must reject missing metadata");
+    assert_eq!(unauthenticated.code(), Code::Unauthenticated);
+    assert_eq!(unauthenticated.message(), "authentication failed");
+
+    let request = insert_authentication_metadata(
+        Request::new(CuspServiceGetCuspStateRequest {
+            asset: Some(requested_asset()),
+        }),
+        &session,
+        &token,
+    );
+    let empty = cusp
+        .get_cusp_state(request)
+        .await
+        .expect_err("a mounted empty store must return a typed absence");
+    assert_eq!(empty.code(), Code::NotFound);
+    assert_eq!(empty.message(), "cusp state was not found");
 
     server
         .shutdown()

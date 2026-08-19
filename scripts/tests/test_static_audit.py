@@ -19,6 +19,23 @@ def load_static_audit():
 
 
 class PlaceholderDetectionTests(unittest.TestCase):
+    def test_generated_build_paths_are_ignored(self) -> None:
+        audit = load_static_audit()
+
+        self.assertTrue(
+            audit.ignored_generated_path(
+                pathlib.Path("target/debug/.fingerprint/generated.json")
+            )
+        )
+        self.assertTrue(
+            audit.ignored_generated_path(
+                pathlib.Path(".build/checkouts/generated/Cargo.toml")
+            )
+        )
+        self.assertFalse(
+            audit.ignored_generated_path(pathlib.Path("crates/domain/Cargo.toml"))
+        )
+
     def test_rejects_tautological_planned_contract_test(self) -> None:
         audit = load_static_audit()
 

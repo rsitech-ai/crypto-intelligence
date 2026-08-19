@@ -105,7 +105,7 @@ impl OnlineConfig {
 }
 
 /// Point-in-time quality evidence supplied independently of the cusp model.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 pub struct StructuralQuality {
     score: QualityScore,
     coverage: QualityScore,
@@ -221,27 +221,123 @@ pub struct StructuralSample {
 /// Complete quality-aware structural output for one cadence point.
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct CuspSnapshot {
-    pub schema_version: u32,
-    pub as_of_ns: i64,
-    pub asset: AssetId,
-    pub normalized_state: f64,
-    pub controls: Option<Controls>,
-    pub cusp_region_probability: Option<f64>,
-    pub signed_discriminant: Option<f64>,
-    pub standardized_discriminant: Option<f64>,
-    pub fold_distance: Option<FoldDistance>,
-    pub equilibria: Option<EquilibriumSet>,
-    pub most_likely_branch: Option<BranchId>,
-    pub branch_probabilities: Vec<(BranchId, f64)>,
-    pub minimum_barrier: Option<f64>,
-    pub restoring_force: Option<f64>,
-    pub hysteresis: Option<HysteresisState>,
-    pub sensitivities: Vec<FeatureSensitivity>,
-    pub missing_optional: Vec<MissingControlFeature>,
-    pub posterior_samples: Vec<StructuralSample>,
-    pub uncertainty_quality: UncertaintyQuality,
-    pub availability: SnapshotAvailability,
-    pub evidence_hash: [u8; 32],
+    schema_version: u32,
+    as_of_ns: i64,
+    asset: AssetId,
+    normalized_state: f64,
+    model_evidence_hash: [u8; 32],
+    quality: StructuralQuality,
+    controls: Option<Controls>,
+    cusp_region_probability: Option<f64>,
+    signed_discriminant: Option<f64>,
+    standardized_discriminant: Option<f64>,
+    fold_distance: Option<FoldDistance>,
+    equilibria: Option<EquilibriumSet>,
+    most_likely_branch: Option<BranchId>,
+    branch_probabilities: Vec<(BranchId, f64)>,
+    minimum_barrier: Option<f64>,
+    restoring_force: Option<f64>,
+    hysteresis: Option<HysteresisState>,
+    sensitivities: Vec<FeatureSensitivity>,
+    missing_optional: Vec<MissingControlFeature>,
+    posterior_samples: Vec<StructuralSample>,
+    uncertainty_quality: UncertaintyQuality,
+    availability: SnapshotAvailability,
+    evidence_hash: [u8; 32],
+}
+
+impl CuspSnapshot {
+    pub const fn schema_version(&self) -> u32 {
+        self.schema_version
+    }
+
+    pub const fn as_of_ns(&self) -> i64 {
+        self.as_of_ns
+    }
+
+    pub const fn asset(&self) -> &AssetId {
+        &self.asset
+    }
+
+    pub const fn normalized_state(&self) -> f64 {
+        self.normalized_state
+    }
+
+    pub const fn model_evidence_hash(&self) -> [u8; 32] {
+        self.model_evidence_hash
+    }
+
+    pub const fn quality(&self) -> StructuralQuality {
+        self.quality
+    }
+
+    pub const fn controls(&self) -> Option<Controls> {
+        self.controls
+    }
+
+    pub const fn cusp_region_probability(&self) -> Option<f64> {
+        self.cusp_region_probability
+    }
+
+    pub const fn signed_discriminant(&self) -> Option<f64> {
+        self.signed_discriminant
+    }
+
+    pub const fn standardized_discriminant(&self) -> Option<f64> {
+        self.standardized_discriminant
+    }
+
+    pub const fn fold_distance(&self) -> Option<&FoldDistance> {
+        self.fold_distance.as_ref()
+    }
+
+    pub const fn equilibria(&self) -> Option<&EquilibriumSet> {
+        self.equilibria.as_ref()
+    }
+
+    pub const fn most_likely_branch(&self) -> Option<BranchId> {
+        self.most_likely_branch
+    }
+
+    pub fn branch_probabilities(&self) -> &[(BranchId, f64)] {
+        &self.branch_probabilities
+    }
+
+    pub const fn minimum_barrier(&self) -> Option<f64> {
+        self.minimum_barrier
+    }
+
+    pub const fn restoring_force(&self) -> Option<f64> {
+        self.restoring_force
+    }
+
+    pub const fn hysteresis(&self) -> Option<HysteresisState> {
+        self.hysteresis
+    }
+
+    pub fn sensitivities(&self) -> &[FeatureSensitivity] {
+        &self.sensitivities
+    }
+
+    pub fn missing_optional(&self) -> &[MissingControlFeature] {
+        &self.missing_optional
+    }
+
+    pub fn posterior_samples(&self) -> &[StructuralSample] {
+        &self.posterior_samples
+    }
+
+    pub const fn uncertainty_quality(&self) -> UncertaintyQuality {
+        self.uncertainty_quality
+    }
+
+    pub const fn availability(&self) -> SnapshotAvailability {
+        self.availability
+    }
+
+    pub const fn evidence_hash(&self) -> [u8; 32] {
+        self.evidence_hash
+    }
 }
 
 /// Frozen online engine. No update path owns an optimizer or fit method.
@@ -255,6 +351,7 @@ pub struct CuspEngine {
     config: OnlineConfig,
     branch_tracker: BranchTracker,
     last_as_of_ns: Option<i64>,
+    model_evidence_hash: [u8; 32],
 }
 
 impl CuspEngine {
@@ -294,6 +391,8 @@ impl CuspEngine {
             .map(|parameters| fit.control_map_for_parameters(parameters))
             .collect::<Result<Vec<_>, FitError>>()?;
         let branch_tracker = BranchTracker::try_new(config.branch, initial_branch)?;
+        let model_evidence_hash =
+            frozen_model_evidence(&fit, &parameter_samples, whitening_covariance, &config)?;
         Ok(Self {
             fit,
             parameter_samples,
@@ -303,11 +402,16 @@ impl CuspEngine {
             config,
             branch_tracker,
             last_as_of_ns: None,
+            model_evidence_hash,
         })
     }
 
     pub fn frozen_parameters(&self) -> &[f64] {
         self.fit.parameter_values()
+    }
+
+    pub const fn model_evidence_hash(&self) -> [u8; 32] {
+        self.model_evidence_hash
     }
 
     pub fn update(&mut self, input: StructuralInput) -> Result<CuspSnapshot, OnlineError> {
@@ -402,6 +506,8 @@ impl CuspEngine {
             as_of_ns: input.as_of_ns,
             asset: input.asset.clone(),
             normalized_state: input.normalized_state,
+            model_evidence_hash: self.model_evidence_hash,
+            quality: input.quality,
             controls: Some(central.controls),
             cusp_region_probability: Some(cusp_region_probability),
             signed_discriminant: Some(signed_discriminant),
@@ -456,6 +562,8 @@ impl CuspEngine {
             as_of_ns: input.as_of_ns,
             asset: input.asset.clone(),
             normalized_state: input.normalized_state,
+            model_evidence_hash: self.model_evidence_hash,
+            quality: input.quality,
             controls: None,
             cusp_region_probability: None,
             signed_discriminant: None,
@@ -483,6 +591,28 @@ impl CuspEngine {
         self.last_as_of_ns = Some(input.as_of_ns);
         Ok(snapshot)
     }
+}
+
+fn frozen_model_evidence(
+    fit: &FitResult,
+    parameter_samples: &PosteriorParameterSamples,
+    whitening_covariance: ControlCovariance,
+    config: &OnlineConfig,
+) -> Result<[u8; 32], OnlineError> {
+    let mut evidence = EvidenceBuilder::new(b"cusp-frozen-online-model-v1");
+    hash_config(&mut evidence, config);
+    let control_map =
+        serde_json::to_vec(fit.control_map()).map_err(|_| OnlineError::EvidenceEncoding)?;
+    evidence.bytes(&control_map);
+    evidence.digest(fit.dataset_manifest_hash());
+    evidence.digest(fit.training_fold_hash());
+    evidence.digest(parameter_samples.laplace_evidence_digest());
+    evidence.digest(parameter_samples.digest());
+    evidence.usize(parameter_samples.samples().len());
+    evidence.f64(whitening_covariance.alpha_variance);
+    evidence.f64(whitening_covariance.alpha_beta_covariance);
+    evidence.f64(whitening_covariance.beta_variance);
+    Ok(evidence.finish())
 }
 
 fn sample_correlated_controls(
@@ -707,6 +837,8 @@ fn hash_quality(evidence: &mut EvidenceBuilder, quality: StructuralQuality) {
 
 fn hash_snapshot_outputs(evidence: &mut EvidenceBuilder, snapshot: &CuspSnapshot) {
     evidence.u32(snapshot.schema_version);
+    evidence.digest(snapshot.model_evidence_hash);
+    hash_quality(evidence, snapshot.quality);
     evidence.u8(availability_tag(snapshot.availability));
     hash_optional_controls(evidence, snapshot.controls);
     hash_optional_f64(evidence, snapshot.cusp_region_probability);
@@ -908,6 +1040,8 @@ pub enum OnlineError {
     SampleCapacity,
     #[error("online cusp fit and posterior evidence do not match")]
     EvidenceMismatch,
+    #[error("online cusp frozen-model evidence could not be encoded")]
+    EvidenceEncoding,
     #[error("online cusp posterior contains no stable branch evidence")]
     NoStableBranch,
     #[error("online cusp inference produced a nonfinite value")]

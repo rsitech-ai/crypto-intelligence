@@ -3,9 +3,11 @@ all-features = true
 [advisories]
 version = 2
 yanked = "deny"
-# Apache Parquet 59.1.0 requires paste 1.0.15 for Arrow-reader macros.
+# Apache Parquet 59.1.0 and nalgebra 0.33.2 via simba 0.9.1 require paste
+# 1.0.15 for generated numerical/Arrow macros.
 # RUSTSEC-2024-0436 reports maintenance status only, has no vulnerability or
-# safe upgrade, and is reviewed here while Arrow/Parquet remain spec-pinned.
+# safe compatible upgrade, and is reviewed here while those crates remain
+# spec-pinned.
 ignore = ["RUSTSEC-2024-0436"]
 [licenses]
 version = 2
