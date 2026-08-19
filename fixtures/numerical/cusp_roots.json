@@ -1,6 +1,120 @@
 {
   "schema_version": 1,
   "artifact_id": "fixtures/numerical/cusp_roots.json",
-  "status": "implemented",
-  "local_only": true
+  "oracle": {
+    "method": "exact parameterizations plus independent Decimal Newton iteration",
+    "decimal_precision_digits": 100,
+    "implementation_independent": true
+  },
+  "cases": [
+    {
+      "id": "three_ordinary",
+      "alpha": "0",
+      "beta": "3",
+      "relative_value_tolerance": "5e-13",
+      "maximum_scaled_residual": "1e-13",
+      "roots": [
+        { "value": "-1.7320508075688772935274463415058723669428052538104", "multiplicity": 1 },
+        { "value": "0", "multiplicity": 1 },
+        { "value": "1.7320508075688772935274463415058723669428052538104", "multiplicity": 1 }
+      ]
+    },
+    {
+      "id": "one_ordinary",
+      "alpha": "2",
+      "beta": "0",
+      "relative_value_tolerance": "5e-13",
+      "maximum_scaled_residual": "1e-13",
+      "roots": [
+        { "value": "1.2599210498948731647672106072782283505702514647015", "multiplicity": 1 }
+      ]
+    },
+    {
+      "id": "fold_negative_alpha",
+      "alpha": "-2",
+      "beta": "3",
+      "relative_value_tolerance": "5e-13",
+      "maximum_scaled_residual": "1e-13",
+      "roots": [
+        { "value": "-2", "multiplicity": 1 },
+        { "value": "1", "multiplicity": 2 }
+      ]
+    },
+    {
+      "id": "fold_positive_alpha",
+      "alpha": "2",
+      "beta": "3",
+      "relative_value_tolerance": "5e-13",
+      "maximum_scaled_residual": "1e-13",
+      "roots": [
+        { "value": "-1", "multiplicity": 2 },
+        { "value": "2", "multiplicity": 1 }
+      ]
+    },
+    {
+      "id": "near_fold_inside",
+      "alpha": "-1.9999999999",
+      "beta": "3",
+      "relative_value_tolerance": "5e-10",
+      "maximum_scaled_residual": "1e-13",
+      "roots": [
+        { "value": "-1.9999999999888888888888065843621388507849413029857", "multiplicity": 1 },
+        { "value": "0.99999422649175253482216863597566707044586495406991", "multiplicity": 1 },
+        { "value": "1.0000057734971363540666379483864717803390763489158", "multiplicity": 1 }
+      ]
+    },
+    {
+      "id": "near_fold_outside",
+      "alpha": "-2.0000000001",
+      "beta": "3",
+      "relative_value_tolerance": "5e-12",
+      "maximum_scaled_residual": "1e-13",
+      "roots": [
+        { "value": "-2.0000000000111111111110288065843632068282273874240", "multiplicity": 1 }
+      ]
+    },
+    {
+      "id": "three_large_scale",
+      "alpha": "0",
+      "beta": "3e200",
+      "relative_value_tolerance": "5e-13",
+      "maximum_scaled_residual": "1e-13",
+      "roots": [
+        { "value": "-1.7320508075688772935274463415058723669428052538104e100", "multiplicity": 1 },
+        { "value": "0", "multiplicity": 1 },
+        { "value": "1.7320508075688772935274463415058723669428052538104e100", "multiplicity": 1 }
+      ]
+    },
+    {
+      "id": "fold_small_scale",
+      "alpha": "-2e-300",
+      "beta": "3e-200",
+      "relative_value_tolerance": "5e-13",
+      "maximum_scaled_residual": "1e-13",
+      "roots": [
+        { "value": "-2e-100", "multiplicity": 1 },
+        { "value": "1e-100", "multiplicity": 2 }
+      ]
+    },
+    {
+      "id": "one_large_scale",
+      "alpha": "2e300",
+      "beta": "0",
+      "relative_value_tolerance": "5e-13",
+      "maximum_scaled_residual": "1e-13",
+      "roots": [
+        { "value": "1.2599210498948731647672106072782283505702514647015e100", "multiplicity": 1 }
+      ]
+    },
+    {
+      "id": "one_small_scale",
+      "alpha": "2e-300",
+      "beta": "0",
+      "relative_value_tolerance": "5e-13",
+      "maximum_scaled_residual": "1e-13",
+      "roots": [
+        { "value": "1.2599210498948731647672106072782283505702514647015e-100", "multiplicity": 1 }
+      ]
+    }
+  ]
 }

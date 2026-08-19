@@ -1,9 +1,11 @@
 //! Approved mathematical convention and validated state for the cusp model.
 
 pub mod potential;
+pub mod roots;
 pub mod types;
 
 pub use potential::Potential;
+pub use roots::{EquilibriumRoot, real_equilibria};
 pub use types::{AlternativeControls, Controls, CuspState};
 
 use thiserror::Error;
@@ -34,6 +36,10 @@ pub enum CuspError {
     NonFiniteDerivedValue,
     #[error("serialized cusp state is inconsistent with the approved convention")]
     InconsistentState,
+    #[error("cusp root formula left its mathematically valid domain")]
+    RootDomain,
+    #[error("cusp root calculation produced an invalid value")]
+    RootCalculation,
     #[error("unsupported cusp state schema version {found}")]
     UnsupportedSchema { found: u32 },
 }
