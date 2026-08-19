@@ -8,6 +8,7 @@ members = [
   "apps/cryptoriskd",
   "crates/baselines",
   "crates/capacity",
+  "crates/changepoint",
   "crates/connector-binance",
   "crates/connector-bybit",
   "crates/collector-runtime",
