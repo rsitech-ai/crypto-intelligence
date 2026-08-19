@@ -4,6 +4,7 @@ pub mod barrier;
 pub mod control_schema;
 pub mod controls;
 pub mod equilibria;
+pub mod fit;
 pub mod fold_distance;
 pub mod potential;
 pub mod roots;

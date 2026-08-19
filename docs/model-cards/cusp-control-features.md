@@ -62,11 +62,12 @@ meaning. Rust constructors and deserialization re-run those semantic checks.
 
 ## Known limitations
 
-- This task defines control mapping, not coefficient estimation or feature
-  selection evidence.
+- This card defines the control-map boundary. Phase 3 Task 7 now supplies
+  bounded offline estimator candidates, but feature/hyperparameter selection
+  evidence still belongs to nested walk-forward evaluation.
 - Fixed-size covariance propagation is in-memory and capped at 64 features.
 - A positive-definite covariance is required; singular estimates must be
   regularized during training with that decision recorded by later fit
   diagnostics.
-- Phase 3 fitting, uncertainty validation, online branch inference, calibration,
-  shadow operation, and release gates remain incomplete.
+- Phase 3 Laplace/bootstrap uncertainty validation, online branch inference,
+  calibration, shadow operation, and release gates remain incomplete.
