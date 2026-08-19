@@ -85,6 +85,7 @@ fn active_workspace_contains_only_implemented_packages() {
             "dataset",
             "domain",
             "event-envelope",
+            "fast-state",
             "feature-engine",
             "feature-registry",
             "fixed-decimal",
