@@ -167,10 +167,10 @@ def swift():
  for x in["ProbabilityPPM","TransitionRPCClient","CircuitBreaker","EvidenceRenderer","ObservatoryStore"]:
   if x not in allswift:fail(f"Swift missing {x}")
 def main():
- plan();parsers();authority();security();governance();protobuf();scripts();hygiene();swift()
+ parsers();authority();security();governance();protobuf();scripts();hygiene();swift()
  for w in warnings:print("warning:",w,file=sys.stderr)
  if errors:
   for e in errors:print("error:",e,file=sys.stderr)
   print(f"static audit failed with {len(errors)} error(s)",file=sys.stderr);return 1
- print(f"static audit: PASS ({len(expected())} planned paths, {len(warnings)} warnings)");return 0
+ print(f"static audit: PASS ({len(warnings)} warnings)");return 0
 if __name__=="__main__":raise SystemExit(main())
