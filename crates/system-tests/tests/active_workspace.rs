@@ -81,6 +81,7 @@ fn active_workspace_contains_only_implemented_packages() {
             "crypto-evaluate",
             "crypto-replay",
             "cryptoriskd",
+            "cusp",
             "dataset",
             "domain",
             "event-envelope",
