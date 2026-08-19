@@ -8,13 +8,16 @@ publish.workspace = true
 
 [dependencies]
 blake3.workspace = true
+domain = { path = "../domain" }
+feature-engine = { path = "../feature-engine" }
 feature-registry = { path = "../feature-registry" }
+instrument-registry = { path = "../instrument-registry" }
 quality = { path = "../quality" }
 serde_json.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
-domain = { path = "../domain" }
+fixed-decimal = { path = "../fixed-decimal" }
 semver.workspace = true
 
 [lints]
