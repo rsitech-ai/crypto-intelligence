@@ -3,7 +3,7 @@
 use std::{cmp::Ordering, collections::BTreeMap, fmt};
 
 use domain::{SourceId, UnixNanos};
-use feature_registry::DurationNanos;
+use feature_registry::{DurationNanos, FeatureEntity, SourceCoverage, SourceCoverageEntry};
 use quality::SourceHealthState;
 use serde::{Deserialize, Deserializer, Serialize, de::Visitor};
 use thiserror::Error;
@@ -11,6 +11,7 @@ use thiserror::Error;
 const MAX_PARTITION_ID_LENGTH: usize = 96;
 const MAX_PARTITIONS: usize = 128;
 const POLICY_HASH_DOMAIN: &[u8] = b"crypto-intelligence/watermark-policy/v1";
+const REQUIRED_SOURCE_HASH_DOMAIN: &[u8] = b"crypto-intelligence/watermark-required-sources/v1";
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize)]
 #[serde(transparent)]
@@ -161,12 +162,21 @@ impl PartitionConfig {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct WatermarkUpdate {
     event_time: UnixNanos,
+    as_known_at: UnixNanos,
     health: SourceHealthState,
 }
 
 impl WatermarkUpdate {
-    pub const fn new(event_time: UnixNanos, health: SourceHealthState) -> Self {
-        Self { event_time, health }
+    pub const fn new(
+        event_time: UnixNanos,
+        as_known_at: UnixNanos,
+        health: SourceHealthState,
+    ) -> Self {
+        Self {
+            event_time,
+            as_known_at,
+            health,
+        }
     }
 }
 
@@ -185,6 +195,11 @@ pub enum Finalization {
 pub struct FinalizationDecision {
     window: crate::TimeWindow,
     state: Finalization,
+    watermark: Option<UnixNanos>,
+    as_known_at: UnixNanos,
+    entity_digest: Option<[u8; 32]>,
+    required_source_count: usize,
+    required_source_digest: [u8; 32],
     evaluation_sequence: u64,
     policy_id: WatermarkPolicyId,
 }
@@ -232,8 +247,63 @@ impl FinalizationDecision {
         self.state
     }
 
+    /// Lowest raw watermark among the required partitions at evaluation time.
+    pub const fn watermark(self) -> Option<UnixNanos> {
+        self.watermark
+    }
+
+    /// Earliest point in processing time at which this exact decision existed.
+    pub const fn as_known_at(self) -> UnixNanos {
+        self.as_known_at
+    }
+
     pub const fn evaluation_sequence(self) -> u64 {
         self.evaluation_sequence
+    }
+
+    pub(crate) fn matches_required_sources(self, sources: &[SourceId]) -> bool {
+        self.required_source_count == sources.len()
+            && self.required_source_digest == fingerprint_sources(sources.iter())
+    }
+
+    pub(crate) fn matches_entity(self, entity: &FeatureEntity) -> bool {
+        self.entity_digest == Some(fingerprint_entity(entity))
+    }
+
+    pub(crate) fn evidence_digest(self) -> [u8; 32] {
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(b"crypto-intelligence/finalization-decision/v1");
+        hasher.update(&self.window.start().value().to_be_bytes());
+        hasher.update(&self.window.end().value().to_be_bytes());
+        hasher.update(&[match self.state {
+            Finalization::Provisional => 1,
+            Finalization::Final => 2,
+            Finalization::Invalid => 3,
+        }]);
+        match self.watermark {
+            Some(watermark) => {
+                hasher.update(&[1]);
+                hasher.update(&watermark.value().to_be_bytes());
+            }
+            None => {
+                hasher.update(&[0]);
+            }
+        }
+        hasher.update(&self.as_known_at.value().to_be_bytes());
+        match self.entity_digest {
+            Some(digest) => {
+                hasher.update(&[1]);
+                hasher.update(&digest);
+            }
+            None => {
+                hasher.update(&[0]);
+            }
+        }
+        hasher.update(&(self.required_source_count as u64).to_be_bytes());
+        hasher.update(&self.required_source_digest);
+        hasher.update(&self.evaluation_sequence.to_be_bytes());
+        hasher.update(&self.policy_id.0);
+        *hasher.finalize().as_bytes()
     }
 
     pub(crate) const fn policy_id(self) -> WatermarkPolicyId {
@@ -245,6 +315,7 @@ impl FinalizationDecision {
 struct PartitionState {
     role: PartitionRole,
     watermark: Option<UnixNanos>,
+    as_known_at: Option<UnixNanos>,
     health: Option<SourceHealthState>,
 }
 
@@ -255,6 +326,9 @@ pub struct WatermarkTracker {
     allowed_health: Vec<SourceHealthState>,
     update_sequence: u64,
     policy_id: WatermarkPolicyId,
+    entity_digest: Option<[u8; 32]>,
+    required_source_count: usize,
+    required_source_digest: [u8; 32],
 }
 
 impl WatermarkTracker {
@@ -292,6 +366,7 @@ impl WatermarkTracker {
             let state = PartitionState {
                 role: config.role,
                 watermark: None,
+                as_known_at: None,
                 health: None,
             };
             if partitions.insert(config.key, state).is_some() {
@@ -299,14 +374,39 @@ impl WatermarkTracker {
             }
         }
 
-        let policy_id = fingerprint_policy(&partitions, allowed_lateness, &unique_health);
+        let policy_id = fingerprint_policy(&partitions, allowed_lateness, &unique_health, None);
+        let required_sources = canonical_required_sources(&partitions);
+        let required_source_count = required_sources.len();
+        let required_source_digest = fingerprint_sources(required_sources);
         Ok(Self {
             partitions,
             allowed_lateness,
             allowed_health: unique_health,
             update_sequence: 0,
             policy_id,
+            entity_digest: None,
+            required_source_count,
+            required_source_digest,
         })
+    }
+
+    /// Creates a tracker whose decisions are scoped to one canonical entity.
+    pub fn try_new_for_entity(
+        configs: Vec<PartitionConfig>,
+        allowed_lateness: DurationNanos,
+        allowed_health: Vec<SourceHealthState>,
+        entity: FeatureEntity,
+    ) -> Result<Self, WatermarkError> {
+        let mut tracker = Self::try_new(configs, allowed_lateness, allowed_health)?;
+        let entity_digest = fingerprint_entity(&entity);
+        tracker.entity_digest = Some(entity_digest);
+        tracker.policy_id = fingerprint_policy(
+            &tracker.partitions,
+            tracker.allowed_lateness,
+            &tracker.allowed_health,
+            Some(&entity),
+        );
+        Ok(tracker)
     }
 
     pub fn advance(
@@ -314,7 +414,7 @@ impl WatermarkTracker {
         key: &WatermarkKey,
         update: WatermarkUpdate,
     ) -> Result<(), WatermarkError> {
-        if update.event_time.value() <= 0 {
+        if update.event_time.value() <= 0 || update.as_known_at < update.event_time {
             return Err(WatermarkError::InvalidWatermark);
         }
         let state = self
@@ -329,11 +429,18 @@ impl WatermarkTracker {
                 attempted: update.event_time,
             });
         }
+        if state
+            .as_known_at
+            .is_some_and(|current| update.as_known_at < current)
+        {
+            return Err(WatermarkError::InvalidWatermark);
+        }
         let next_sequence = self
             .update_sequence
             .checked_add(1)
             .ok_or(WatermarkError::ArithmeticOverflow)?;
         state.watermark = Some(update.event_time);
+        state.as_known_at = Some(update.as_known_at);
         state.health = Some(update.health);
         self.update_sequence = next_sequence;
         Ok(())
@@ -343,10 +450,69 @@ impl WatermarkTracker {
         self.partitions.get(key).and_then(|state| state.watermark)
     }
 
+    pub(crate) fn coverage_for_decision(
+        &self,
+        decision: FinalizationDecision,
+    ) -> Option<SourceCoverage> {
+        if decision.policy_id != self.policy_id
+            || decision.evaluation_sequence != self.update_sequence
+        {
+            return None;
+        }
+        let expected = canonical_required_sources(&self.partitions);
+        if !decision.matches_required_sources(
+            &expected
+                .iter()
+                .map(|source| (*source).clone())
+                .collect::<Vec<_>>(),
+        ) {
+            return None;
+        }
+        let mut observed = Vec::with_capacity(expected.len());
+        for source in &expected {
+            let mut health = None;
+            let mut complete = true;
+            for (key, state) in &self.partitions {
+                if state.role != PartitionRole::Required || key.source() != *source {
+                    continue;
+                }
+                let Some(partition_health) = state.health else {
+                    complete = false;
+                    break;
+                };
+                health = Some(health.map_or(partition_health, |current| {
+                    worse_health(current, partition_health)
+                }));
+            }
+            if complete && let Some(health) = health {
+                observed.push(SourceCoverageEntry::new((*source).clone(), health));
+            }
+        }
+        SourceCoverage::try_new_partial(expected.into_iter().cloned().collect(), observed).ok()
+    }
+
+    pub(crate) fn validates_decision(
+        &self,
+        decision: FinalizationDecision,
+        entity: &FeatureEntity,
+    ) -> bool {
+        decision.policy_id == self.policy_id
+            && decision.evaluation_sequence == self.update_sequence
+            && decision.matches_entity(entity)
+    }
+
     pub fn decision(&self, window: crate::TimeWindow) -> FinalizationDecision {
+        let as_known_at = self
+            .latest_as_known_at()
+            .map_or(window.end(), |latest| latest.max(window.end()));
         FinalizationDecision {
             window,
             state: self.evaluate(window),
+            watermark: self.minimum_required_watermark(),
+            as_known_at,
+            entity_digest: self.entity_digest,
+            required_source_count: self.required_source_count,
+            required_source_digest: self.required_source_digest,
             evaluation_sequence: self.update_sequence,
             policy_id: self.policy_id,
         }
@@ -412,6 +578,26 @@ impl WatermarkTracker {
         Some(UnixNanos::new(frontier.max(0)))
     }
 
+    fn minimum_required_watermark(&self) -> Option<UnixNanos> {
+        self.partitions
+            .values()
+            .filter(|state| state.role == PartitionRole::Required)
+            .try_fold(None, |minimum, state| {
+                let watermark = state.watermark?;
+                Some(Some(minimum.map_or(watermark, |current: UnixNanos| {
+                    current.min(watermark)
+                })))
+            })
+            .flatten()
+    }
+
+    fn latest_as_known_at(&self) -> Option<UnixNanos> {
+        self.partitions
+            .values()
+            .filter_map(|state| state.as_known_at)
+            .max()
+    }
+
     fn evaluate(&self, window: crate::TimeWindow) -> Finalization {
         let Ok(lateness) = i64::try_from(self.allowed_lateness.value()) else {
             return Finalization::Invalid;
@@ -446,6 +632,7 @@ fn fingerprint_policy(
     partitions: &BTreeMap<WatermarkKey, PartitionState>,
     allowed_lateness: DurationNanos,
     allowed_health: &[SourceHealthState],
+    entity: Option<&FeatureEntity>,
 ) -> WatermarkPolicyId {
     let mut hasher = blake3::Hasher::new();
     hasher.update(POLICY_HASH_DOMAIN);
@@ -463,7 +650,50 @@ fn fingerprint_policy(
     for health in allowed_health {
         hasher.update(&[health_rank(*health)]);
     }
+    match entity {
+        Some(entity) => {
+            hasher.update(&[1]);
+            hasher.update(&fingerprint_entity(entity));
+        }
+        None => {
+            hasher.update(&[0]);
+        }
+    }
     WatermarkPolicyId(*hasher.finalize().as_bytes())
+}
+
+fn fingerprint_entity(entity: &FeatureEntity) -> [u8; 32] {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(b"crypto-intelligence/watermark-entity/v1");
+    crate::features::hash_entity(&mut hasher, entity);
+    *hasher.finalize().as_bytes()
+}
+
+fn canonical_required_sources(
+    partitions: &BTreeMap<WatermarkKey, PartitionState>,
+) -> Vec<&SourceId> {
+    let mut sources = Vec::new();
+    for (key, state) in partitions {
+        if state.role == PartitionRole::Required
+            && sources
+                .last()
+                .is_none_or(|previous: &&SourceId| *previous != key.source())
+        {
+            sources.push(key.source());
+        }
+    }
+    sources
+}
+
+fn fingerprint_sources<'a>(sources: impl IntoIterator<Item = &'a SourceId>) -> [u8; 32] {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(REQUIRED_SOURCE_HASH_DOMAIN);
+    for source in sources {
+        hasher.update(&[source.kind() as u8]);
+        hash_bounded_bytes(&mut hasher, source.name().as_bytes());
+        hasher.update(&source.generation().to_be_bytes());
+    }
+    *hasher.finalize().as_bytes()
 }
 
 fn hash_bounded_bytes(hasher: &mut blake3::Hasher, bytes: &[u8]) {
@@ -478,6 +708,24 @@ const fn health_rank(state: SourceHealthState) -> u8 {
         SourceHealthState::Unhealthy => 2,
         SourceHealthState::Quarantined => 3,
         SourceHealthState::Recovering => 4,
+    }
+}
+
+const fn worse_health(left: SourceHealthState, right: SourceHealthState) -> SourceHealthState {
+    if health_severity(left) >= health_severity(right) {
+        left
+    } else {
+        right
+    }
+}
+
+const fn health_severity(state: SourceHealthState) -> u8 {
+    match state {
+        SourceHealthState::Healthy => 0,
+        SourceHealthState::Recovering => 1,
+        SourceHealthState::Degraded => 2,
+        SourceHealthState::Unhealthy => 3,
+        SourceHealthState::Quarantined => 4,
     }
 }
 

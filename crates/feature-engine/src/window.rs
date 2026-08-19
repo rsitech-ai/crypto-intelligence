@@ -256,7 +256,7 @@ impl HalfLifeEwmaState {
         let half_life = match (definition.kind(), definition.parameter()) {
             (
                 WindowKind::ExponentiallyWeighted,
-                WindowParameter::ExponentiallyWeighted { half_life },
+                WindowParameter::ExponentiallyWeighted { half_life, .. },
             ) => *half_life,
             _ => return Err(WindowError::DefinitionKindMismatch),
         };

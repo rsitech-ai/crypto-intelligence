@@ -98,6 +98,7 @@ pub enum FeatureValueType {
 pub enum EntityScope {
     Instrument,
     Asset,
+    AssetPair,
     Venue,
     Source,
     Global,
@@ -164,6 +165,7 @@ pub enum WindowParameter {
     },
     ExponentiallyWeighted {
         half_life: DurationNanos,
+        lookback: DurationNanos,
     },
     EventCount {
         events: NonZeroU64,
@@ -239,7 +241,10 @@ impl WindowDefinition {
         Ok(Self {
             id,
             kind: WindowKind::ExponentiallyWeighted,
-            parameter: WindowParameter::ExponentiallyWeighted { half_life },
+            parameter: WindowParameter::ExponentiallyWeighted {
+                half_life,
+                lookback: half_life,
+            },
         })
     }
 

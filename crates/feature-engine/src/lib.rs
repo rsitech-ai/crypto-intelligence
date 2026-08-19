@@ -1,6 +1,7 @@
 //! Deterministic point-in-time watermark, window, and timer primitives.
 
 pub mod clock;
+pub mod features;
 pub mod watermark;
 pub mod window;
 

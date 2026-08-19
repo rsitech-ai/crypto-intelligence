@@ -22,6 +22,7 @@ const MAX_SOURCE_COVERAGE: usize = 64;
 pub enum FeatureEntity {
     Instrument(InstrumentId),
     Asset(AssetId),
+    AssetPair(AssetId, AssetId),
     Venue(VenueId),
     Source(SourceId),
     Global,
@@ -321,7 +322,8 @@ pub struct FeatureObservationInput {
     pub event_time_end: UnixNanos,
     pub as_known_at: UnixNanos,
     pub computed_at: UnixNanos,
-    pub watermark: UnixNanos,
+    pub watermark: Option<UnixNanos>,
+    pub finality_as_known_at: UnixNanos,
     pub finality_state: FinalityState,
     pub revision: ObservationRevision,
     pub source_coverage: SourceCoverage,
@@ -346,7 +348,8 @@ pub struct FeatureObservation {
     event_time_end: UnixNanos,
     as_known_at: UnixNanos,
     computed_at: UnixNanos,
-    watermark: UnixNanos,
+    watermark: Option<UnixNanos>,
+    finality_as_known_at: UnixNanos,
     finality_state: FinalityState,
     revision: ObservationRevision,
     source_coverage: SourceCoverage,
@@ -375,6 +378,17 @@ impl FeatureObservation {
         {
             return Err(RegistryError::InvalidObservationMustBeMissing);
         }
+        if input.watermark.is_none()
+            && (input.finality_state != FinalityState::Invalid
+                || !matches!(input.datum, FeatureDatum::Missing(_)))
+        {
+            return Err(RegistryError::InvalidTimeOrdering);
+        }
+        if let FeatureEntity::AssetPair(left, right) = &input.entity
+            && (left == right || compare_asset(left, right) != Ordering::Less)
+        {
+            return Err(RegistryError::InvalidObservationEntity);
+        }
 
         Ok(Self {
             feature_id: input.feature_id,
@@ -389,6 +403,7 @@ impl FeatureObservation {
             as_known_at: input.as_known_at,
             computed_at: input.computed_at,
             watermark: input.watermark,
+            finality_as_known_at: input.finality_as_known_at,
             finality_state: input.finality_state,
             revision: input.revision,
             source_coverage: input.source_coverage,
@@ -414,6 +429,7 @@ impl FeatureObservation {
             as_known_at: self.as_known_at,
             computed_at: self.computed_at,
             watermark: self.watermark,
+            finality_as_known_at: self.finality_as_known_at,
             finality_state: self.finality_state,
             revision: self.revision,
             source_coverage: self.source_coverage,
@@ -469,8 +485,12 @@ impl FeatureObservation {
         self.computed_at
     }
 
-    pub const fn watermark(&self) -> UnixNanos {
+    pub const fn watermark(&self) -> Option<UnixNanos> {
         self.watermark
+    }
+
+    pub const fn finality_as_known_at(&self) -> UnixNanos {
+        self.finality_as_known_at
     }
 
     pub const fn finality_state(&self) -> FinalityState {
@@ -511,7 +531,7 @@ impl Serialize for FeatureObservation {
     where
         S: Serializer,
     {
-        let mut state = serializer.serialize_struct("FeatureObservation", 21)?;
+        let mut state = serializer.serialize_struct("FeatureObservation", 22)?;
         state.serialize_field("feature_id", &self.feature_id)?;
         state.serialize_field("feature_version", &self.feature_version)?;
         state.serialize_field("entity_id", &self.entity)?;
@@ -524,6 +544,7 @@ impl Serialize for FeatureObservation {
         state.serialize_field("as_known_at", &self.as_known_at)?;
         state.serialize_field("computed_at", &self.computed_at)?;
         state.serialize_field("watermark", &self.watermark)?;
+        state.serialize_field("finality_as_known_at", &self.finality_as_known_at)?;
         state.serialize_field("finality_state", &self.finality_state)?;
         state.serialize_field("revision", &self.revision)?;
         state.serialize_field("source_coverage", &self.source_coverage)?;
@@ -542,13 +563,21 @@ fn validate_times(input: &FeatureObservationInput) -> Result<(), RegistryError> 
     let end = input.event_time_end.value();
     let known = input.as_known_at.value();
     let computed = input.computed_at.value();
-    let watermark = input.watermark.value();
+    let watermark_invalid = input
+        .watermark
+        .is_some_and(|watermark| watermark.value() <= 0 || watermark.value() > computed);
+    let finality_availability_invalid = input.finality_as_known_at.value() <= 0
+        || input.finality_as_known_at > input.as_known_at
+        || input.finality_as_known_at > input.computed_at
+        || input
+            .watermark
+            .is_some_and(|watermark| watermark > input.finality_as_known_at);
     if start <= 0
         || start > end
         || end > known
         || known > computed
-        || watermark <= 0
-        || watermark > computed
+        || watermark_invalid
+        || finality_availability_invalid
         || input.resolution.is_zero()
         || input.resolution.value() > i64::MAX as u64
     {
@@ -566,5 +595,14 @@ fn compare_source(left: &SourceId, right: &SourceId) -> Ordering {
     (left.kind() as u8)
         .cmp(&(right.kind() as u8))
         .then_with(|| left.name().cmp(right.name()))
+        .then_with(|| left.generation().cmp(&right.generation()))
+}
+
+fn compare_asset(left: &AssetId, right: &AssetId) -> Ordering {
+    (left.namespace() as u8)
+        .cmp(&(right.namespace() as u8))
+        .then_with(|| left.chain_id().cmp(right.chain_id()))
+        .then_with(|| left.contract_or_mint().cmp(right.contract_or_mint()))
+        .then_with(|| left.canonical_symbol().cmp(right.canonical_symbol()))
         .then_with(|| left.generation().cmp(&right.generation()))
 }

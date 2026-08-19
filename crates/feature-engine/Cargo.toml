@@ -9,12 +9,16 @@ autotests = false
 
 [dependencies]
 blake3.workspace = true
+consolidated-market = { path = "../consolidated-market" }
 domain = { path = "../domain" }
+event-envelope = { path = "../event-envelope" }
 feature-registry = { path = "../feature-registry" }
 fixed-decimal = { path = "../fixed-decimal" }
 quality = { path = "../quality" }
+semver.workspace = true
 serde.workspace = true
 thiserror.workspace = true
+volatility = { path = "../volatility" }
 
 [dev-dependencies]
 serde_json.workspace = true
@@ -26,6 +30,10 @@ path = "tests/watermarks.rs"
 [[test]]
 name = "stream_batch_parity"
 path = "tests/stream_batch_parity.rs"
+
+[[test]]
+name = "price_volatility_features"
+path = "tests/price_volatility_features.rs"
 
 [lints]
 workspace = true
