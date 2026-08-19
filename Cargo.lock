@@ -751,9 +751,12 @@ name = "crypto-replay"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "feature-engine",
+ "hex",
  "replay-engine",
  "serde",
  "serde_json",
+ "tempfile",
 ]
 
 [[package]]
@@ -877,6 +880,7 @@ checksum = "da7c62ceae207dd37ea5b845da6a0696c799f85e97da1ab5b7910be3c1c80223"
 name = "feature-engine"
 version = "0.1.0"
 dependencies = [
+ "arrow",
  "blake3",
  "collector-runtime",
  "connector-binance",
@@ -886,16 +890,21 @@ dependencies = [
  "event-envelope",
  "feature-registry",
  "fixed-decimal",
+ "hex",
  "instrument-registry",
  "orderbook",
+ "parquet-store",
  "quality",
  "raw-wal",
+ "rustix",
  "semver",
  "serde",
  "serde_json",
  "tempfile",
  "thiserror",
+ "time",
  "tokio",
+ "toml",
  "volatility",
 ]
 

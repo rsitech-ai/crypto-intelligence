@@ -1,10 +1,10 @@
 schema_version = 1
-artifact_id = "fixtures/golden-replays/features-v1/manifest.toml"
+artifact_id = "fixtures/golden-replays/features-v1/correction-v2.toml"
 status = "implemented"
 local_only = true
 maximum_observations = 3
 
-dataset_version = 1
+dataset_version = 2
 partition_schema_version = 1
 feature_set_version = "features-v1"
 parser_version = "feature-fixture-v1"
@@ -25,11 +25,17 @@ stream_name = "finalized-features"
 stream_id = 41
 connection_epoch = 1
 subscription_epoch = 1
-wal_segment_id_hex = "46454154555245535631000000000001"
-input_wal_segment_blake3 = "4444444444444444444444444444444444444444444444444444444444444444"
-wal_start_offset = 128
-wal_end_offset = 4096
-created_wall_time_ns = 1672515900000000000
+wal_segment_id_hex = "46454154555245535632000000000001"
+input_wal_segment_blake3 = "5555555555555555555555555555555555555555555555555555555555555555"
+wal_start_offset = 4096
+wal_end_offset = 8192
+created_wall_time_ns = 1672515900003000000
+
+[correction]
+base_dataset_version = 1
+known_at_ns = 1672515900002000000
+reason = "replace a source-normalization error"
+provenance = "verified source replay"
 
 [[source]]
 kind = "exchange"
@@ -49,19 +55,19 @@ feature_version = "2.0.0"
 window_id = "one_minute"
 resolution_ns = 60000000000
 value_type = "fixed_decimal"
-value = "101.25"
+value = "101.5"
 event_time_start_ns = 1672515720000000000
 event_time_end_ns = 1672515780000000000
-as_known_at_ns = 1672515780002000000
-computed_at_ns = 1672515780003000000
+as_known_at_ns = 1672515900002000000
+computed_at_ns = 1672515900003000000
 watermark_ns = 1672515780000000000
-finality_as_known_at_ns = 1672515780001000000
-finality_state = "final"
-revision = 1
+finality_as_known_at_ns = 1672515900001000000
+finality_state = "corrected"
+revision = 2
 quality_millionths = 1000000
 formula_hash = "1111111111111111111111111111111111111111111111111111111111111111"
 input_event_hashes = [
-  "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
 ]
 wal_record_sequence = 1
 

@@ -531,6 +531,77 @@ impl DatasetReader {
         validate_metadata_for_partition(&self.root, key, manifest.metadata(), &self.policy)?;
         Ok(VerifiedPartition::from_manifest(&manifest))
     }
+
+    /// Reads batches only after verifying the installed manifest, complete
+    /// file inventory, file hashes, Parquet footers, and correction lineage.
+    ///
+    /// Every returned batch is decoded from the same descriptor that was
+    /// revalidated immediately before reading, so a path replacement cannot
+    /// substitute bytes between verification and decoding.
+    pub fn read_partition(
+        &self,
+        key: &PartitionKey,
+    ) -> Result<(VerifiedPartition, Vec<RecordBatch>), StoreError> {
+        let mut partition = self.root.try_clone()?;
+        for component in key.components() {
+            partition = partition.open_existing_child(&component)?;
+        }
+        let manifest = load_manifest_at(&partition, key)?;
+        verify_manifest_at(&partition, &manifest, &self.policy)?;
+        validate_metadata_for_partition(&self.root, key, manifest.metadata(), &self.policy)?;
+
+        let sealed = partition.open_existing_child(SEALED_DIRECTORY)?;
+        let mut batches = Vec::new();
+        let mut row_count = 0_u64;
+        for entry in manifest.files() {
+            let name = entry
+                .relative_path()
+                .file_name()
+                .ok_or(StoreError::Integrity)?;
+            let file = sealed.open_file(name, OFlags::RDONLY)?;
+            let (size_bytes, blake3) = hash_validated_file(&file, self.policy.maximum_file_bytes)?;
+            if size_bytes != entry.size_bytes() || &blake3 != entry.blake3() {
+                return Err(StoreError::Integrity);
+            }
+            let file_metadata = manifest
+                .metadata()
+                .with_source_coverage(entry.source_coverage().to_vec())
+                .map_err(|_| StoreError::Integrity)?;
+            verify_parquet_file(
+                &file,
+                ParquetExpectation {
+                    key: manifest.partition(),
+                    metadata: &file_metadata,
+                    schema_digest: *manifest.schema_digest(),
+                    minimum_event_time_ns: entry.minimum_event_time_ns(),
+                    maximum_event_time_ns: entry.maximum_event_time_ns(),
+                    row_count: entry.row_count(),
+                },
+                &self.policy,
+            )?;
+            let builder = ParquetRecordBatchReaderBuilder::try_new(file)?
+                .with_batch_size(self.policy.reader_batch_rows);
+            if builder.metadata().memory_size() > self.policy.maximum_schema_bytes {
+                return Err(StoreError::CapacityExceeded);
+            }
+            for batch in builder.build()? {
+                let batch = batch?;
+                row_count = row_count
+                    .checked_add(
+                        u64::try_from(batch.num_rows()).map_err(|_| StoreError::IntegerRange)?,
+                    )
+                    .ok_or(StoreError::IntegerRange)?;
+                if row_count > self.policy.maximum_partition_rows {
+                    return Err(StoreError::CapacityExceeded);
+                }
+                batches.push(batch);
+            }
+        }
+        if row_count != manifest.row_count() {
+            return Err(StoreError::Integrity);
+        }
+        Ok((VerifiedPartition::from_manifest(&manifest), batches))
+    }
 }
 
 #[derive(Debug)]
