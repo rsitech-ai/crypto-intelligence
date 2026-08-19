@@ -30,6 +30,7 @@ members = [
   "crates/local-api",
   "crates/metadata-store",
   "crates/model-registry",
+  "crates/numerics",
   "crates/observability",
   "crates/orderbook",
   "crates/parquet-store",
