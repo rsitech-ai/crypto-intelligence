@@ -509,6 +509,18 @@ fn existing_wal_and_log_reject_hardlinks_and_special_files() {
         open_wal_directory(&effective.paths.data_root).is_err(),
         "special WAL file must fail closed"
     );
+
+    let special_log_root = runtime_root();
+    let effective = effective_config(special_log_root.path());
+    let fifo_status = std::process::Command::new("mkfifo")
+        .arg(special_log_root.path().join("logs/cmti.jsonl"))
+        .status()
+        .expect("mkfifo test helper must run");
+    assert!(fifo_status.success(), "test log FIFO must create");
+    assert!(
+        open_rotating_log(&effective.paths.log_root).is_err(),
+        "special log file must fail closed without blocking"
+    );
 }
 
 #[test]
