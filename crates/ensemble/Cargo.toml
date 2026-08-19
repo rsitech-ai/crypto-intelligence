@@ -12,12 +12,15 @@ cusp = { path = "../cusp" }
 dataset = { path = "../dataset" }
 domain = { path = "../domain" }
 feature-registry = { path = "../feature-registry" }
+labels = { path = "../labels" }
 model-registry = { path = "../model-registry" }
+nalgebra.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
 ed25519-dalek.workspace = true
+numerics = { path = "../numerics" }
 semver.workspace = true
 
 [lints]
