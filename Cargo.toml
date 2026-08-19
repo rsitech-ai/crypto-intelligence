@@ -21,6 +21,7 @@ members = [
   "crates/feature-registry",
   "crates/fixed-decimal",
   "crates/instrument-registry",
+  "crates/labels",
   "crates/local-api",
   "crates/metadata-store",
   "crates/observability",
