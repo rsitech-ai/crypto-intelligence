@@ -90,6 +90,10 @@ impl OrderBookEngine {
         self.state
     }
 
+    pub fn instrument(&self) -> &domain::InstrumentId {
+        self.config.instrument()
+    }
+
     pub const fn current_session(&self) -> Option<BookSession> {
         self.session
     }
@@ -310,6 +314,7 @@ impl OrderBookEngine {
             book.levels(),
         );
         Ok(BookSnapshotView::new(
+            self.config.instrument.clone(),
             book,
             session,
             self.updated_monotonic_ns,

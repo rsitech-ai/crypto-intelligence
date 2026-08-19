@@ -1,4 +1,5 @@
 use crate::{BookClassification, BookConfig, BookError, BookQuality, BookSession};
+use domain::InstrumentId;
 use event_envelope::{BookDelta, BookLevel, BookSnapshot};
 use fixed_decimal::{FixedDecimal, Price, Quantity};
 use std::collections::{BTreeMap, BTreeSet};
@@ -148,6 +149,7 @@ impl L2Book {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BookSnapshotView {
+    instrument: InstrumentId,
     bids: Vec<BookLevel>,
     asks: Vec<BookLevel>,
     last_source_sequence: u64,
@@ -160,6 +162,7 @@ pub struct BookSnapshotView {
 
 impl BookSnapshotView {
     pub(crate) fn new(
+        instrument: InstrumentId,
         book: &L2Book,
         session: BookSession,
         updated_monotonic_ns: u64,
@@ -167,6 +170,7 @@ impl BookSnapshotView {
         l3_orders: Vec<L3Order>,
     ) -> Self {
         Self {
+            instrument,
             bids: book.bids_descending(),
             asks: book.asks_ascending(),
             last_source_sequence: book.sequence(),
@@ -176,6 +180,10 @@ impl BookSnapshotView {
             quality,
             l3_orders,
         }
+    }
+
+    pub const fn instrument(&self) -> &InstrumentId {
+        &self.instrument
     }
 
     pub fn bids(&self) -> &[BookLevel] {

@@ -14,6 +14,7 @@ members = [
   "crates/connector-deribit",
   "crates/connector-kraken",
   "crates/config",
+  "crates/consolidated-market",
   "crates/domain",
   "crates/event-envelope",
   "crates/feature-engine",
@@ -54,6 +55,7 @@ hex = "0.4"
 hmac = "0.12"
 indexmap = { version = "2", features = ["serde"] }
 libc = "0.2"
+num-bigint = "0.4"
 prost = "0.14"
 prost-build = "0.14"
 prost-types = "0.14"

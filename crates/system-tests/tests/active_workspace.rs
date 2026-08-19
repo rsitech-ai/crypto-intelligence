@@ -67,6 +67,7 @@ fn active_workspace_contains_only_implemented_packages() {
         BTreeSet::from([
             "capacity",
             "config",
+            "consolidated-market",
             "connector-binance",
             "connector-bybit",
             "connector-certify",
