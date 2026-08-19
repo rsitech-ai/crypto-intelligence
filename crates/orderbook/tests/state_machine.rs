@@ -4,8 +4,8 @@ use event_envelope::{
 };
 use fixed_decimal::{FixedDecimal, Price, Quantity};
 use orderbook::{
-    ApplyResult, BookClassification, BookConfig, BookError, BookSession, BookState, ChecksumPolicy,
-    OrderBookEngine, SequencePolicy, SnapshotStrategy,
+    ApplyResult, BookClassification, BookConfig, BookError, BookEventApplyOutcome, BookSession,
+    BookState, ChecksumPolicy, OrderBookEngine, SequencePolicy, SnapshotStrategy,
 };
 
 #[test]
@@ -36,6 +36,97 @@ fn buffered_range_replay_aligns_snapshot_and_publishes_once_trusted() {
     assert_eq!(view.last_source_sequence(), 102);
     assert_eq!(view.best_bid().expect("best bid").quantity.to_string(), "3");
     assert_eq!(view.classification(), BookClassification::Normal);
+}
+
+#[test]
+fn applied_event_receipt_binds_the_event_to_exact_post_apply_state() {
+    let mut engine = engine();
+    engine
+        .start_session(session(1, 1, 1), SnapshotStrategy::StreamSnapshot)
+        .unwrap();
+    let snapshot = book_event(
+        UncheckedEventPayload::BookSnapshot(snapshot(10, &[("100", "2")], &[("101", "4")])),
+        10,
+        None,
+        SnapshotKind::Snapshot,
+        10,
+        1,
+    );
+    let snapshot_receipt = match engine.apply_event_with_receipt(&snapshot).unwrap() {
+        BookEventApplyOutcome::Applied(receipt) => receipt,
+        other => panic!("snapshot must produce an applied receipt, got {other:?}"),
+    };
+    assert_eq!(snapshot_receipt.event_id(), snapshot.id());
+    assert_eq!(snapshot_receipt.snapshot().last_source_sequence(), 10);
+    assert_eq!(snapshot_receipt.snapshot().price_tick(), price("0.1"));
+    assert_eq!(snapshot_receipt.snapshot().quantity_step(), quantity("0.1"));
+
+    let delta = book_event(
+        UncheckedEventPayload::BookDelta(delta(11, 11, &[("100", "9")], &[])),
+        11,
+        Some(10),
+        SnapshotKind::Delta,
+        20,
+        2,
+    );
+    let delta_receipt = match engine.apply_event_with_receipt(&delta).unwrap() {
+        BookEventApplyOutcome::Applied(receipt) => receipt,
+        other => panic!("delta must produce an applied receipt, got {other:?}"),
+    };
+    assert_eq!(delta_receipt.event_id(), delta.id());
+    assert_eq!(delta_receipt.snapshot().last_source_sequence(), 11);
+    assert_eq!(
+        delta_receipt
+            .snapshot()
+            .best_bid()
+            .expect("post-apply bid")
+            .quantity
+            .to_string(),
+        "9"
+    );
+
+    assert_eq!(
+        engine.apply_event_with_receipt(&delta).unwrap(),
+        BookEventApplyOutcome::NotApplied(ApplyResult::Duplicate)
+    );
+}
+
+#[test]
+fn buffered_replay_applies_without_forging_a_single_event_receipt() {
+    let mut engine = engine();
+    engine
+        .start_session(session(1, 1, 1), SnapshotStrategy::ExternalBuffered)
+        .unwrap();
+    let delta = book_event(
+        UncheckedEventPayload::BookDelta(delta(11, 11, &[("100", "9")], &[])),
+        11,
+        Some(10),
+        SnapshotKind::Delta,
+        10,
+        1,
+    );
+    assert_eq!(
+        engine.apply_event_with_receipt(&delta).unwrap(),
+        BookEventApplyOutcome::NotApplied(ApplyResult::SnapshotRequired)
+    );
+
+    let snapshot = book_event(
+        UncheckedEventPayload::BookSnapshot(snapshot(10, &[("100", "2")], &[("101", "4")])),
+        10,
+        None,
+        SnapshotKind::Snapshot,
+        20,
+        2,
+    );
+    assert_eq!(
+        engine.apply_event_with_receipt(&snapshot).unwrap(),
+        BookEventApplyOutcome::AppliedWithoutReceipt
+    );
+    assert_eq!(
+        engine.snapshot().unwrap().last_source_sequence(),
+        11,
+        "post-state includes the buffered delta and cannot use snapshot-only lineage"
+    );
 }
 
 #[test]
@@ -459,6 +550,49 @@ fn product_snapshot_event(product_type: ProductType) -> EventEnvelope {
         }),
     )
     .expect("product snapshot event")
+}
+
+fn book_event(
+    payload: UncheckedEventPayload,
+    sequence_number: u64,
+    previous_sequence_number: Option<u64>,
+    snapshot_kind: SnapshotKind,
+    receive_monotonic_ns: u64,
+    ordinal: u8,
+) -> EventEnvelope {
+    let venue = VenueId::new("test").expect("venue");
+    let event_time = i64::try_from(sequence_number).expect("test sequence fits event time");
+    EventEnvelope::new(
+        UncheckedEventMetadata {
+            schema_version: 3,
+            source: SourceId::new(SourceKind::Exchange, "test", 1).expect("source"),
+            venue: Some(venue.clone()),
+            instrument_id: Some(
+                InstrumentId::new_for_product(venue, "BTCUSDT", ProductType::Spot, 1)
+                    .expect("instrument"),
+            ),
+            exchange_timestamp: Some(UnixNanos::new(event_time)),
+            exchange_transaction_timestamp: None,
+            receive_wall_timestamp: UnixNanos::new(event_time + 1),
+            receive_monotonic_ns,
+            normalization_timestamp: UnixNanos::new(event_time + 2),
+            connection_started_at: UnixNanos::new(1),
+            sequence_number: Some(sequence_number),
+            previous_sequence_number,
+            connection_epoch: 1,
+            subscription_epoch: 1,
+            snapshot_kind,
+            source_checksum: None,
+            raw_payload_hash: [ordinal; 32],
+            parser_version: "test-parser".to_owned(),
+            normalizer_version: "test-normalizer".to_owned(),
+            ingestion_instance: "test".to_owned(),
+            quality_score_ppm: 1_000_000,
+            quality_flags: QualityFlags::NONE,
+        },
+        payload,
+    )
+    .expect("book event")
 }
 
 fn session(

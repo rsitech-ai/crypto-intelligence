@@ -2,8 +2,8 @@ use std::num::{NonZeroU32, NonZeroU64};
 
 use connector_binance::{
     BinanceInput, BinanceMarket, NormalizationContext, NormalizationError,
-    normalize_depth_snapshot, normalize_native_message, parse_durable_depth_snapshot,
-    parse_durable_native_message,
+    normalize_depth_snapshot, normalize_native_message, normalize_trade_with_receipt,
+    parse_durable_depth_snapshot, parse_durable_native_message,
 };
 use connector_core::{
     DurableRawCaptureChannel, DurableRawReference, RawCapture, wal_stream_source_identity,
@@ -239,6 +239,32 @@ async fn spot_and_perpetual_same_symbol_bind_to_distinct_product_identities() {
     assert_eq!(metadata.receive_wall_timestamp, RECEIVE_TIME);
     assert_eq!(metadata.receive_monotonic_ns, 9);
     futures_events[0].verify().expect("event identity");
+}
+
+#[tokio::test]
+async fn authoritative_trade_receipt_is_minted_from_the_sealed_durable_parser_output() {
+    let catalog = catalog();
+    let raw = durable_reference(SPOT_TRADE).await;
+    let parsed = parse_durable_native_message(BinanceInput::SpotWebSocket, SPOT_TRADE, &raw)
+        .expect("durable trade parse");
+    let receipt = normalize_trade_with_receipt(parsed, &context(&catalog, &raw))
+        .expect("authoritative trade receipt");
+    assert_eq!(receipt.first_trade_id(), 100);
+    assert_eq!(receipt.last_trade_id(), 105);
+    assert_eq!(receipt.event().event_type(), EventType::Trade);
+    let UncheckedEventPayload::Trade(trade) = receipt.event().payload().as_unchecked() else {
+        panic!("trade payload");
+    };
+    assert_eq!(trade.side, Side::Sell);
+
+    let depth_raw = durable_reference(USDM_DEPTH).await;
+    let depth =
+        parse_durable_native_message(BinanceInput::UsdMPublicWebSocket, USDM_DEPTH, &depth_raw)
+            .expect("durable depth parse");
+    assert_eq!(
+        normalize_trade_with_receipt(depth, &context(&catalog, &depth_raw)),
+        Err(NormalizationError::ExpectedAggregateTrade)
+    );
 }
 
 #[tokio::test]

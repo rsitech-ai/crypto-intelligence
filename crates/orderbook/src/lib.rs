@@ -14,7 +14,7 @@ pub use state::{
 };
 
 use book::{L2Book, L3Book};
-use event_envelope::{BookDelta, BookSnapshot, EventEnvelope, UncheckedEventPayload};
+use event_envelope::{BookDelta, BookSnapshot, EventEnvelope, EventId, UncheckedEventPayload};
 use state::{HourlyCounter, LatencyWindow};
 use std::collections::VecDeque;
 use thiserror::Error;
@@ -26,6 +26,43 @@ struct BufferedDelta {
     now_monotonic_ns: u64,
     checksum: Option<KrakenV2Checksum>,
     previous_final_sequence: Option<u64>,
+}
+
+/// Opaque proof that one validated normalized book event produced this exact
+/// trusted post-apply snapshot.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BookEventApplyReceipt {
+    event_id: EventId,
+    snapshot: BookSnapshotView,
+}
+
+impl BookEventApplyReceipt {
+    pub const fn event_id(&self) -> EventId {
+        self.event_id
+    }
+
+    pub const fn snapshot(&self) -> &BookSnapshotView {
+        &self.snapshot
+    }
+}
+
+/// Application outcome that exposes post-state evidence only for an event
+/// that was actually applied.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum BookEventApplyOutcome {
+    Applied(Box<BookEventApplyReceipt>),
+    AppliedWithoutReceipt,
+    NotApplied(ApplyResult),
+}
+
+impl BookEventApplyOutcome {
+    pub const fn result(&self) -> ApplyResult {
+        match self {
+            Self::Applied(_) => ApplyResult::Applied,
+            Self::AppliedWithoutReceipt => ApplyResult::Applied,
+            Self::NotApplied(result) => *result,
+        }
+    }
 }
 
 /// Mutable state owned by exactly one instrument shard writer.
@@ -288,6 +325,31 @@ impl OrderBookEngine {
         }
     }
 
+    /// Applies a validated normalized event and, only on `Applied`, returns an
+    /// opaque receipt binding that event ID to the exact trusted post-state.
+    pub fn apply_event_with_receipt(
+        &mut self,
+        event: &EventEnvelope,
+    ) -> Result<BookEventApplyOutcome, BookError> {
+        let result = self.apply_event(event)?;
+        if result != ApplyResult::Applied {
+            return Ok(BookEventApplyOutcome::NotApplied(result));
+        }
+        let metadata = event.metadata().as_unchecked();
+        let snapshot = self.snapshot()?;
+        if metadata.sequence_number != Some(snapshot.last_source_sequence())
+            || metadata.receive_monotonic_ns != snapshot.updated_monotonic_ns()
+        {
+            return Ok(BookEventApplyOutcome::AppliedWithoutReceipt);
+        }
+        Ok(BookEventApplyOutcome::Applied(Box::new(
+            BookEventApplyReceipt {
+                event_id: event.id(),
+                snapshot,
+            },
+        )))
+    }
+
     pub fn snapshot(&self) -> Result<BookSnapshotView, BookError> {
         self.snapshot_at(self.updated_monotonic_ns)
     }
@@ -314,7 +376,7 @@ impl OrderBookEngine {
             book.levels(),
         );
         Ok(BookSnapshotView::new(
-            self.config.instrument.clone(),
+            &self.config,
             book,
             session,
             self.updated_monotonic_ns,

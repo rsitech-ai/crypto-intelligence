@@ -10,10 +10,12 @@ autotests = false
 [dependencies]
 blake3.workspace = true
 consolidated-market = { path = "../consolidated-market" }
+connector-binance = { path = "../connector-binance" }
 domain = { path = "../domain" }
 event-envelope = { path = "../event-envelope" }
 feature-registry = { path = "../feature-registry" }
 fixed-decimal = { path = "../fixed-decimal" }
+orderbook = { path = "../orderbook" }
 quality = { path = "../quality" }
 semver.workspace = true
 serde.workspace = true
@@ -21,7 +23,12 @@ thiserror.workspace = true
 volatility = { path = "../volatility" }
 
 [dev-dependencies]
+connector-core = { path = "../connector-core" }
+instrument-registry = { path = "../instrument-registry" }
+raw-wal = { path = "../raw-wal" }
 serde_json.workspace = true
+tempfile.workspace = true
+tokio.workspace = true
 
 [[test]]
 name = "watermarks"
@@ -34,6 +41,10 @@ path = "tests/stream_batch_parity.rs"
 [[test]]
 name = "price_volatility_features"
 path = "tests/price_volatility_features.rs"
+
+[[test]]
+name = "microstructure_features"
+path = "tests/microstructure_features.rs"
 
 [lints]
 workspace = true

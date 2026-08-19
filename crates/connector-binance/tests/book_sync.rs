@@ -16,7 +16,8 @@ use domain::{
 use fixed_decimal::{FixedDecimal, Price, Quantity};
 use instrument_registry::{CatalogSnapshot, InstrumentRegistry, RevisionMetadata};
 use orderbook::{
-    ApplyResult, BookConfig, BookError, BookSession, BookState, ChecksumPolicy, SequencePolicy,
+    ApplyResult, BookConfig, BookError, BookEventApplyOutcome, BookSession, BookState,
+    ChecksumPolicy, SequencePolicy,
 };
 use raw_wal::{
     frame::RecordMetadata,
@@ -371,6 +372,43 @@ async fn spot_snapshot_buffer_gap_recovery_and_renewal_use_only_normalized_outpu
         .expect("planned subscription renewal");
     assert_eq!(sync.state(), BookState::Buffering);
     assert_eq!(sync.resnapshot_count(), 3);
+}
+
+#[tokio::test]
+async fn spot_normalized_outputs_surface_exact_post_apply_receipts() {
+    let catalog = catalog();
+    let mut sync = BinanceBookSynchronizer::try_new(
+        BinanceMarket::Spot,
+        config(ProductType::Spot, SequencePolicy::RangeContainsNext),
+    )
+    .unwrap();
+    sync.start_session(session(1, 1)).unwrap();
+
+    let snapshot = snapshot_output(&catalog, BinanceMarket::Spot, SPOT_SNAPSHOT, 1, 1, 1, 20).await;
+    let snapshot_receipt = match sync.apply_output_with_receipt(&snapshot).unwrap() {
+        BookEventApplyOutcome::Applied(receipt) => receipt,
+        other => panic!("unbuffered snapshot must produce a receipt, got {other:?}"),
+    };
+    assert_eq!(snapshot_receipt.event_id(), snapshot.event().id());
+    assert_eq!(snapshot_receipt.snapshot().last_source_sequence(), 156);
+
+    let delta = depth_output(
+        &catalog,
+        BinanceInput::SpotWebSocket,
+        SPOT_DEPTH,
+        1,
+        1,
+        2,
+        21,
+    )
+    .await;
+    let delta_receipt = match sync.apply_output_with_receipt(&delta).unwrap() {
+        BookEventApplyOutcome::Applied(receipt) => receipt,
+        other => panic!("aligned delta must produce a receipt, got {other:?}"),
+    };
+    assert_eq!(delta_receipt.event_id(), delta.event().id());
+    assert_eq!(delta_receipt.snapshot().last_source_sequence(), 160);
+    assert_eq!(sync.snapshot().unwrap(), *delta_receipt.snapshot());
 }
 
 #[tokio::test]

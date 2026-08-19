@@ -102,16 +102,47 @@ pub enum NormalizationError {
     Event(#[from] EventError),
     #[error("parsed message does not match the normalization raw reference")]
     RawPayloadMismatch,
+    #[error("durable Binance message is not an aggregate trade")]
+    ExpectedAggregateTrade,
+}
+
+/// Opaque evidence minted only after a durable raw Binance aggregate-trade
+/// payload passes the sealed native parser and venue-specific normalizer.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BinanceTradeNormalizationReceipt {
+    event: EventEnvelope,
+    aggregate_trade_id: u64,
+    first_trade_id: u64,
+    last_trade_id: u64,
+}
+
+impl BinanceTradeNormalizationReceipt {
+    pub const fn event(&self) -> &EventEnvelope {
+        &self.event
+    }
+
+    pub const fn aggregate_trade_id(&self) -> u64 {
+        self.aggregate_trade_id
+    }
+
+    pub const fn first_trade_id(&self) -> u64 {
+        self.first_trade_id
+    }
+
+    pub const fn last_trade_id(&self) -> u64 {
+        self.last_trade_id
+    }
+
+    pub fn into_event(self) -> EventEnvelope {
+        self.event
+    }
 }
 
 pub fn normalize_native_message(
     message: DurableBinanceMessage,
     context: &NormalizationContext<'_>,
 ) -> Result<Vec<EventEnvelope>, NormalizationError> {
-    let (message, raw_payload_hash) = message.into_parts();
-    if &raw_payload_hash != context.raw.payload_hash() {
-        return Err(NormalizationError::RawPayloadMismatch);
-    }
+    let message = validated_native_message(message, context)?;
     match message {
         BinanceMessage::AggregateTrade(value) => normalize_trade(value, context),
         BinanceMessage::BookTicker(value) => normalize_book_ticker(value, context),
@@ -123,6 +154,42 @@ pub fn normalize_native_message(
             normalize_venue_status(state, message, context)
         }
     }
+}
+
+pub fn normalize_trade_with_receipt(
+    message: DurableBinanceMessage,
+    context: &NormalizationContext<'_>,
+) -> Result<BinanceTradeNormalizationReceipt, NormalizationError> {
+    let BinanceMessage::AggregateTrade(trade) = validated_native_message(message, context)? else {
+        return Err(NormalizationError::ExpectedAggregateTrade);
+    };
+    let aggregate_trade_id = trade.aggregate_trade_id;
+    let first_trade_id = trade.first_trade_id;
+    let last_trade_id = trade.last_trade_id;
+    let mut events = normalize_trade(trade, context)?;
+    let event = events
+        .pop()
+        .ok_or(NormalizationError::ExpectedAggregateTrade)?;
+    if !events.is_empty() {
+        return Err(NormalizationError::ExpectedAggregateTrade);
+    }
+    Ok(BinanceTradeNormalizationReceipt {
+        event,
+        aggregate_trade_id,
+        first_trade_id,
+        last_trade_id,
+    })
+}
+
+fn validated_native_message(
+    message: DurableBinanceMessage,
+    context: &NormalizationContext<'_>,
+) -> Result<BinanceMessage, NormalizationError> {
+    let (message, raw_payload_hash) = message.into_parts();
+    if &raw_payload_hash != context.raw.payload_hash() {
+        return Err(NormalizationError::RawPayloadMismatch);
+    }
+    Ok(message)
 }
 
 pub fn normalize_depth_snapshot(
