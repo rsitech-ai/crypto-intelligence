@@ -7,8 +7,18 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
-serde.workspace = true
+blake3.workspace = true
+cusp = { path = "../cusp" }
+dataset = { path = "../dataset" }
+domain = { path = "../domain" }
+feature-registry = { path = "../feature-registry" }
+model-registry = { path = "../model-registry" }
+serde_json.workspace = true
 thiserror.workspace = true
+
+[dev-dependencies]
+ed25519-dalek.workspace = true
+semver.workspace = true
 
 [lints]
 workspace = true

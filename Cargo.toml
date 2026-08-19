@@ -21,6 +21,7 @@ members = [
   "crates/cusp",
   "crates/dataset",
   "crates/domain",
+  "crates/ensemble",
   "crates/event-envelope",
   "crates/fast-state",
   "crates/feature-engine",
