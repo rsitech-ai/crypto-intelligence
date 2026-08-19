@@ -4,5 +4,9 @@ xtask = "run -p xtask --"
 [build]
 rustflags = ["-Dwarnings"]
 
+[env]
+# Keep Cargo-built native objects aligned with rustc; Xcode owns the app target separately.
+MACOSX_DEPLOYMENT_TARGET = { value = "11.0", force = true }
+
 [net]
 offline = true

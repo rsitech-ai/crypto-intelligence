@@ -227,6 +227,10 @@ impl CalibrationLineage {
         self.raw_model_training_hash
     }
 
+    pub const fn model_fitted_at_ns(&self) -> i64 {
+        self.model_fitted_at_ns
+    }
+
     pub const fn evidence_hash(&self) -> [u8; 32] {
         self.evidence_hash
     }

@@ -91,6 +91,22 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
 
 [[package]]
+name = "applicability"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "calibration",
+ "dataset",
+ "hazard",
+ "labels",
+ "nalgebra",
+ "semver",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "approx"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
