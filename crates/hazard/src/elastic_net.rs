@@ -1,8 +1,10 @@
 //! Deterministic elastic-net multinomial hazard fitting.
 
+use crate::incidence::CauseHorizonProbability;
 use crate::{
-    BucketProbability, CumulativeIncidence, FeatureSchema, HazardError, HazardTrainingSet,
-    InputQuality, augment_design, cumulative_incidence, softmax_with_survival,
+    BucketProbability, BucketSpec, CumulativeIncidence, FeatureSchema, HazardError,
+    HazardTrainingSet, InputQuality, augment_design, cumulative_incidence_for_spec,
+    softmax_with_survival,
 };
 use crate::{BucketTarget, DesignRow};
 
@@ -11,10 +13,11 @@ const MAXIMUM_BACKTRACKING: u32 = 128;
 const MAXIMUM_PATH_LENGTH: usize = 32;
 const MAXIMUM_WORK_LIMIT: u64 = 100_000_000_000;
 const MAXIMUM_PATH_WORK_LIMIT: u64 = 500_000_000;
+const MAXIMUM_MINIMUM_BUCKET_SUPPORT: u32 = 1_000_000;
 const NORMALIZATION_FLOOR: f64 = 1.0e-12;
-const MODEL_DOMAIN: &[u8] = b"cmti:elastic-net-hazard-model:v1\0";
-const PREDICTION_DOMAIN: &[u8] = b"cmti:elastic-net-hazard-prediction:v1\0";
-const CANDIDATE_DOMAIN: &[u8] = b"cmti:elastic-net-hazard-candidate:v1\0";
+const MODEL_DOMAIN: &[u8] = b"cmti:elastic-net-hazard-model:v2\0";
+const PREDICTION_DOMAIN: &[u8] = b"cmti:elastic-net-hazard-prediction:v2\0";
+const CANDIDATE_DOMAIN: &[u8] = b"cmti:elastic-net-hazard-candidate:v2\0";
 
 /// Untrusted deterministic optimizer configuration.
 #[derive(Clone, Debug, PartialEq)]
@@ -27,6 +30,7 @@ pub struct HazardConfigInput {
     pub minimum_step: f64,
     pub max_backtracking: u32,
     pub work_limit: u64,
+    pub minimum_at_risk_rows_per_bucket: u32,
 }
 
 /// Validated elastic-net and optimizer controls.
@@ -40,6 +44,7 @@ pub struct HazardConfig {
     minimum_step: f64,
     max_backtracking: u32,
     work_limit: u64,
+    minimum_at_risk_rows_per_bucket: u32,
 }
 
 impl HazardConfig {
@@ -62,6 +67,8 @@ impl HazardConfig {
             || input.max_backtracking > MAXIMUM_BACKTRACKING
             || input.work_limit == 0
             || input.work_limit > MAXIMUM_WORK_LIMIT
+            || input.minimum_at_risk_rows_per_bucket == 0
+            || input.minimum_at_risk_rows_per_bucket > MAXIMUM_MINIMUM_BUCKET_SUPPORT
             || !(input.lambda * input.alpha).is_finite()
             || !(input.lambda * (1.0 - input.alpha)).is_finite()
             || !(input.initial_step * input.lambda * input.alpha).is_finite()
@@ -77,6 +84,7 @@ impl HazardConfig {
             minimum_step: input.minimum_step,
             max_backtracking: input.max_backtracking,
             work_limit: input.work_limit,
+            minimum_at_risk_rows_per_bucket: input.minimum_at_risk_rows_per_bucket,
         })
     }
 
@@ -119,6 +127,11 @@ impl HazardConfig {
     pub const fn work_limit(&self) -> u64 {
         self.work_limit
     }
+
+    #[must_use]
+    pub const fn minimum_at_risk_rows_per_bucket(&self) -> u32 {
+        self.minimum_at_risk_rows_per_bucket
+    }
 }
 
 impl From<HazardConfig> for HazardConfigInput {
@@ -132,6 +145,7 @@ impl From<HazardConfig> for HazardConfigInput {
             minimum_step: config.minimum_step,
             max_backtracking: config.max_backtracking,
             work_limit: config.work_limit,
+            minimum_at_risk_rows_per_bucket: config.minimum_at_risk_rows_per_bucket,
         }
     }
 }
@@ -221,9 +235,52 @@ pub struct HazardPrediction {
     buckets: Vec<BucketProbability>,
     cumulative_incidence: CumulativeIncidence,
     cause_ids: Vec<String>,
-    horizons_seconds: Vec<u64>,
+    bucket_spec: BucketSpec,
     model_id: [u8; 32],
     evidence_id: [u8; 32],
+}
+
+/// Self-describing model forecast at one exact supported horizon.
+#[derive(Clone, Debug, PartialEq)]
+pub struct HazardHorizonForecast {
+    horizon_seconds: u64,
+    bucket_spec: BucketSpec,
+    causes: Vec<CauseHorizonProbability>,
+    survival: f64,
+    model_id: [u8; 32],
+    evidence_id: [u8; 32],
+}
+
+impl HazardHorizonForecast {
+    #[must_use]
+    pub const fn horizon_seconds(&self) -> u64 {
+        self.horizon_seconds
+    }
+
+    #[must_use]
+    pub const fn bucket_spec(&self) -> BucketSpec {
+        self.bucket_spec
+    }
+
+    #[must_use]
+    pub fn causes(&self) -> &[CauseHorizonProbability] {
+        &self.causes
+    }
+
+    #[must_use]
+    pub const fn survival(&self) -> f64 {
+        self.survival
+    }
+
+    #[must_use]
+    pub const fn model_id(&self) -> [u8; 32] {
+        self.model_id
+    }
+
+    #[must_use]
+    pub const fn evidence_id(&self) -> [u8; 32] {
+        self.evidence_id
+    }
 }
 
 impl HazardPrediction {
@@ -243,8 +300,30 @@ impl HazardPrediction {
     }
 
     #[must_use]
-    pub fn horizons_seconds(&self) -> &[u64] {
-        &self.horizons_seconds
+    pub const fn bucket_spec(&self) -> BucketSpec {
+        self.bucket_spec
+    }
+
+    #[must_use]
+    pub const fn bucket_edges_seconds(&self) -> &'static [u64] {
+        self.bucket_spec.edges_seconds()
+    }
+
+    #[must_use]
+    pub const fn forecast_horizons_seconds(&self) -> &'static [u64] {
+        self.bucket_spec.forecast_horizons_seconds()
+    }
+
+    pub fn at_horizon(&self, horizon_seconds: u64) -> Result<HazardHorizonForecast, HazardError> {
+        let incidence = self.cumulative_incidence.at_horizon(horizon_seconds)?;
+        Ok(HazardHorizonForecast {
+            horizon_seconds: incidence.horizon_seconds(),
+            bucket_spec: incidence.bucket_spec(),
+            causes: incidence.causes().to_vec(),
+            survival: incidence.survival(),
+            model_id: self.model_id,
+            evidence_id: self.evidence_id,
+        })
     }
 
     #[must_use]
@@ -299,6 +378,11 @@ pub struct CompetingRiskHazard {
 impl CompetingRiskHazard {
     pub fn fit(data: &HazardTrainingSet, config: HazardConfig) -> Result<Self, HazardError> {
         let rows = augment_design(data)?;
+        validate_bucket_support(
+            &rows,
+            data.bucket_spec().len(),
+            config.minimum_at_risk_rows_per_bucket,
+        )?;
         preflight_work(data, &rows, &config)?;
         let normalization = fit_normalization(data)?;
         let normalized = normalize_training(data, &normalization)?;
@@ -438,13 +522,13 @@ impl CompetingRiskHazard {
             }
             buckets.push(softmax_with_survival(&logits)?);
         }
-        let incidence = cumulative_incidence(&buckets)?;
+        let incidence = cumulative_incidence_for_spec(self.bucket_spec, &self.cause_ids, &buckets)?;
         let evidence_id = prediction_id(self.model_id, &input);
         Ok(HazardPrediction {
             buckets,
             cumulative_incidence: incidence,
             cause_ids: self.cause_ids.clone(),
-            horizons_seconds: self.bucket_spec.edges_seconds().to_vec(),
+            bucket_spec: self.bucket_spec,
             model_id: self.model_id,
             evidence_id,
         })
@@ -1001,6 +1085,29 @@ fn validate_prediction_input(
     Ok(())
 }
 
+fn validate_bucket_support(
+    rows: &[DesignRow],
+    bucket_count: usize,
+    minimum_at_risk_rows_per_bucket: u32,
+) -> Result<(), HazardError> {
+    let mut support = vec![0_u32; bucket_count];
+    for row in rows {
+        let count = support
+            .get_mut(row.bucket_index())
+            .ok_or(HazardError::InvalidTrainingSet)?;
+        *count = count
+            .checked_add(1)
+            .ok_or(HazardError::InsufficientBucketSupport)?;
+    }
+    if support
+        .iter()
+        .any(|count| *count < minimum_at_risk_rows_per_bucket)
+    {
+        return Err(HazardError::InsufficientBucketSupport);
+    }
+    Ok(())
+}
+
 fn model_id(
     data: &HazardTrainingSet,
     config: &HazardConfig,
@@ -1019,6 +1126,10 @@ fn model_id(
     hash_f64(&mut hasher, config.minimum_step);
     hash_u64(&mut hasher, u64::from(config.max_backtracking));
     hash_u64(&mut hasher, config.work_limit);
+    hash_u64(
+        &mut hasher,
+        u64::from(config.minimum_at_risk_rows_per_bucket),
+    );
     hash_f64_slice(&mut hasher, &normalization.means);
     hash_f64_slice(&mut hasher, &normalization.scales);
     for constant in &normalization.constant_features {

@@ -17,6 +17,7 @@ fn config(lambda: f64, max_iterations: u32) -> HazardConfig {
         minimum_step: 1.0e-12,
         max_backtracking: 64,
         work_limit: 500_000_000,
+        minimum_at_risk_rows_per_bucket: 1,
     })
     .expect("fixture config should be valid")
 }
@@ -41,6 +42,14 @@ fn sample(id: u64, features: Vec<f64>, outcome: HazardOutcome) -> HazardSampleIn
 }
 
 fn training_set(feature_ids: &[&str], samples: Vec<HazardSampleInput>) -> HazardTrainingSet {
+    training_set_with_spec(feature_ids, BucketSpec::v1(), samples)
+}
+
+fn training_set_with_spec(
+    feature_ids: &[&str],
+    bucket_spec: BucketSpec,
+    samples: Vec<HazardSampleInput>,
+) -> HazardTrainingSet {
     HazardTrainingSet::try_new(HazardTrainingSetInput {
         feature_schema: FeatureSchema::try_new(
             1,
@@ -50,7 +59,7 @@ fn training_set(feature_ids: &[&str], samples: Vec<HazardSampleInput>) -> Hazard
                 .collect(),
         )
         .expect("fixture schema should be valid"),
-        bucket_spec: BucketSpec::v1(),
+        bucket_spec,
         cause_ids: vec!["cause_a".to_owned(), "cause_b".to_owned()],
         training_cutoff_ns: 100_000 * SECOND_NS,
         samples,
@@ -185,6 +194,13 @@ fn deterministic_fit_discriminates_causes_and_emits_coherent_curves() {
         CompetingRiskHazard::fit(&data, config(0.01, 20_000)).expect("first fit should complete");
     let second =
         CompetingRiskHazard::fit(&data, config(0.01, 20_000)).expect("second fit should complete");
+    let support_two_config = HazardConfig::try_new(HazardConfigInput {
+        minimum_at_risk_rows_per_bucket: 2,
+        ..HazardConfigInput::from(config(0.01, 20_000))
+    })
+    .expect("higher support threshold");
+    let support_two = CompetingRiskHazard::fit(&data, support_two_config)
+        .expect("fixture supports two rows per bucket");
 
     assert!(
         first.diagnostics().converged(),
@@ -193,6 +209,8 @@ fn deterministic_fit_discriminates_causes_and_emits_coherent_curves() {
     );
     assert_eq!(first.model_id(), second.model_id());
     assert_eq!(first.coefficients(), second.coefficients());
+    assert_eq!(first.coefficients(), support_two.coefficients());
+    assert_ne!(first.model_id(), support_two.model_id());
     let candidate =
         CandidateHazardArtifact::try_new(&first).expect("a converged fit may become a candidate");
     assert_eq!(candidate.model_id(), first.model_id());
@@ -204,7 +222,26 @@ fn deterministic_fit_discriminates_causes_and_emits_coherent_curves() {
         .predict(prediction_input(data.feature_schema(), vec![-1.5, -0.2]))
         .expect("negative prediction should succeed");
     assert_eq!(positive.cause_ids(), &["cause_a", "cause_b"]);
-    assert_eq!(positive.horizons_seconds(), &[900, 3_600, 14_400, 86_400]);
+    assert_eq!(positive.bucket_spec(), BucketSpec::v1());
+    assert_eq!(
+        positive.bucket_edges_seconds(),
+        &[900, 3_600, 14_400, 86_400]
+    );
+    assert_eq!(
+        positive.forecast_horizons_seconds(),
+        &[900, 3_600, 14_400, 86_400]
+    );
+    let at_fifteen = positive.at_horizon(900).expect("exact product horizon");
+    assert_eq!(at_fifteen.horizon_seconds(), 900);
+    assert_eq!(at_fifteen.bucket_spec(), BucketSpec::v1());
+    assert_eq!(at_fifteen.model_id(), positive.model_id());
+    assert_eq!(at_fifteen.evidence_id(), positive.evidence_id());
+    assert_eq!(at_fifteen.causes()[0].cause_id(), "cause_a");
+    assert_eq!(at_fifteen.causes()[1].cause_id(), "cause_b");
+    assert_eq!(
+        positive.cumulative_incidence().bucket_spec(),
+        Some(BucketSpec::v1())
+    );
     assert!(positive.buckets()[0].causes()[0] > positive.buckets()[0].causes()[1]);
     assert!(negative.buckets()[0].causes()[1] > negative.buckets()[0].causes()[0]);
     assert!(
@@ -323,9 +360,78 @@ fn configuration_rejects_nonfinite_derived_penalty_steps() {
         minimum_step: 1.0,
         max_backtracking: 10,
         work_limit: 1_000_000,
+        minimum_at_risk_rows_per_bucket: 1,
     });
 
     assert_eq!(invalid.unwrap_err(), hazard::HazardError::InvalidConfig);
+    let zero_support = HazardConfig::try_new(HazardConfigInput {
+        minimum_at_risk_rows_per_bucket: 0,
+        ..HazardConfigInput::from(config(0.01, 10))
+    });
+    assert_eq!(
+        zero_support.unwrap_err(),
+        hazard::HazardError::InvalidConfig
+    );
+}
+
+#[test]
+fn unsupported_production_buckets_fail_before_fit_and_supported_v2_predicts_all_horizons() {
+    let spec = BucketSpec::production_v2();
+    let partial = training_set_with_spec(
+        &["constant_feature"],
+        spec,
+        vec![sample(
+            1,
+            vec![1.0],
+            HazardOutcome::RightCensored {
+                observed_seconds: 900,
+            },
+        )],
+    );
+    assert_eq!(
+        CompetingRiskHazard::fit(&partial, config(0.01, 100)).unwrap_err(),
+        hazard::HazardError::InsufficientBucketSupport
+    );
+
+    let mut samples = Vec::new();
+    let mut id = 1_u64;
+    for edge in spec.edges_seconds() {
+        for cause_index in 0..2 {
+            samples.push(sample(
+                id,
+                vec![1.0],
+                HazardOutcome::Event {
+                    offset_seconds: *edge,
+                    cause_index,
+                },
+            ));
+            id += 1;
+        }
+    }
+    samples.push(sample(
+        id,
+        vec![1.0],
+        HazardOutcome::RightCensored {
+            observed_seconds: 86_400,
+        },
+    ));
+    let supported = training_set_with_spec(&["constant_feature"], spec, samples);
+    let production_config = HazardConfig::try_new(HazardConfigInput {
+        tolerance: 1.0e-4,
+        work_limit: 100_000_000_000,
+        ..HazardConfigInput::from(config(0.0, 5_000))
+    })
+    .expect("production fixture config");
+    let model = CompetingRiskHazard::fit(&supported, production_config)
+        .expect("fully supported production grid should fit");
+    let prediction = model
+        .predict(prediction_input(supported.feature_schema(), vec![1.0]))
+        .expect("production prediction");
+    assert_eq!(prediction.bucket_spec(), spec);
+    assert_eq!(prediction.buckets().len(), spec.len());
+    for horizon in spec.forecast_horizons_seconds() {
+        assert!(prediction.at_horizon(*horizon).is_ok());
+    }
 }
 
 #[test]
