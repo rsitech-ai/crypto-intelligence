@@ -1,6 +1,312 @@
 {
-  "schema_version": 1,
-  "artifact_id": "models/schemas/cusp-control-map.schema.json",
-  "status": "implemented",
-  "local_only": true
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://rsitech.ai/schemas/crypto-intelligence/cusp-control-map-v1.json",
+  "title": "Crypto Intelligence cusp control map",
+  "description": "Strict wire schema for a version 1 hierarchical alpha/beta control map. Semantic coefficient, covariance, registry, and normalization invariants are revalidated by the Rust package boundary.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "schema",
+    "alpha",
+    "beta",
+    "normalization_hash",
+    "residual_covariance"
+  ],
+  "properties": {
+    "version": {
+      "$ref": "#/$defs/version"
+    },
+    "schema": {
+      "$ref": "#/$defs/controlSchema"
+    },
+    "alpha": {
+      "$ref": "#/$defs/linearControl"
+    },
+    "beta": {
+      "$ref": "#/$defs/linearControl"
+    },
+    "normalization_hash": {
+      "$ref": "#/$defs/hash32"
+    },
+    "residual_covariance": {
+      "$ref": "#/$defs/controlCovariance"
+    }
+  },
+  "$defs": {
+    "byte": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 255
+    },
+    "hash32": {
+      "type": "array",
+      "minItems": 32,
+      "maxItems": 32,
+      "items": {
+        "$ref": "#/$defs/byte"
+      },
+      "not": {
+        "items": {
+          "const": 0
+        }
+      }
+    },
+    "version": {
+      "type": "string",
+      "maxLength": 128,
+      "pattern": "^[1-9][0-9]*\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$"
+    },
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[a-z0-9][a-z0-9_-]*$"
+    },
+    "featureKey": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "version": {
+          "$ref": "#/$defs/version"
+        }
+      }
+    },
+    "featureGroup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "alpha_sign",
+        "beta_sign",
+        "sparse_penalty"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "alpha_sign": {
+          "$ref": "#/$defs/coefficientSign"
+        },
+        "beta_sign": {
+          "$ref": "#/$defs/coefficientSign"
+        },
+        "sparse_penalty": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
+    "coefficientSign": {
+      "enum": [
+        "any",
+        "non_negative",
+        "non_positive"
+      ]
+    },
+    "controlFeature": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "key",
+        "required",
+        "group_id",
+        "target",
+        "normalization_center",
+        "normalization_scale"
+      ],
+      "properties": {
+        "key": {
+          "$ref": "#/$defs/featureKey"
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "group_id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "target": {
+          "enum": [
+            "neither",
+            "alpha",
+            "beta",
+            "both"
+          ]
+        },
+        "normalization_center": {
+          "type": "number"
+        },
+        "normalization_scale": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      }
+    },
+    "controlSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "groups",
+        "features"
+      ],
+      "properties": {
+        "version": {
+          "$ref": "#/$defs/version"
+        },
+        "groups": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/$defs/featureGroup"
+          }
+        },
+        "features": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/controlFeature"
+          }
+        }
+      }
+    },
+    "featureCoefficient": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "key",
+        "coefficient"
+      ],
+      "properties": {
+        "key": {
+          "$ref": "#/$defs/featureKey"
+        },
+        "coefficient": {
+          "type": "number"
+        }
+      }
+    },
+    "coefficientArray": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "$ref": "#/$defs/featureCoefficient"
+      }
+    },
+    "asset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "namespace",
+        "chain_id",
+        "contract_or_mint",
+        "canonical_symbol",
+        "generation"
+      ],
+      "properties": {
+        "namespace": {
+          "enum": [
+            "native",
+            "evm",
+            "solana",
+            "fiat",
+            "synthetic"
+          ]
+        },
+        "chain_id": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "contract_or_mint": {
+          "type": "string",
+          "maxLength": 160
+        },
+        "canonical_symbol": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "pattern": "^[A-Z0-9][A-Z0-9._-]*$"
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4294967295
+        }
+      }
+    },
+    "assetCoefficients": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "asset",
+        "coefficients"
+      ],
+      "properties": {
+        "asset": {
+          "$ref": "#/$defs/asset"
+        },
+        "coefficients": {
+          "$ref": "#/$defs/coefficientArray"
+        }
+      }
+    },
+    "linearControl": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "intercept",
+        "shared",
+        "by_asset"
+      ],
+      "properties": {
+        "intercept": {
+          "type": "number"
+        },
+        "shared": {
+          "$ref": "#/$defs/coefficientArray"
+        },
+        "by_asset": {
+          "type": "array",
+          "maxItems": 1024,
+          "items": {
+            "$ref": "#/$defs/assetCoefficients"
+          }
+        }
+      }
+    },
+    "controlCovariance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "alpha_variance",
+        "alpha_beta_covariance",
+        "beta_variance"
+      ],
+      "properties": {
+        "alpha_variance": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "alpha_beta_covariance": {
+          "type": "number"
+        },
+        "beta_variance": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      }
+    }
+  }
 }

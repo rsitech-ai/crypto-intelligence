@@ -345,7 +345,7 @@ sha256 = "0aa079760c67edbce504cce92f6e0f65de2af5166e6dddeea2d441c43fddae56"
 
 [[category.artifact]]
 path = "models/schemas/cusp-control-map.schema.json"
-sha256 = "50689e41fe9e002cf594ad226b15ae1b1828130ff6f91f9b4b519abffc7426e0"
+sha256 = "faf7bbd0d3aa036185ce11b3fe0fbd6e32923233e20d1dc0127d32f77886d259"
 
 [[category.artifact]]
 path = "models/schemas/model-package.schema.json"

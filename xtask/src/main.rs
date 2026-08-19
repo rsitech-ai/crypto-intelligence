@@ -157,6 +157,20 @@ enum XtaskError {
     },
     #[error("license policy violation: {reason}")]
     LicensePolicy { reason: String },
+    #[error("could not inspect model schema directory {path}: {source}")]
+    ModelSchemaDirectory {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
+    #[error("could not read model schema {path}: {source}")]
+    ModelSchemaRead {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
+    #[error("model schema {path} is invalid: {reason}")]
+    InvalidModelSchema { path: PathBuf, reason: String },
 }
 
 #[derive(Debug, Deserialize)]
@@ -245,11 +259,13 @@ fn run() -> Result<(), XtaskError> {
         "generate-field-registry" => generate_field_registry(options),
         "generate-proto" => generate_proto_command(options),
         "observability-schema-check" if options.is_empty() => observability_schema_check(),
+        "validate-model-schemas" if options.is_empty() => validate_model_schemas(),
         "proto-check" if options.is_empty() => proto_check(),
         "protoc-gen-local-api" if options.is_empty() => protoc_gen_local_api(),
         "help"
         | "license-check"
         | "observability-schema-check"
+        | "validate-model-schemas"
         | "proto-check"
         | "protoc-gen-local-api"
         | "workspace-check" => Err(XtaskError::InvalidInvocation),
@@ -261,8 +277,244 @@ fn run() -> Result<(), XtaskError> {
 
 fn print_help() {
     println!(
-        "xtask commands:\n  help\n  workspace-check\n  license-check\n  generate-config-schema [--check]\n  generate-field-registry [--check]\n  generate-proto [--check]\n  observability-schema-check\n  proto-check"
+        "xtask commands:\n  help\n  workspace-check\n  license-check\n  generate-config-schema [--check]\n  generate-field-registry [--check]\n  generate-proto [--check]\n  observability-schema-check\n  validate-model-schemas\n  proto-check"
     );
+}
+
+const MAX_MODEL_SCHEMA_FILES: usize = 256;
+const MAX_MODEL_SCHEMA_BYTES: u64 = 1_048_576;
+
+fn validate_model_schemas() -> Result<(), XtaskError> {
+    let directory = workspace_root().join("models/schemas");
+    let entries = fs::read_dir(&directory).map_err(|source| XtaskError::ModelSchemaDirectory {
+        path: directory.clone(),
+        source,
+    })?;
+    let mut paths = Vec::new();
+    for entry in entries {
+        let entry = entry.map_err(|source| XtaskError::ModelSchemaDirectory {
+            path: directory.clone(),
+            source,
+        })?;
+        let path = entry.path();
+        if path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name.ends_with(".schema.json"))
+        {
+            paths.push(path);
+        }
+    }
+    paths.sort();
+    if paths.is_empty() || paths.len() > MAX_MODEL_SCHEMA_FILES {
+        return Err(XtaskError::InvalidModelSchema {
+            path: directory,
+            reason: "schema inventory is empty or exceeds 256 files".to_owned(),
+        });
+    }
+
+    let mut active = 0_usize;
+    let mut manifests = 0_usize;
+    for path in paths {
+        let metadata =
+            fs::symlink_metadata(&path).map_err(|source| XtaskError::ModelSchemaRead {
+                path: path.clone(),
+                source,
+            })?;
+        if !metadata.file_type().is_file() || metadata.len() > MAX_MODEL_SCHEMA_BYTES {
+            return Err(XtaskError::InvalidModelSchema {
+                path,
+                reason: "schema must be a regular file no larger than 1 MiB".to_owned(),
+            });
+        }
+        let file = fs::File::open(&path).map_err(|source| XtaskError::ModelSchemaRead {
+            path: path.clone(),
+            source,
+        })?;
+        let opened_metadata = file
+            .metadata()
+            .map_err(|source| XtaskError::ModelSchemaRead {
+                path: path.clone(),
+                source,
+            })?;
+        if !opened_metadata.file_type().is_file()
+            || opened_metadata.len() > MAX_MODEL_SCHEMA_BYTES
+            || !same_file_identity(&metadata, &opened_metadata)
+        {
+            return Err(XtaskError::InvalidModelSchema {
+                path,
+                reason: "schema identity changed while opening or exceeds 1 MiB".to_owned(),
+            });
+        }
+        let mut bytes = Vec::new();
+        file.take(MAX_MODEL_SCHEMA_BYTES + 1)
+            .read_to_end(&mut bytes)
+            .map_err(|source| XtaskError::ModelSchemaRead {
+                path: path.clone(),
+                source,
+            })?;
+        if bytes.len() as u64 > MAX_MODEL_SCHEMA_BYTES {
+            return Err(XtaskError::InvalidModelSchema {
+                path,
+                reason: "schema exceeds 1 MiB while reading".to_owned(),
+            });
+        }
+        let value = serde_json::from_slice::<serde_json::Value>(&bytes).map_err(|error| {
+            XtaskError::InvalidModelSchema {
+                path: path.clone(),
+                reason: format!("invalid JSON: {error}"),
+            }
+        })?;
+        if value.get("$schema").is_none() {
+            validate_model_artifact_manifest(&path, &value)?;
+            manifests += 1;
+        } else {
+            validate_active_model_schema(&path, &value)?;
+            active += 1;
+        }
+    }
+    println!("validate-model-schemas: ok ({active} active, {manifests} artifact manifests)");
+    Ok(())
+}
+
+#[cfg(unix)]
+fn same_file_identity(expected: &fs::Metadata, opened: &fs::Metadata) -> bool {
+    use std::os::unix::fs::MetadataExt as _;
+
+    expected.dev() == opened.dev() && expected.ino() == opened.ino()
+}
+
+#[cfg(not(unix))]
+fn same_file_identity(expected: &fs::Metadata, opened: &fs::Metadata) -> bool {
+    expected.file_type().is_file() && opened.file_type().is_file() && expected.len() == opened.len()
+}
+
+fn validate_model_artifact_manifest(
+    path: &Path,
+    value: &serde_json::Value,
+) -> Result<(), XtaskError> {
+    let object = value
+        .as_object()
+        .ok_or_else(|| invalid_model_schema(path, "artifact manifest must be an object"))?;
+    let expected = BTreeSet::from(["artifact_id", "local_only", "schema_version", "status"]);
+    let actual = object.keys().map(String::as_str).collect::<BTreeSet<_>>();
+    if actual != expected
+        || value
+            .get("schema_version")
+            .and_then(serde_json::Value::as_u64)
+            != Some(1)
+        || value.get("local_only").and_then(serde_json::Value::as_bool) != Some(true)
+        || !matches!(
+            value.get("status").and_then(serde_json::Value::as_str),
+            Some("implemented" | "planned")
+        )
+    {
+        return Err(invalid_model_schema(
+            path,
+            "artifact manifest must use the exact bounded repository contract",
+        ));
+    }
+    let expected_artifact = path
+        .strip_prefix(workspace_root())
+        .ok()
+        .and_then(Path::to_str)
+        .is_some_and(|relative| {
+            value.get("artifact_id").and_then(serde_json::Value::as_str) == Some(relative)
+        });
+    if !expected_artifact {
+        return Err(invalid_model_schema(
+            path,
+            "artifact manifest artifact_id does not match its repository path",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_active_model_schema(path: &Path, value: &serde_json::Value) -> Result<(), XtaskError> {
+    if value.get("$schema").and_then(serde_json::Value::as_str)
+        != Some("https://json-schema.org/draft/2020-12/schema")
+        || !value
+            .get("$id")
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|id| id.starts_with("https://rsitech.ai/schemas/crypto-intelligence/"))
+        || value.get("type").and_then(serde_json::Value::as_str) != Some("object")
+        || value
+            .get("additionalProperties")
+            .and_then(serde_json::Value::as_bool)
+            != Some(false)
+    {
+        return Err(invalid_model_schema(
+            path,
+            "active schema must declare the Draft 2020-12 dialect, RSI Tech ID, strict object root",
+        ));
+    }
+    let required = value
+        .get("required")
+        .and_then(serde_json::Value::as_array)
+        .ok_or_else(|| invalid_model_schema(path, "active schema must declare required fields"))?;
+    let properties = value
+        .get("properties")
+        .and_then(serde_json::Value::as_object)
+        .ok_or_else(|| invalid_model_schema(path, "active schema must declare properties"))?;
+    if required.is_empty()
+        || required.iter().any(|field| {
+            field
+                .as_str()
+                .is_none_or(|field| !properties.contains_key(field))
+        })
+    {
+        return Err(invalid_model_schema(
+            path,
+            "every required field must name a root property",
+        ));
+    }
+    validate_schema_bounds(path, value)
+}
+
+fn validate_schema_bounds(path: &Path, value: &serde_json::Value) -> Result<(), XtaskError> {
+    match value {
+        serde_json::Value::Array(values) => {
+            for value in values {
+                validate_schema_bounds(path, value)?;
+            }
+        }
+        serde_json::Value::Object(object) => {
+            if object.get("type").and_then(serde_json::Value::as_str) == Some("object")
+                && object
+                    .get("additionalProperties")
+                    .and_then(serde_json::Value::as_bool)
+                    != Some(false)
+            {
+                return Err(invalid_model_schema(
+                    path,
+                    "every object schema must reject unknown properties",
+                ));
+            }
+            if object.get("type").and_then(serde_json::Value::as_str) == Some("array")
+                && object
+                    .get("maxItems")
+                    .and_then(serde_json::Value::as_u64)
+                    .is_none()
+            {
+                return Err(invalid_model_schema(
+                    path,
+                    "every array schema must declare maxItems",
+                ));
+            }
+            for value in object.values() {
+                validate_schema_bounds(path, value)?;
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+fn invalid_model_schema(path: &Path, reason: &str) -> XtaskError {
+    XtaskError::InvalidModelSchema {
+        path: path.to_path_buf(),
+        reason: reason.to_owned(),
+    }
 }
 
 const OBSERVABILITY_CATALOG_START: &str = "<!-- BEGIN GENERATED OBSERVABILITY CATALOG -->";
@@ -1655,6 +1907,57 @@ fn manifest_lint_policy(manifest: &toml::Value) -> ManifestLintPolicy {
 mod tests {
     use super::*;
     use prost_types::FileDescriptorProto;
+
+    #[test]
+    fn model_schema_policy_rejects_permissive_objects_and_unbounded_arrays() {
+        let permissive = serde_json::json!({
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "https://rsitech.ai/schemas/crypto-intelligence/test-v1.json",
+            "type": "object",
+            "additionalProperties": true,
+            "required": ["values"],
+            "properties": {
+                "values": {
+                    "type": "array",
+                    "items": {"type": "number"}
+                }
+            }
+        });
+        assert!(validate_active_model_schema(Path::new("test.schema.json"), &permissive).is_err());
+
+        let unbounded = serde_json::json!({
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "https://rsitech.ai/schemas/crypto-intelligence/test-v1.json",
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["values"],
+            "properties": {
+                "values": {
+                    "type": "array",
+                    "items": {"type": "number"}
+                }
+            }
+        });
+        assert!(validate_active_model_schema(Path::new("test.schema.json"), &unbounded).is_err());
+    }
+
+    #[test]
+    fn model_artifact_manifest_policy_rejects_extra_or_misdirected_fields() {
+        let manifest = serde_json::json!({
+            "schema_version": 1,
+            "artifact_id": "wrong.schema.json",
+            "status": "implemented",
+            "local_only": true,
+            "extra": true
+        });
+        assert!(
+            validate_model_artifact_manifest(
+                &workspace_root().join("models/schemas/test.schema.json"),
+                &manifest
+            )
+            .is_err()
+        );
+    }
 
     fn checked_in_license_inventory() -> (String, String) {
         let source = fs::read_to_string(workspace_root().join("licenses/artifact-provenance.toml"))

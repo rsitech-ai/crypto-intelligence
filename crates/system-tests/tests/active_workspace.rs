@@ -111,7 +111,12 @@ fn active_workspace_contains_only_implemented_packages() {
 
 #[test]
 fn supported_xtask_commands_succeed() {
-    for command in ["help", "proto-check", "workspace-check"] {
+    for command in [
+        "help",
+        "proto-check",
+        "validate-model-schemas",
+        "workspace-check",
+    ] {
         let output = xtask(&[command]);
         assert!(
             output.status.success(),
