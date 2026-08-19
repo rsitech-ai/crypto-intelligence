@@ -7,10 +7,18 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+blake3.workspace = true
+dataset = { path = "../dataset" }
+ensemble = { path = "../ensemble" }
+hazard = { path = "../hazard" }
+labels = { path = "../labels" }
+model-registry = { path = "../model-registry" }
 serde.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
+ed25519-dalek.workspace = true
+semver.workspace = true
 serde_json.workspace = true
 
 [lints]

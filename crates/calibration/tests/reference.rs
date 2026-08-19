@@ -1,7 +1,6 @@
 use calibration::{
     BetaCalibrator, CalibrationError, CalibrationMethod, CalibrationObservation, CalibrationPeriod,
-    CalibrationSet, EvaluationSet, FitConfig, IsotonicCalibrator, PlattCalibrator,
-    ProbabilityMetrics,
+    CalibrationSet, FitConfig, IsotonicCalibrator, PlattCalibrator,
 };
 
 fn observations() -> Vec<CalibrationObservation> {
@@ -108,64 +107,6 @@ fn invalid_and_degenerate_calibration_data_fail_closed() {
 }
 
 #[test]
-fn evaluation_must_be_later_than_calibration_and_metrics_serialize() {
-    let calibration = calibration_set();
-    let evaluation_points = observations()
-        .into_iter()
-        .enumerate()
-        .map(|(index, point)| {
-            CalibrationObservation::new(
-                point.uncalibrated_probability(),
-                point.outcome(),
-                200 + i64::try_from(index).expect("fixture index"),
-                201 + i64::try_from(index).expect("fixture index"),
-                201 + i64::try_from(index).expect("fixture index"),
-            )
-            .expect("evaluation observation")
-        })
-        .collect();
-    let evaluation = EvaluationSet::new(
-        "outer-test-7",
-        CalibrationPeriod::new(200, 220).expect("period"),
-        calibration.period(),
-        evaluation_points,
-    )
-    .expect("strictly later evaluation set");
-
-    let calibrator = CalibrationMethod::Platt(
-        PlattCalibrator::fit(&calibration, FitConfig::default()).expect("fit"),
-    );
-    let metrics = ProbabilityMetrics::evaluate(&evaluation, Some(&calibrator), 5).expect("metrics");
-    assert_eq!(metrics.observations, 10);
-    assert_eq!(metrics.reliability.len(), 5);
-    assert!(metrics.log_loss.is_finite());
-    assert!(metrics.brier_score.is_finite());
-    assert!(metrics.expected_calibration_error.is_finite());
-    let encoded = serde_json::to_vec(&metrics).expect("metrics serialize");
-    assert_eq!(
-        encoded,
-        serde_json::to_vec(&metrics).expect("metrics serialize deterministically")
-    );
-    let isotonic =
-        CalibrationMethod::Isotonic(IsotonicCalibrator::fit(&calibration).expect("isotonic fit"));
-    let isotonic_metrics =
-        ProbabilityMetrics::evaluate(&evaluation, Some(&isotonic), 5).expect("isotonic metrics");
-    assert!(isotonic_metrics.log_loss.is_finite());
-    assert!(isotonic_metrics.calibration_slope.is_finite());
-
-    let overlapping = EvaluationSet::new(
-        "leaky",
-        CalibrationPeriod::new(120, 140).expect("period"),
-        calibration.period(),
-        observations(),
-    );
-    assert!(matches!(
-        overlapping,
-        Err(CalibrationError::EvaluationOverlap)
-    ));
-}
-
-#[test]
 fn exact_endpoint_probabilities_require_an_explicit_policy() {
     let calibrator = CalibrationMethod::Platt(
         PlattCalibrator::fit(&calibration_set(), FitConfig::default()).expect("fit"),
@@ -181,7 +122,7 @@ fn exact_endpoint_probabilities_require_an_explicit_policy() {
 }
 
 #[test]
-fn deserialized_state_is_revalidated_before_fit_calibration_or_evaluation() {
+fn deserialized_state_is_revalidated_before_fit_or_calibration() {
     let mut forged_set = serde_json::to_value(calibration_set()).expect("calibration JSON");
     forged_set["period"]["start_ns"] = serde_json::json!(105);
     let forged_set: CalibrationSet =
@@ -200,35 +141,91 @@ fn deserialized_state_is_revalidated_before_fit_calibration_or_evaluation() {
         forged_calibrator.calibrate(0.25),
         Err(CalibrationError::InvalidCalibrator)
     ));
+}
 
-    let calibration = calibration_set();
-    let evaluation_points = observations()
+#[test]
+fn deserialized_logits_cannot_bypass_the_extreme_input_bound() {
+    let mut forged = serde_json::to_value(calibration_set()).expect("calibration JSON");
+    forged["observations"][0]["raw_logit"] = serde_json::json!(1_000_001.0);
+    forged["observations"][0]["uncalibrated_probability"] = serde_json::json!(1.0);
+    let forged: CalibrationSet =
+        serde_json::from_value(forged).expect("structurally valid calibration JSON");
+    assert!(PlattCalibrator::fit(&forged, FitConfig::default()).is_err());
+    assert!(IsotonicCalibrator::fit(&forged).is_err());
+}
+
+#[test]
+fn finite_subnormal_logits_do_not_overflow_fit_diagnostics() {
+    let logits = [
+        f64::from_bits(1),
+        -2.0,
+        -1.25,
+        -0.5,
+        0.25,
+        0.75,
+        1.5,
+        2.25,
+        -0.75,
+        1.0,
+    ];
+    let rows = logits
         .into_iter()
         .enumerate()
-        .map(|(index, point)| {
-            CalibrationObservation::new(
-                point.uncalibrated_probability(),
-                point.outcome(),
-                200 + i64::try_from(index).expect("fixture index"),
-                201 + i64::try_from(index).expect("fixture index"),
-                201 + i64::try_from(index).expect("fixture index"),
+        .map(|(index, logit)| {
+            let origin = 100 + i64::try_from(index).expect("fixture index");
+            CalibrationObservation::from_logit(
+                logit,
+                matches!(index, 2 | 4 | 5 | 7 | 9),
+                origin,
+                origin + 1,
+                origin + 1,
+                1.0,
             )
-            .expect("evaluation observation")
+            .expect("valid subnormal observation")
         })
         .collect();
-    let evaluation = EvaluationSet::new(
-        "outer-test-serialized",
-        CalibrationPeriod::new(200, 220).expect("period"),
-        calibration.period(),
-        evaluation_points,
+    let set = CalibrationSet::new(
+        "subnormal-validation",
+        CalibrationPeriod::new(100, 120).expect("period"),
+        rows,
     )
-    .expect("evaluation set");
-    let mut forged_evaluation = serde_json::to_value(evaluation).expect("evaluation JSON");
-    forged_evaluation["calibration_period"]["end_ns"] = serde_json::json!(205);
-    let forged_evaluation: EvaluationSet =
-        serde_json::from_value(forged_evaluation).expect("structurally valid evaluation JSON");
-    assert!(matches!(
-        ProbabilityMetrics::evaluate(&forged_evaluation, None, 5),
-        Err(CalibrationError::EvaluationOverlap)
-    ));
+    .expect("valid calibration set");
+    let fit = PlattCalibrator::fit(&set, FitConfig::default()).expect("finite fit");
+    assert!(fit.diagnostics.feature_log_scale_span.is_finite());
+    assert!(
+        fit.calibrate_logit(f64::from_bits(1))
+            .expect("score")
+            .is_finite()
+    );
+}
+
+#[test]
+fn rank_deficient_all_subnormal_logits_use_intercept_only_fits() {
+    let rows = (0..10)
+        .map(|index| {
+            let origin = 100 + i64::from(index);
+            CalibrationObservation::from_logit(
+                f64::from_bits(u64::try_from(index + 1).expect("subnormal bits")),
+                index % 2 == 0,
+                origin,
+                origin + 1,
+                origin + 1,
+                1.0,
+            )
+            .expect("valid subnormal observation")
+        })
+        .collect();
+    let set = CalibrationSet::new(
+        "rank-deficient-subnormal",
+        CalibrationPeriod::new(100, 120).expect("period"),
+        rows,
+    )
+    .expect("set");
+    let platt = PlattCalibrator::fit(&set, FitConfig::default()).expect("Platt fallback");
+    let beta = BetaCalibrator::fit(&set, FitConfig::default()).expect("beta fallback");
+    assert_eq!(platt.slope, 0.0);
+    assert_eq!(beta.a, 0.0);
+    assert_eq!(beta.b, 0.0);
+    assert!((platt.calibrate_logit(0.0).expect("Platt score") - 0.5).abs() < 1.0e-12);
+    assert!((beta.calibrate_logit(0.0).expect("beta score") - 0.5).abs() < 1.0e-12);
 }

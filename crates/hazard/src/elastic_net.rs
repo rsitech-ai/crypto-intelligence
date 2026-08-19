@@ -7,6 +7,7 @@ use crate::{
     softmax_with_survival,
 };
 use crate::{BucketTarget, DesignRow};
+use dataset::OuterFold;
 
 const MAXIMUM_ITERATIONS: u32 = 100_000;
 const MAXIMUM_BACKTRACKING: u32 = 128;
@@ -221,6 +222,8 @@ impl FitDiagnostics {
 /// Point-in-time inference input whose feature order is explicit.
 #[derive(Clone, Debug, PartialEq)]
 pub struct HazardPredictionInput {
+    pub entity_id: String,
+    pub episode_cluster_id: String,
     pub feature_schema: FeatureSchema,
     pub origin_time_ns: i64,
     pub as_known_at_ns: i64,
@@ -237,6 +240,16 @@ pub struct HazardPrediction {
     cause_ids: Vec<String>,
     bucket_spec: BucketSpec,
     model_id: [u8; 32],
+    training_evidence_id: [u8; 32],
+    training_cutoff_ns: i64,
+    cause_definition_hashes: Vec<[u8; 32]>,
+    entity_id: String,
+    episode_cluster_id: String,
+    outer_fold_hash: [u8; 32],
+    model_fitted_at_ns: i64,
+    origin_time_ns: i64,
+    as_known_at_ns: i64,
+    input_evidence_id: [u8; 32],
     evidence_id: [u8; 32],
 }
 
@@ -248,6 +261,16 @@ pub struct HazardHorizonForecast {
     causes: Vec<CauseHorizonProbability>,
     survival: f64,
     model_id: [u8; 32],
+    training_evidence_id: [u8; 32],
+    training_cutoff_ns: i64,
+    cause_definition_hashes: Vec<[u8; 32]>,
+    entity_id: String,
+    episode_cluster_id: String,
+    outer_fold_hash: [u8; 32],
+    model_fitted_at_ns: i64,
+    origin_time_ns: i64,
+    as_known_at_ns: i64,
+    input_evidence_id: [u8; 32],
     evidence_id: [u8; 32],
 }
 
@@ -280,6 +303,56 @@ impl HazardHorizonForecast {
     #[must_use]
     pub const fn evidence_id(&self) -> [u8; 32] {
         self.evidence_id
+    }
+
+    #[must_use]
+    pub const fn training_evidence_id(&self) -> [u8; 32] {
+        self.training_evidence_id
+    }
+
+    #[must_use]
+    pub const fn training_cutoff_ns(&self) -> i64 {
+        self.training_cutoff_ns
+    }
+
+    #[must_use]
+    pub fn cause_definition_hashes(&self) -> &[[u8; 32]] {
+        &self.cause_definition_hashes
+    }
+
+    #[must_use]
+    pub fn entity_id(&self) -> &str {
+        &self.entity_id
+    }
+
+    #[must_use]
+    pub fn episode_cluster_id(&self) -> &str {
+        &self.episode_cluster_id
+    }
+
+    #[must_use]
+    pub const fn outer_fold_hash(&self) -> [u8; 32] {
+        self.outer_fold_hash
+    }
+
+    #[must_use]
+    pub const fn model_fitted_at_ns(&self) -> i64 {
+        self.model_fitted_at_ns
+    }
+
+    #[must_use]
+    pub const fn origin_time_ns(&self) -> i64 {
+        self.origin_time_ns
+    }
+
+    #[must_use]
+    pub const fn as_known_at_ns(&self) -> i64 {
+        self.as_known_at_ns
+    }
+
+    #[must_use]
+    pub const fn input_evidence_id(&self) -> [u8; 32] {
+        self.input_evidence_id
     }
 }
 
@@ -322,6 +395,16 @@ impl HazardPrediction {
             causes: incidence.causes().to_vec(),
             survival: incidence.survival(),
             model_id: self.model_id,
+            training_evidence_id: self.training_evidence_id,
+            training_cutoff_ns: self.training_cutoff_ns,
+            cause_definition_hashes: self.cause_definition_hashes.clone(),
+            entity_id: self.entity_id.clone(),
+            episode_cluster_id: self.episode_cluster_id.clone(),
+            outer_fold_hash: self.outer_fold_hash,
+            model_fitted_at_ns: self.model_fitted_at_ns,
+            origin_time_ns: self.origin_time_ns,
+            as_known_at_ns: self.as_known_at_ns,
+            input_evidence_id: self.input_evidence_id,
             evidence_id: self.evidence_id,
         })
     }
@@ -334,6 +417,26 @@ impl HazardPrediction {
     #[must_use]
     pub const fn evidence_id(&self) -> [u8; 32] {
         self.evidence_id
+    }
+
+    #[must_use]
+    pub const fn training_evidence_id(&self) -> [u8; 32] {
+        self.training_evidence_id
+    }
+
+    #[must_use]
+    pub const fn origin_time_ns(&self) -> i64 {
+        self.origin_time_ns
+    }
+
+    #[must_use]
+    pub const fn as_known_at_ns(&self) -> i64 {
+        self.as_known_at_ns
+    }
+
+    #[must_use]
+    pub const fn input_evidence_id(&self) -> [u8; 32] {
+        self.input_evidence_id
     }
 }
 
@@ -366,12 +469,16 @@ pub struct CompetingRiskHazard {
     feature_schema: FeatureSchema,
     bucket_spec: crate::BucketSpec,
     cause_ids: Vec<String>,
+    cause_definition_hashes: Vec<[u8; 32]>,
     config: HazardConfig,
     normalization: NormalizationStats,
     intercepts: Vec<f64>,
     coefficients: Vec<f64>,
     diagnostics: FitDiagnostics,
     training_evidence_id: [u8; 32],
+    training_cutoff_ns: i64,
+    outer_fold_hash: [u8; 32],
+    model_fitted_at_ns: i64,
     model_id: [u8; 32],
 }
 
@@ -491,14 +598,42 @@ impl CompetingRiskHazard {
             feature_schema: data.feature_schema().clone(),
             bucket_spec: data.bucket_spec(),
             cause_ids: data.cause_ids().to_vec(),
+            cause_definition_hashes: data.cause_definition_hashes().to_vec(),
             config,
             normalization,
             intercepts: parameters.intercepts,
             coefficients: parameters.coefficients,
             diagnostics,
             training_evidence_id: data.evidence_id(),
+            training_cutoff_ns: data.training_cutoff_ns(),
+            outer_fold_hash: [0; 32],
+            model_fitted_at_ns: 0,
             model_id,
         })
+    }
+
+    /// Fits and immutably binds this model to an exact outer training fold.
+    /// The fold boundary is the deterministic artifact-fit time for replay.
+    pub fn fit_for_outer_fold(
+        data: &HazardTrainingSet,
+        config: HazardConfig,
+        outer_fold: &OuterFold,
+    ) -> Result<Self, HazardError> {
+        if data.training_cutoff_ns() != outer_fold.training().end_ns() {
+            return Err(HazardError::InvalidTrainingSet);
+        }
+        let mut model = Self::fit(data, config)?;
+        if !model.diagnostics.converged {
+            return Err(HazardError::NonConvergedCandidate);
+        }
+        model.outer_fold_hash = outer_fold.fold_hash();
+        model.model_fitted_at_ns = outer_fold.training().end_ns();
+        model.model_id = bind_model_to_outer_fold(
+            model.model_id,
+            model.outer_fold_hash,
+            model.model_fitted_at_ns,
+        );
+        Ok(model)
     }
 
     pub fn predict(&self, input: HazardPredictionInput) -> Result<HazardPrediction, HazardError> {
@@ -523,13 +658,24 @@ impl CompetingRiskHazard {
             buckets.push(softmax_with_survival(&logits)?);
         }
         let incidence = cumulative_incidence_for_spec(self.bucket_spec, &self.cause_ids, &buckets)?;
-        let evidence_id = prediction_id(self.model_id, &input);
+        let input_evidence_id = prediction_input_id(&input);
+        let evidence_id = prediction_id(self.model_id, input_evidence_id);
         Ok(HazardPrediction {
             buckets,
             cumulative_incidence: incidence,
             cause_ids: self.cause_ids.clone(),
             bucket_spec: self.bucket_spec,
             model_id: self.model_id,
+            training_evidence_id: self.training_evidence_id,
+            training_cutoff_ns: self.training_cutoff_ns,
+            cause_definition_hashes: self.cause_definition_hashes.clone(),
+            entity_id: input.entity_id,
+            episode_cluster_id: input.episode_cluster_id,
+            outer_fold_hash: self.outer_fold_hash,
+            model_fitted_at_ns: self.model_fitted_at_ns,
+            origin_time_ns: input.origin_time_ns,
+            as_known_at_ns: input.as_known_at_ns,
+            input_evidence_id,
             evidence_id,
         })
     }
@@ -1072,6 +1218,8 @@ fn validate_prediction_input(
     expected_schema: &FeatureSchema,
 ) -> Result<(), HazardError> {
     if &input.feature_schema != expected_schema
+        || !valid_identifier(&input.entity_id)
+        || !valid_identifier(&input.episode_cluster_id)
         || input.origin_time_ns <= 0
         || input.as_known_at_ns <= 0
         || input.as_known_at_ns > input.origin_time_ns
@@ -1146,10 +1294,19 @@ fn model_id(
     *hasher.finalize().as_bytes()
 }
 
-fn prediction_id(model_id: [u8; 32], input: &HazardPredictionInput) -> [u8; 32] {
+fn prediction_id(model_id: [u8; 32], input_evidence_id: [u8; 32]) -> [u8; 32] {
     let mut hasher = blake3::Hasher::new();
     hasher.update(PREDICTION_DOMAIN);
     hasher.update(&model_id);
+    hasher.update(&input_evidence_id);
+    *hasher.finalize().as_bytes()
+}
+
+fn prediction_input_id(input: &HazardPredictionInput) -> [u8; 32] {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(b"cmti:hazard-prediction-input:v1\0");
+    hash_string(&mut hasher, &input.entity_id);
+    hash_string(&mut hasher, &input.episode_cluster_id);
     hash_u64(&mut hasher, u64::from(input.feature_schema.version()));
     for identifier in input.feature_schema.feature_ids() {
         hash_u64(
@@ -1163,6 +1320,32 @@ fn prediction_id(model_id: [u8; 32], input: &HazardPredictionInput) -> [u8; 32] 
     hasher.update(&input.feature_lineage);
     hash_f64_slice(&mut hasher, &input.features);
     *hasher.finalize().as_bytes()
+}
+
+fn valid_identifier(identifier: &str) -> bool {
+    !identifier.is_empty()
+        && identifier.len() <= 256
+        && identifier
+            .bytes()
+            .all(|byte| !byte.is_ascii_control() && !byte.is_ascii_whitespace())
+}
+
+fn bind_model_to_outer_fold(
+    base_model_id: [u8; 32],
+    outer_fold_hash: [u8; 32],
+    model_fitted_at_ns: i64,
+) -> [u8; 32] {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(b"cmti:hazard-model-outer-fold:v1\0");
+    hasher.update(&base_model_id);
+    hasher.update(&outer_fold_hash);
+    hasher.update(&model_fitted_at_ns.to_le_bytes());
+    *hasher.finalize().as_bytes()
+}
+
+fn hash_string(hasher: &mut blake3::Hasher, value: &str) {
+    hash_u64(hasher, u64::try_from(value.len()).unwrap_or(u64::MAX));
+    hasher.update(value.as_bytes());
 }
 
 fn hash_f64_slice(hasher: &mut blake3::Hasher, values: &[f64]) {

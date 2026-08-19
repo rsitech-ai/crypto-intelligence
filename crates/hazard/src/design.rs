@@ -97,6 +97,8 @@ pub struct HazardTrainingSetInput {
     pub feature_schema: FeatureSchema,
     pub bucket_spec: BucketSpec,
     pub cause_ids: Vec<String>,
+    /// Exact label-definition digest corresponding to each cause identifier.
+    pub cause_definition_hashes: Vec<[u8; 32]>,
     pub training_cutoff_ns: i64,
     pub samples: Vec<HazardSampleInput>,
 }
@@ -120,6 +122,7 @@ pub struct HazardTrainingSet {
     feature_schema: FeatureSchema,
     bucket_spec: BucketSpec,
     cause_ids: Vec<String>,
+    cause_definition_hashes: Vec<[u8; 32]>,
     training_cutoff_ns: i64,
     samples: Vec<HazardSample>,
     evidence_id: [u8; 32],
@@ -161,6 +164,7 @@ impl HazardTrainingSet {
             &input.feature_schema,
             input.bucket_spec,
             &input.cause_ids,
+            &input.cause_definition_hashes,
             input.training_cutoff_ns,
             &samples,
         );
@@ -168,6 +172,7 @@ impl HazardTrainingSet {
             feature_schema: input.feature_schema,
             bucket_spec: input.bucket_spec,
             cause_ids: input.cause_ids,
+            cause_definition_hashes: input.cause_definition_hashes,
             training_cutoff_ns: input.training_cutoff_ns,
             samples,
             evidence_id,
@@ -187,6 +192,11 @@ impl HazardTrainingSet {
     #[must_use]
     pub fn cause_ids(&self) -> &[String] {
         &self.cause_ids
+    }
+
+    #[must_use]
+    pub fn cause_definition_hashes(&self) -> &[[u8; 32]] {
+        &self.cause_definition_hashes
     }
 
     #[must_use]
@@ -307,6 +317,8 @@ fn validate_header(input: &HazardTrainingSetInput) -> Result<(), HazardError> {
         || input.samples.len() > MAXIMUM_SAMPLES
         || input.cause_ids.len() < 2
         || input.cause_ids.len() > MAXIMUM_CAUSES
+        || input.cause_definition_hashes.len() != input.cause_ids.len()
+        || input.cause_definition_hashes.contains(&[0; 32])
         || input.bucket_spec.is_empty()
     {
         return Err(HazardError::InvalidTrainingSet);
@@ -423,6 +435,7 @@ fn evidence_id(
     feature_schema: &FeatureSchema,
     bucket_spec: BucketSpec,
     cause_ids: &[String],
+    cause_definition_hashes: &[[u8; 32]],
     training_cutoff_ns: i64,
     samples: &[HazardSample],
 ) -> [u8; 32] {
@@ -432,6 +445,9 @@ fn evidence_id(
     hash_strings(&mut hasher, &feature_schema.feature_ids);
     hasher.update(&bucket_spec.fingerprint());
     hash_strings(&mut hasher, cause_ids);
+    for definition_hash in cause_definition_hashes {
+        hasher.update(definition_hash);
+    }
     hasher.update(&training_cutoff_ns.to_le_bytes());
     hash_u64(
         &mut hasher,
