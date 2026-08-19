@@ -5,10 +5,16 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
+autotests = false
 
 [dependencies]
-serde.workspace = true
+blake3.workspace = true
+statrs.workspace = true
 thiserror.workspace = true
+
+[[test]]
+name = "reference_hmm"
+path = "tests/reference_hmm.rs"
 
 [lints]
 workspace = true
