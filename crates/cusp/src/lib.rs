@@ -2,11 +2,14 @@
 
 pub mod barrier;
 pub mod bootstrap;
+pub mod branch_tracker;
 pub mod control_schema;
 pub mod controls;
 pub mod equilibria;
+mod evidence;
 pub mod fit;
 pub mod fold_distance;
+pub mod online;
 pub mod potential;
 pub mod roots;
 pub mod types;

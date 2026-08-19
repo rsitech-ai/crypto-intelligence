@@ -12,13 +12,13 @@ domain = { path = "../domain" }
 feature-registry = { path = "../feature-registry" }
 nalgebra.workspace = true
 numerics = { path = "../numerics" }
+quality = { path = "../quality" }
 semver.workspace = true
 serde.workspace = true
 statrs.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
-quality = { path = "../quality" }
 serde_json.workspace = true
 
 [lints]
